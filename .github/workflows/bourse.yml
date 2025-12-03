@@ -1,1 +1,66 @@
 
+name: Bourse Tracker
+
+# تریگر توسط Cloudflare Worker
+on:
+  workflow_dispatch:
+    inputs:
+      trigger_source:
+        description: 'منبع تریگر'
+        required: false
+        default: 'cloudflare'
+
+jobs:
+  run-bourse-tracker:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 1. Checkout کد
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+      
+      # 2. نصب Python
+      - name: 🐍 Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      # 3. نصب dependencies
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      # 4. نمایش اطلاعات
+      - name: ℹ️ Display info
+        run: |
+          echo "🕐 زمان اجرا: $(date)"
+          echo "🐍 نسخه Python: $(python --version)"
+          echo "📦 کتابخانه‌های نصب شده:"
+          pip list
+      
+      # 5. اجرای main.py
+      - name: 🚀 Run Bourse Tracker
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+        run: |
+          python main.py
+      
+      # 6. آپلود لاگ‌ها (در صورت خطا)
+      - name: 📋 Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bourse-logs-${{ github.run_number }}
+          path: bourse_tracker.log
+          retention-days: 7
+      
+      # 7. اعلان در صورت خطا (اختیاری)
+      - name: ❌ Notify on failure
+        if: failure()
+        run: |
+          echo "⚠️ خطا در اجرای Bourse Tracker"
+          echo "لاگ‌ها را در Artifacts بررسی کنید"
