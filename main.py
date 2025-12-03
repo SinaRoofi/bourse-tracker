@@ -6,7 +6,6 @@ import sys
 import logging
 from datetime import datetime
 import jdatetime
-from zoneinfo import ZoneInfo   # ← اضافه شد
 
 from config import (
     MARKET_START_TIME, MARKET_END_TIME, WORKING_DAYS, HOLIDAYS_1404,
@@ -15,6 +14,8 @@ from config import (
 from utils.data_fetcher import BourseDataFetcher
 from utils.data_processor import BourseDataProcessor
 from utils.alerts import TelegramAlert
+from utils.gist_manager import GistManager
+import os
 
 # ========================================
 # تنظیمات لاگ
@@ -37,35 +38,34 @@ logger = logging.getLogger(__name__)
 def is_market_open() -> bool:
     """
     بررسی اینکه آیا بازار باز است یا نه
+    
     Returns:
         True اگر بازار باز باشد
     """
-    # ← فقط این خط تغییر کرد
-    now = datetime.now(ZoneInfo("Asia/Tehran"))
-
+    now = datetime.now()
+    
     # بررسی روز هفته (0=شنبه تا 6=جمعه)
     weekday = (now.weekday() + 2) % 7  # تبدیل به تقویم ایرانی
-
+    
     if weekday not in WORKING_DAYS:
         logger.info(f"امروز روز کاری نیست (روز هفته: {weekday})")
         return False
-
+    
     # بررسی تعطیلات رسمی
-    # ← این خط اصلاح شد: استفاده از datetime معمولی به جای jdatetime.timezone
-    jnow = jdatetime.datetime.fromgregorian(datetime=now)
+    jnow = jdatetime.datetime.now()
     today_str = jnow.strftime('%Y-%m-%d')
-
+    
     if today_str in HOLIDAYS_1404:
         logger.info(f"امروز تعطیل رسمی است: {today_str}")
         return False
-
+    
     # بررسی ساعت کاری
     current_time = now.strftime('%H:%M')
-
+    
     if not (MARKET_START_TIME <= current_time <= MARKET_END_TIME):
         logger.info(f"خارج از ساعات کاری بازار (ساعت فعلی: {current_time})")
         return False
-
+    
     logger.info(f"✅ بازار باز است - {today_str} {current_time}")
     return True
 
@@ -73,22 +73,30 @@ def is_market_open() -> bool:
 def send_alert_safely(alert: TelegramAlert, df, filter_name: str) -> bool:
     """
     ارسال ایمن هشدار با مدیریت خطا
+    
+    Args:
+        alert: شی TelegramAlert
+        df: DataFrame فیلتر شده
+        filter_name: نام فیلتر
+        
+    Returns:
+        True در صورت موفقیت
     """
     try:
         if df.empty:
             logger.info(f"فیلتر {filter_name}: داده خالی، ارسال نمی‌شود")
             return False
-
+        
         logger.info(f"ارسال هشدار {filter_name} با {len(df)} سهم...")
         success = alert.send_filter_alert_sync(df, filter_name)
-
+        
         if success:
             logger.info(f"✅ هشدار {filter_name} با موفقیت ارسال شد")
         else:
             logger.error(f"❌ خطا در ارسال هشدار {filter_name}")
-
+        
         return success
-
+        
     except Exception as e:
         logger.error(f"❌ خطا در ارسال هشدار {filter_name}: {e}")
         return False
@@ -100,56 +108,92 @@ def send_alert_safely(alert: TelegramAlert, df, filter_name: str) -> bool:
 
 def main():
     """تابع اصلی اجرای برنامه"""
-
+    
     logger.info("=" * 80)
     logger.info("🚀 شروع Bourse Tracker")
     logger.info("=" * 80)
-
+    
     try:
         # 1. اعتبارسنجی تنظیمات
         logger.info("بررسی تنظیمات...")
         validate_config()
         logger.info("✅ تنظیمات معتبر است")
-
+        
         # 2. بررسی وضعیت بازار
         if not is_market_open():
             logger.info("⏸️  بازار بسته است. خروج از برنامه.")
             return
-
+        
         # 3. دریافت داده
         logger.info("\n📥 شروع دریافت داده از API...")
         fetcher = BourseDataFetcher()
         all_stocks = fetcher.fetch_all_industries(batch_size=5)
-
+        
         if all_stocks.empty:
             logger.error("❌ هیچ داده‌ای دریافت نشد!")
             return
-
+        
         logger.info(f"✅ {len(all_stocks)} سهم از {all_stocks['industry_name'].nunique()} صنعت دریافت شد")
-
-        # 4. اعمال فیلترها
+        
+        # 4. راه‌اندازی Gist Manager
+        logger.info("\n🔐 راه‌اندازی Gist Manager...")
+        github_token = os.getenv('GITHUB_TOKEN')
+        gist_id = os.getenv('GIST_ID')  # اختیاری
+        
+        gist_manager = None
+        if github_token:
+            gist_manager = GistManager(github_token, gist_id)
+            gist_manager.load_sent_alerts()
+            gist_manager.cleanup_old_alerts(days=7)  # حذف هشدارهای قدیمی‌تر از 7 روز
+            logger.info("✅ Gist Manager آماده است")
+        else:
+            logger.warning("⚠️  GITHUB_TOKEN تنظیم نشده - جلوگیری از اسپم غیرفعال است")
+        
+        # 5. اعمال فیلترها
         logger.info("\n🔍 شروع اعمال فیلترها...")
         processor = BourseDataProcessor()
         filters_results = processor.apply_all_filters(all_stocks)
-
-        # 5. ارسال هشدارها
+        
+        # 6. ارسال هشدارها
         logger.info("\n📤 شروع ارسال هشدارها به تلگرام...")
         alert = TelegramAlert()
-
+        
         sent_count = 0
         failed_count = 0
-
+        skipped_count = 0
+        
         for filter_name, filtered_df in filters_results.items():
             if not filtered_df.empty:
-                success = send_alert_safely(alert, filtered_df, filter_name)
-                if success:
-                    sent_count += 1
+                # فیلتر کردن هشدارهای تکراری (اگر Gist فعال باشه)
+                if gist_manager:
+                    new_alerts_df = gist_manager.filter_new_alerts(filtered_df, filter_name, time_window_hours=24)
                 else:
-                    failed_count += 1
+                    new_alerts_df = filtered_df
+                
+                if not new_alerts_df.empty:
+                    success = send_alert_safely(alert, new_alerts_df, filter_name)
+                    
+                    if success:
+                        sent_count += 1
+                        
+                        # علامت‌گذاری هشدارهای ارسال شده
+                        if gist_manager:
+                            for _, row in new_alerts_df.iterrows():
+                                gist_manager.mark_alert_sent(filter_name, row['symbol'])
+                    else:
+                        failed_count += 1
+                else:
+                    skipped_count += len(filtered_df)
+                    logger.info(f"⏭️  فیلتر {filter_name}: {len(filtered_df)} هشدار تکراری (رد شد)")
             else:
                 logger.info(f"فیلتر {filter_name}: نتیجه‌ای یافت نشد")
-
-        # 6. گزارش نهایی
+        
+        # 7. آپدیت Gist
+        if gist_manager and sent_count > 0:
+            logger.info("\n💾 آپدیت Gist...")
+            gist_manager.update_gist()
+        
+        # 8. گزارش نهایی
         logger.info("\n" + "=" * 80)
         logger.info("📊 گزارش نهایی:")
         logger.info(f"  • تعداد فیلترها: {len(filters_results)}")
@@ -157,11 +201,11 @@ def main():
         logger.info(f"  • هشدارهای ناموفق: {failed_count}")
         logger.info("=" * 80)
         logger.info("✅ اجرا با موفقیت به پایان رسید")
-
+        
     except KeyboardInterrupt:
         logger.info("\n⚠️  اجرا توسط کاربر متوقف شد")
         sys.exit(0)
-
+        
     except Exception as e:
         logger.error(f"\n❌ خطای غیرمنتظره: {e}", exc_info=True)
         sys.exit(1)
