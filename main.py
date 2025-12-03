@@ -51,8 +51,8 @@ def is_market_open() -> bool:
         return False
 
     # بررسی تعطیلات رسمی
-    # ← این خط هم فقط timezone اضافه شد
-    jnow = jdatetime.datetime.now(tzinfo=jdatetime.timezone("Asia/Tehran"))
+    # ← این خط اصلاح شد: استفاده از datetime معمولی به جای jdatetime.timezone
+    jnow = jdatetime.datetime.fromgregorian(datetime=now)
     today_str = jnow.strftime('%Y-%m-%d')
 
     if today_str in HOLIDAYS_1404:
