@@ -416,7 +416,7 @@ class BourseDataProcessor:
         فیلتر 9: یک ساعت اول - فقط در ساعت اول بازار (9:00 - 10:00)
         
         شرایط:
-        - ساعت فعلی بین 9 تا 10
+        - ساعت فعلی بین 9 تا 10 (به وقت تهران)
         - ارزش معاملات به میانگین ماهانه >= 1
         
         Args:
@@ -430,10 +430,13 @@ class BourseDataProcessor:
         if df.empty:
             return df
         
-        # بررسی ساعت
+        # بررسی ساعت (با timezone تهران)
         if current_hour is None:
             from datetime import datetime
-            current_hour = datetime.now().hour
+            import pytz
+            tehran_tz = pytz.timezone('Asia/Tehran')
+            now_tehran = datetime.now(tehran_tz)
+            current_hour = now_tehran.hour
         
         if config is None:
             from config import FIRST_HOUR_CONFIG
@@ -445,10 +448,10 @@ class BourseDataProcessor:
         
         # اگه خارج از بازه زمانی، خالی برگردون
         if not (start_hour <= current_hour < end_hour):
-            logger.info(f"فیلتر 9: خارج از بازه زمانی ({start_hour}-{end_hour}). ساعت فعلی: {current_hour}")
+            logger.info(f"فیلتر 9: خارج از بازه زمانی ({start_hour}-{end_hour}). ساعت فعلی تهران: {current_hour}")
             return pd.DataFrame()
         
-        logger.info(f"اعمال فیلتر 9: یک ساعت اول (ساعت: {current_hour})")
+        logger.info(f"اعمال فیلتر 9: یک ساعت اول (ساعت تهران: {current_hour})")
         
         filtered = df[
             df['value_to_avg_monthly_value'] >= min_ratio
