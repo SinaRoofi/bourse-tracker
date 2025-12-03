@@ -6,6 +6,7 @@ import sys
 import logging
 from datetime import datetime
 import jdatetime
+import pytz
 
 from config import (
     MARKET_START_TIME, MARKET_END_TIME, WORKING_DAYS, HOLIDAYS_1404,
@@ -14,6 +15,9 @@ from config import (
 from utils.data_fetcher import BourseDataFetcher
 from utils.data_processor import BourseDataProcessor
 from utils.alerts import TelegramAlert
+
+# تنظیم timezone تهران
+TEHRAN_TZ = pytz.timezone('Asia/Tehran')
 
 # ========================================
 # تنظیمات لاگ
