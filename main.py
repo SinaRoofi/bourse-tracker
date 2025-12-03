@@ -44,7 +44,12 @@ def is_market_open() -> bool:
     Returns:
         True اگر بازار باز باشد
     """
-    now = datetime.now()
+    # دریافت زمان UTC و تبدیل به تهران
+    utc_now = datetime.now(pytz.UTC)
+    now = utc_now.astimezone(TEHRAN_TZ)
+    
+    logger.info(f"🕐 زمان UTC: {utc_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+    logger.info(f"🕐 زمان تهران: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
     
     # بررسی روز هفته (0=شنبه تا 6=جمعه)
     weekday = (now.weekday() + 2) % 7  # تبدیل به تقویم ایرانی
@@ -54,7 +59,7 @@ def is_market_open() -> bool:
         return False
     
     # بررسی تعطیلات رسمی
-    jnow = jdatetime.datetime.now()
+    jnow = jdatetime.datetime.fromgregorian(datetime=now.replace(tzinfo=None))
     today_str = jnow.strftime('%Y-%m-%d')
     
     if today_str in HOLIDAYS_1404:
@@ -65,7 +70,7 @@ def is_market_open() -> bool:
     current_time = now.strftime('%H:%M')
     
     if not (MARKET_START_TIME <= current_time <= MARKET_END_TIME):
-        logger.info(f"خارج از ساعات کاری بازار (ساعت فعلی: {current_time})")
+        logger.info(f"خارج از ساعات کاری بازار (ساعت تهران: {current_time})")
         return False
     
     logger.info(f"✅ بازار باز است - {today_str} {current_time}")
