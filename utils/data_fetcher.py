@@ -1,5 +1,3 @@
-# data_fetcher.py
-
 """
 ماژول دریافت داده‌های بورس از API
 """
@@ -62,6 +60,9 @@ class BourseDataFetcher:
             df['industry_code'] = industry_code
             df['industry_name'] = self.industry_names.get(industry_code, 'نامشخص')
             
+            # تبدیل نوع داده‌ها برای عملکرد بهتر
+            df = self._convert_dtypes(df)
+            
             logger.info(f"✅ {len(df)} سهم از صنعت {self.industry_names.get(industry_code)} دریافت شد")
             
             return df
@@ -78,12 +79,13 @@ class BourseDataFetcher:
             logger.error(f"❌ خطای غیرمنتظره در پردازش داده صنعت {industry_code}: {e}")
             return None
     
-    def fetch_all_industries(self, industry_codes: Optional[List[str]] = None) -> pd.DataFrame:
+    def fetch_all_industries(self, industry_codes: Optional[List[str]] = None, batch_size: int = 5) -> pd.DataFrame:
         """
-        دریافت داده همه صنایع
+        دریافت داده همه صنایع به صورت batch
         
         Args:
             industry_codes: لیست کدهای صنعت (اگر None باشد، همه صنایع دریافت می‌شود)
+            batch_size: تعداد صنایع در هر batch (پیش‌فرض: 5)
             
         Returns:
             DataFrame حاوی داده‌های تمام صنایع
@@ -94,22 +96,35 @@ class BourseDataFetcher:
         all_data = []
         failed_industries = []
         
-        logger.info(f"شروع دریافت داده از {len(industry_codes)} صنعت...")
+        total_industries = len(industry_codes)
+        logger.info(f"شروع دریافت داده از {total_industries} صنعت (هر batch: {batch_size} صنعت)...")
         
-        for code in industry_codes:
-            df = self.fetch_industry_data(code)
+        # تقسیم به batch
+        for batch_num, i in enumerate(range(0, total_industries, batch_size), 1):
+            batch = industry_codes[i:i + batch_size]
             
-            if df is not None and not df.empty:
-                all_data.append(df)
-            else:
-                failed_industries.append(code)
+            logger.info(f"📦 Batch {batch_num}/{(total_industries + batch_size - 1) // batch_size}: "
+                       f"دریافت {len(batch)} صنعت...")
             
-            # تاخیر کوتاه برای جلوگیری از فشار به سرور
-            time.sleep(0.3)
+            for code in batch:
+                df = self.fetch_industry_data(code)
+                
+                if df is not None and not df.empty:
+                    all_data.append(df)
+                else:
+                    failed_industries.append(code)
+                
+                # تاخیر کوتاه برای جلوگیری از فشار به سرور
+                time.sleep(0.3)
+            
+            # تاخیر بین batch‌ها
+            if i + batch_size < total_industries:
+                logger.info(f"⏸️  توقف 2 ثانیه بین batch‌ها...")
+                time.sleep(2)
         
         # گزارش نتیجه
         if failed_industries:
-            logger.warning(f"⚠️  صنایع با خطا: {', '.join(failed_industries)}")
+            logger.warning(f"⚠️  صنایع با خطا ({len(failed_industries)}): {', '.join(failed_industries)}")
         
         if not all_data:
             logger.error("❌ هیچ داده‌ای دریافت نشد!")
@@ -118,7 +133,7 @@ class BourseDataFetcher:
         # ادغام همه دیتافریم‌ها
         final_df = pd.concat(all_data, ignore_index=True)
         
-        logger.info(f"✅ جمع {len(final_df)} سهم از {len(all_data)} صنعت دریافت شد")
+        logger.info(f"✅ جمع {len(final_df)} سهم از {len(all_data)}/{total_industries} صنعت دریافت شد")
         
         return final_df
     
@@ -130,3 +145,88 @@ class BourseDataFetcher:
             دیکشنری کدها و نام‌های صنایع
         """
         return self.industry_names
+    
+    def _convert_dtypes(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        تبدیل نوع داده ستون‌ها برای عملکرد بهتر
+        
+        Args:
+            df: DataFrame ورودی
+            
+        Returns:
+            DataFrame با نوع داده‌های صحیح و واحدهای تبدیل شده
+        """
+        # ستون‌های عددی (integer)
+        int_columns = [
+            'id', 'volume', 'value', 'first_price', 'high_price', 'low_price',
+            'last_price', 'final_price', 'diff_last_final',
+            'buy_order_value', 'sell_order_value', 'diff_buy_sell_order',
+            'avg_monthly_value', 'avg_3_month_value', 'marketcap'
+        ]
+        
+        # ستون‌های عددی (float)
+        float_columns = [
+            'first_price_change_percent', 'high_price_change_percent',
+            'low_price_change_percent', 'last_price_change_percent',
+            'final_price_change_percent', 'volatility',
+            'sarane_kharid', 'sarane_forosh', 'godrat_kharid', 'pol_hagigi',
+            'avg_5_day_pol_hagigi', 'avg_20_day_pol_hagigi', 'avg_60_day_pol_hagigi',
+            '5_day_pol_hagigi', '20_day_pol_hagigi', '60_day_pol_hagigi',
+            '5_day_godrat_kharid', '20_day_godrat_kharid',
+            'value_to_avg_monthly_value', 'value_to_avg_3_month_value',
+            '5_day_return', '20_day_return', '60_day_return', 'value_to_marketcap'
+        ]
+        
+        # تبدیل به int
+        for col in int_columns:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype('int64')
+        
+        # تبدیل به float
+        for col in float_columns:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0).astype('float64')
+        
+        # symbol باید string بمونه
+        if 'symbol' in df.columns:
+            df['symbol'] = df['symbol'].astype(str)
+        
+        # ========================================
+        # تبدیل واحدها برای محاسبات راحت‌تر
+        # ========================================
+        
+        # ستون‌های مالی بزرگ: تقسیم بر 10 میلیارد (به میلیارد تومان)
+        billion_columns = [
+            'pol_hagigi', 'value', 'marketcap',
+            'buy_order_value', 'sell_order_value', 'diff_buy_sell_order',
+            'avg_5_day_pol_hagigi', 'avg_20_day_pol_hagigi', 'avg_60_day_pol_hagigi',
+            '5_day_pol_hagigi', '20_day_pol_hagigi', '60_day_pol_hagigi',
+            'avg_monthly_value', 'avg_3_month_value'
+        ]
+        
+        for col in billion_columns:
+            if col in df.columns:
+                df[col] = df[col] / 10_000_000_000  # تبدیل به میلیارد تومان
+        
+        # سرانه خرید و فروش: تقسیم بر 10 میلیون (به میلیون تومان)
+        million_columns = [
+            'sarane_kharid', 'sarane_forosh'
+        ]
+        
+        for col in million_columns:
+            if col in df.columns:
+                df[col] = df[col] / 10_000_000  # تبدیل به میلیون تومان
+        
+        # ========================================
+        # محاسبه ستون‌های جدید
+        # ========================================
+        
+        # نسبت ورود پول حقیقی به میانگین ارزش معاملات ماهانه
+        if 'pol_hagigi' in df.columns and 'avg_monthly_value' in df.columns:
+            df['pol_hagigi_to_avg_monthly_value'] = df.apply(
+                lambda row: row['pol_hagigi'] / row['avg_monthly_value'] 
+                if row['avg_monthly_value'] != 0 else 0, 
+                axis=1
+            )
+        
+        return df
