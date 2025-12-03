@@ -14,8 +14,6 @@ from config import (
 from utils.data_fetcher import BourseDataFetcher
 from utils.data_processor import BourseDataProcessor
 from utils.alerts import TelegramAlert
-from utils.gist_manager import GistManager
-import os
 
 # ========================================
 # تنظیمات لاگ
@@ -135,65 +133,29 @@ def main():
         
         logger.info(f"✅ {len(all_stocks)} سهم از {all_stocks['industry_name'].nunique()} صنعت دریافت شد")
         
-        # 4. راه‌اندازی Gist Manager
-        logger.info("\n🔐 راه‌اندازی Gist Manager...")
-        github_token = os.getenv('GITHUB_TOKEN')
-        gist_id = os.getenv('GIST_ID')  # اختیاری
-        
-        gist_manager = None
-        if github_token:
-            gist_manager = GistManager(github_token, gist_id)
-            gist_manager.load_sent_alerts()
-            gist_manager.cleanup_old_alerts(days=7)  # حذف هشدارهای قدیمی‌تر از 7 روز
-            logger.info("✅ Gist Manager آماده است")
-        else:
-            logger.warning("⚠️  GITHUB_TOKEN تنظیم نشده - جلوگیری از اسپم غیرفعال است")
-        
-        # 5. اعمال فیلترها
+        # 4. اعمال فیلترها
         logger.info("\n🔍 شروع اعمال فیلترها...")
         processor = BourseDataProcessor()
         filters_results = processor.apply_all_filters(all_stocks)
         
-        # 6. ارسال هشدارها
+        # 5. ارسال هشدارها
         logger.info("\n📤 شروع ارسال هشدارها به تلگرام...")
         alert = TelegramAlert()
         
         sent_count = 0
         failed_count = 0
-        skipped_count = 0
         
         for filter_name, filtered_df in filters_results.items():
             if not filtered_df.empty:
-                # فیلتر کردن هشدارهای تکراری (اگر Gist فعال باشه)
-                if gist_manager:
-                    new_alerts_df = gist_manager.filter_new_alerts(filtered_df, filter_name, time_window_hours=24)
+                success = send_alert_safely(alert, filtered_df, filter_name)
+                if success:
+                    sent_count += 1
                 else:
-                    new_alerts_df = filtered_df
-                
-                if not new_alerts_df.empty:
-                    success = send_alert_safely(alert, new_alerts_df, filter_name)
-                    
-                    if success:
-                        sent_count += 1
-                        
-                        # علامت‌گذاری هشدارهای ارسال شده
-                        if gist_manager:
-                            for _, row in new_alerts_df.iterrows():
-                                gist_manager.mark_alert_sent(filter_name, row['symbol'])
-                    else:
-                        failed_count += 1
-                else:
-                    skipped_count += len(filtered_df)
-                    logger.info(f"⏭️  فیلتر {filter_name}: {len(filtered_df)} هشدار تکراری (رد شد)")
+                    failed_count += 1
             else:
                 logger.info(f"فیلتر {filter_name}: نتیجه‌ای یافت نشد")
         
-        # 7. آپدیت Gist
-        if gist_manager and sent_count > 0:
-            logger.info("\n💾 آپدیت Gist...")
-            gist_manager.update_gist()
-        
-        # 8. گزارش نهایی
+        # 6. گزارش نهایی
         logger.info("\n" + "=" * 80)
         logger.info("📊 گزارش نهایی:")
         logger.info(f"  • تعداد فیلترها: {len(filters_results)}")
