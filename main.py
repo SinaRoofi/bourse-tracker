@@ -26,7 +26,6 @@ from config import (
 from utils.holidays import is_holiday, is_working_day
 from utils.data_fetcher import UnifiedDataFetcher
 from utils.data_processor import BourseDataProcessor
-from utils.filters import BourseFilters
 from utils.alerts import TelegramAlert
 from utils.gist_alert_manager import GistAlertManager  # نسخه جدید
 
@@ -134,10 +133,6 @@ def main():
         logger.info("\n🔄 شروع پردازش داده‌ها...")
         processor = BourseDataProcessor()
         df_api1, df_api2 = processor.process_all_data(df_api1_raw, df_api2_raw)
-
-        logger.info("\n🔍 شروع اعمال فیلترها...")
-        filters = BourseFilters()
-        all_results = filters.apply_all_filters(df_api1, df_api2)
 
         logger.info("\n📤 شروع ارسال هشدارها به تلگرام...")
         alert = TelegramAlert()
