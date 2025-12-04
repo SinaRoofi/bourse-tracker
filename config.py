@@ -19,7 +19,15 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 API_BASE_URL = os.getenv('API_BASE_URL')  # API اول (قدیمی)
 BRSAPI_KEY = os.getenv('BRSAPI_KEY')      # کلید BrsApi
 
+# ========================================
+# GitHub Gist
+# ========================================
+GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
+GIST_ID = os.getenv('GIST_ID')
+
+# ========================================
 # کدهای صنایع مختلف بورس
+# ========================================
 INDUSTRY_CODES = [
     '01', '10', '11', '13', '14', '17', '19', '20', '21', '22',
     '23', '25', '27', '28', '29', '31', '32', '34', '38', '39',
