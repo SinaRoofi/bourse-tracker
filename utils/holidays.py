@@ -1,336 +1,111 @@
 """
-مدیریت تعطیلات رسمی بورس ایران
+ماژول مدیریت تعطیلات رسمی ایران
 """
+
 from datetime import datetime
-from typing import List, Dict, Set
 import jdatetime
 
-# ========================================
-# تعطیلات رسمی سال 1404 (شمسی)
-# ========================================
-HOLIDAYS_1404 = [
-    # نوروز
-    '1404-01-01', '1404-01-02', '1404-01-03', '1404-01-04',
-    
-    # روز جمهوری اسلامی
-    '1404-01-12',
-    
-    # سیزده به در
-    '1404-01-13',
-    
-    # رحلت حضرت امام خمینی
-    '1404-03-14',
-    
-    # قیام 15 خرداد
-    '1404-03-15',
-    
-    # شهادت امام علی
-    '1404-04-11',
-    
-    # عید فطر
-    '1404-04-19', '1404-04-20',
-    
-    # شهادت امام صادق
-    '1404-05-15',
-    
-    # عید قربان
-    '1404-06-26',
-    
-    # عید غدیر
-    '1404-07-04',
-    
-    # تاسوعا
-    '1404-07-18',
-    
-    # عاشورا
-    '1404-07-19',
-    
-    # اربعین
-    '1404-08-28',
-    
-    # رحلت پیامبر و شهادت امام حسن
-    '1404-09-08',
-    
-    # شهادت امام رضا
-    '1404-09-10',
-    
-    # ولادت پیامبر
-    '1404-09-17',
-    
-    # شهادت فاطمه زهرا
-    '1404-11-20',
-    
-    # ولادت امام علی
-    '1404-12-03',
-    
-    # مبعث
-    '1404-12-15',
-    
-    # ولادت امام زمان
-    '1404-12-25'
-]
+# تعطیلات رسمی 1404
+IRANIAN_HOLIDAYS_1404 = {
+    (1404, 1, 1),   # آغاز نوروز
+    (1404, 1, 2),   # عید نوروز
+    (1404, 1, 3),   # عید نوروز
+    (1404, 1, 4),   # عید نوروز
+    (1404, 1, 11),  # عید سعید فطر
+    (1404, 1, 12),  # تعطیل به‌مناسبت عید فطر + روز جمهوری اسلامی ایران
+    (1404, 1, 13),  # روز طبیعت
+    (1404, 2, 4),   # شهادت امام جعفر صادق (ع)
+    (1404, 3, 14),  # رحلت امام خمینی (ره)
+    (1404, 3, 15),  # قیام ۱۵ خرداد
+    (1404, 3, 16),  # عید سعید قربان
+    (1404, 3, 24),  # عید سعید غدیر خم
+    (1404, 4, 14),  # تاسوعای حسینی
+    (1404, 4, 15),  # عاشورای حسینی
+    (1404, 5, 23),  # اربعین حسینی
+    (1404, 5, 31),  # رحلت پیامبر اسلام (ص) / شهادت امام حسن مجتبی (ع)
+    (1404, 6, 2),   # شهادت امام رضا (ع)
+    (1404, 6, 10),  # شهادت امام حسن عسکری (ع)
+    (1404, 6, 19),  # ولادت پیامبر (ص) / ولادت امام جعفر صادق (ع)
+    (1404, 9, 3),   # شهادت حضرت فاطمه زهرا (س)
+    (1404, 10, 13), # ولادت امام علی (ع) / روز پدر
+    (1404, 10, 27), # مبعث پیامبر اسلام (ص)
+    (1404, 11, 15), # ولادت حضرت قائم (عج)
+    (1404, 11, 22), # پیروزی انقلاب اسلامی ایران
+    (1404, 12, 20), # شهادت امام علی (ع)
+    (1404, 12, 29), # روز ملی شدن صنعت نفت ایران
+}
 
-# ========================================
-# تعطیلات رسمی سال 1405 (شمسی)
-# ========================================
-HOLIDAYS_1405 = [
-    # نوروز
-    '1405-01-01', '1405-01-02', '1405-01-03', '1405-01-04',
-    
-    # روز جمهوری اسلامی
-    '1405-01-12',
-    
-    # سیزده به در
-    '1405-01-13',
-    
-    # رحلت حضرت امام خمینی
-    '1405-03-14',
-    
-    # قیام 15 خرداد
-    '1405-03-15',
-    
-    # شهادت امام علی
-    '1405-03-30',
-    
-    # عید فطر
-    '1405-04-08', '1405-04-09',
-    
-    # شهادت امام صادق
-    '1405-05-04',
-    
-    # عید قربان
-    '1405-06-15',
-    
-    # عید غدیر
-    '1405-06-23',
-    
-    # تاسوعا
-    '1405-07-07',
-    
-    # عاشورا
-    '1405-07-08',
-    
-    # اربعین
-    '1405-08-17',
-    
-    # رحلت پیامبر و شهادت امام حسن
-    '1405-08-27',
-    
-    # شهادت امام رضا
-    '1405-08-29',
-    
-    # ولادت پیامبر
-    '1405-09-06',
-    
-    # شهادت فاطمه زهرا
-    '1405-11-09',
-    
-    # ولادت امام علی
-    '1405-11-22',
-    
-    # مبعث
-    '1405-12-04',
-    
-    # ولادت امام زمان
-    '1405-12-14'
-]
+# تعطیلات رسمی 1405
+IRANIAN_HOLIDAYS_1405 = {
+    (1405, 1, 1),
+    (1405, 1, 2),
+    (1405, 1, 3),
+    (1405, 1, 4),
+    (1405, 1, 12),
+    (1405, 1, 13),
+    (1405, 1, 25),
+    (1405, 3, 6),
+    (1405, 3, 14),
+    (1405, 3, 15),
+    (1405, 4, 3),
+    (1405, 4, 4),
+    (1405, 5, 13),
+    (1405, 5, 21),
+    (1405, 5, 22),
+    (1405, 5, 30),
+    (1405, 6, 8),
+    (1405, 8, 22),
+    (1405, 10, 2),
+    (1405, 10, 16),
+    (1405, 11, 4),
+    (1405, 11, 22),
+    (1405, 12, 9),
+    (1405, 12, 19),
+    (1405, 12, 20),
+    (1405, 12, 29),
+}
 
-# ترکیب تمام تعطیلات
-ALL_HOLIDAYS = HOLIDAYS_1404 + HOLIDAYS_1405
-
-# ========================================
-# توضیحات تعطیلات (اختیاری)
-# ========================================
-HOLIDAY_DESCRIPTIONS: Dict[str, str] = {
-    # نوروز
-    '1404-01-01': 'نوروز - سال نو',
-    '1404-01-02': 'نوروز - روز دوم',
-    '1404-01-03': 'نوروز - روز سوم',
-    '1404-01-04': 'نوروز - روز چهارم',
-    
-    # سایر تعطیلات مهم
-    '1404-01-12': 'روز جمهوری اسلامی ایران',
-    '1404-01-13': 'سیزده به در',
-    '1404-03-14': 'رحلت حضرت امام خمینی (ره)',
-    '1404-03-15': 'قیام 15 خرداد',
-    '1404-07-19': 'عاشورا - شهادت امام حسین (ع)',
-    '1404-08-28': 'اربعین حسینی',
+# دیکشنری سال‌ها
+IRANIAN_HOLIDAYS = {
+    1404: IRANIAN_HOLIDAYS_1404,
+    1405: IRANIAN_HOLIDAYS_1405,
 }
 
 
-class HolidayManager:
-    """مدیریت تعطیلات بورس"""
-    
-    def __init__(self):
-        """مقداردهی اولیه"""
-        self.holidays_set: Set[str] = set(ALL_HOLIDAYS)
-    
-    def is_holiday(self, date_str: str = None) -> bool:
-        """
-        بررسی تعطیل بودن یک تاریخ
-        
-        Args:
-            date_str: تاریخ به فرمت 'YYYY-MM-DD' (شمسی)
-                     اگر None باشد، تاریخ امروز بررسی می‌شود
-        
-        Returns:
-            bool: True اگر تعطیل باشد
-        """
-        if date_str is None:
-            today = jdatetime.date.today()
-            date_str = today.strftime('%Y-%m-%d')
-        
-        return date_str in self.holidays_set
-    
-    def is_working_day(self, date_str: str = None) -> bool:
-        """
-        بررسی روز کاری بودن (نه تعطیل و نه جمعه)
-        
-        Args:
-            date_str: تاریخ به فرمت 'YYYY-MM-DD' (شمسی)
-        
-        Returns:
-            bool: True اگر روز کاری باشد
-        """
-        if date_str is None:
-            today = jdatetime.date.today()
-            date_str = today.strftime('%Y-%m-%d')
-        else:
-            year, month, day = map(int, date_str.split('-'))
-            today = jdatetime.date(year, month, day)
-        
-        # جمعه = 6 در jdatetime
-        if today.weekday() == 6:
-            return False
-        
-        return not self.is_holiday(date_str)
-    
-    def get_holidays_in_range(self, start_date: str, end_date: str) -> List[str]:
-        """
-        دریافت لیست تعطیلات در یک بازه زمانی
-        
-        Args:
-            start_date: تاریخ شروع 'YYYY-MM-DD'
-            end_date: تاریخ پایان 'YYYY-MM-DD'
-        
-        Returns:
-            List[str]: لیست تعطیلات در بازه
-        """
-        holidays_in_range = []
-        
-        for holiday in sorted(self.holidays_set):
-            if start_date <= holiday <= end_date:
-                holidays_in_range.append(holiday)
-        
-        return holidays_in_range
-    
-    def get_next_working_day(self, date_str: str = None) -> str:
-        """
-        پیدا کردن اولین روز کاری بعد از تاریخ مشخص
-        
-        Args:
-            date_str: تاریخ شروع 'YYYY-MM-DD'
-        
-        Returns:
-            str: تاریخ روز کاری بعدی
-        """
-        if date_str is None:
-            current_date = jdatetime.date.today()
-        else:
-            year, month, day = map(int, date_str.split('-'))
-            current_date = jdatetime.date(year, month, day)
-        
-        # حداکثر 30 روز جلو رو چک کن
-        for _ in range(30):
-            current_date += jdatetime.timedelta(days=1)
-            date_str = current_date.strftime('%Y-%m-%d')
-            
-            if self.is_working_day(date_str):
-                return date_str
-        
-        raise ValueError("روز کاری در 30 روز آینده پیدا نشد!")
-    
-    def get_holiday_description(self, date_str: str) -> str:
-        """
-        دریافت توضیحات یک تعطیلی
-        
-        Args:
-            date_str: تاریخ 'YYYY-MM-DD'
-        
-        Returns:
-            str: توضیحات تعطیلی یا پیام خطا
-        """
-        return HOLIDAY_DESCRIPTIONS.get(date_str, "توضیحی موجود نیست")
-    
-    def count_working_days(self, start_date: str, end_date: str) -> int:
-        """
-        شمارش روزهای کاری بین دو تاریخ
-        
-        Args:
-            start_date: تاریخ شروع 'YYYY-MM-DD'
-            end_date: تاریخ پایان 'YYYY-MM-DD'
-        
-        Returns:
-            int: تعداد روزهای کاری
-        """
-        year1, month1, day1 = map(int, start_date.split('-'))
-        year2, month2, day2 = map(int, end_date.split('-'))
-        
-        current = jdatetime.date(year1, month1, day1)
-        end = jdatetime.date(year2, month2, day2)
-        
-        working_days = 0
-        while current <= end:
-            if self.is_working_day(current.strftime('%Y-%m-%d')):
-                working_days += 1
-            current += jdatetime.timedelta(days=1)
-        
-        return working_days
+def is_iranian_holiday(date_obj):
+    """
+    بررسی اینکه آیا تاریخ داده شده تعطیل است یا نه
+
+    Args:
+        date_obj: datetime object
+
+    Returns:
+        bool: True اگر تعطیل باشد
+    """
+    # تبدیل به تاریخ شمسی
+    jalali_date = jdatetime.date.fromgregorian(
+        year=date_obj.year, month=date_obj.month, day=date_obj.day
+    )
+    date_tuple = (jalali_date.year, jalali_date.month, jalali_date.day)
+
+    # بررسی در لیست تعطیلات رسمی
+    holidays = IRANIAN_HOLIDAYS.get(jalali_date.year, set())
+    if date_tuple in holidays:
+        return True
+
+    # پنج‌شنبه و جمعه تعطیل هستند
+    return date_obj.weekday() in (2, 4)  # 0=دوشنبه ... 3=پنج‌شنبه, 4=جمعه
 
 
-# نمونه‌ای از کلاس برای استفاده راحت‌تر
-holiday_manager = HolidayManager()
+def is_working_day(date_obj):
+    """
+    بررسی اینکه آیا روز کاری است یا نه
 
+    Args:
+        date_obj: datetime object
 
-# ========================================
-# توابع کمکی (برای سادگی استفاده)
-# ========================================
-def is_holiday(date_str: str = None) -> bool:
-    """بررسی تعطیل بودن یک تاریخ"""
-    return holiday_manager.is_holiday(date_str)
+    Returns:
+        bool: True اگر روز کاری باشد
+    """
+    return not is_iranian_holiday(date_obj)
 
-
-def is_working_day(date_str: str = None) -> bool:
-    """بررسی روز کاری بودن"""
-    return holiday_manager.is_working_day(date_str)
-
-
-def get_next_working_day(date_str: str = None) -> str:
-    """پیدا کردن روز کاری بعدی"""
-    return holiday_manager.get_next_working_day(date_str)
-
-
-if __name__ == "__main__":
-    # تست‌های ساده
-    print("=== تست تعطیلات ===")
-    
-    # بررسی تعطیل بودن نوروز
-    print(f"1404-01-01 تعطیل است؟ {is_holiday('1404-01-01')}")
-    
-    # بررسی روز کاری
-    print(f"1404-01-15 روز کاری است؟ {is_working_day('1404-01-15')}")
-    
-    # تعطیلات در یک ماه
-    holidays_in_farvardin = holiday_manager.get_holidays_in_range('1404-01-01', '1404-01-31')
-    print(f"\nتعطیلات فروردین 1404:")
-    for h in holidays_in_farvardin:
-        desc = holiday_manager.get_holiday_description(h)
-        print(f"  {h}: {desc}")
-    
-    # روز کاری بعدی بعد از نوروز
-    next_working = get_next_working_day('1404-01-04')
-    print(f"\nاولین روز کاری بعد از نوروز: {next_working}")
-    
-    # شمارش روزهای کاری در یک ماه
-    working_days = holiday_manager.count_working_days('1404-01-01', '1404-01-31')
-    print(f"تعداد روزهای کاری در فروردین 1404: {working_days}")
