@@ -1,232 +1,256 @@
 """
-ماژول دریافت داده‌های بورس از API
+ماژول دریافت داده از هر دو API
+- API اول (قدیمی): داده‌های تاریخی و میانگین‌ها
+- API دوم (BrsApi): داده‌های لحظه‌ای و صف خرید/فروش
 """
+
 import requests
 import pandas as pd
-import time
-from typing import Optional, List
 import logging
+from typing import Optional, Dict, List, Tuple
+import time
 
-from config import API_BASE_URL, INDUSTRY_CODES, INDUSTRY_NAMES, CSV_COLUMNS
-
-# تنظیم لاگ
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class BourseDataFetcher:
-    """کلاس دریافت داده‌های بورس از API"""
-    
-    def __init__(self):
-        self.base_url = API_BASE_URL
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        self.industry_codes = INDUSTRY_CODES
-        self.industry_names = INDUSTRY_NAMES
-        self.columns = CSV_COLUMNS
-    
-    def fetch_industry_data(self, industry_code: str) -> Optional[pd.DataFrame]:
+class UnifiedDataFetcher:
+    """کلاس یکپارچه برای دریافت داده از هر دو API"""
+
+    def __init__(self, api1_base_url: str = None, api2_key: str = None):
         """
-        دریافت داده یک صنعت خاص
+        Args:
+            api1_base_url: آدرس پایه API اول (قدیمی)
+            api2_key: کلید API دوم (BrsApi.ir)
+        """
+        # API اول (قدیمی)
+        self.api1_base_url = api1_base_url
+        
+        # API دوم (BrsApi)
+        self.api2_key = api2_key
+        self.api2_base_url = "https://BrsApi.ir/Api/Tsetmc"
+        
+        # هدرها برای API دوم
+        self.headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 OPR/106.0.0.0",
+            "Accept": "application/json, text/plain, */*"
+        }
+
+    # ========================================
+    # API اول (قدیمی) - داده‌های تاریخی
+    # ========================================
+    
+    def fetch_from_api1(self, industry_codes: List[str] = None) -> Optional[pd.DataFrame]:
+        """
+        دریافت داده از API اول (قدیمی)
+        
+        این API شامل:
+        - میانگین‌های تاریخی (5 روز، 20 روز، 60 روز، ماهانه، 3 ماهه)
+        - بازده‌های تاریخی
+        - اطلاعات تکمیلی
         
         Args:
-            industry_code: کد صنعت (مثلاً '43')
+            industry_codes: لیست کدهای صنعت (اگر None باشد همه صنایع)
             
         Returns:
-            DataFrame حاوی داده‌های سهام آن صنعت یا None در صورت خطا
+            DataFrame یا None
         """
+        if not self.api1_base_url:
+            logger.warning("آدرس API اول تنظیم نشده است")
+            return None
+        
         try:
-            # تولید timestamp برای جلوگیری از cache
-            timestamp = int(time.time() * 1000)
-            url = f"{self.base_url}{industry_code}?_={timestamp}"
+            logger.info("📥 دریافت داده از API اول (تاریخی)...")
             
-            logger.info(f"در حال دریافت داده صنعت {industry_code} ({self.industry_names.get(industry_code, 'نامشخص')})")
+            # اینجا کد دریافت از API قدیمی شما قرار می‌گیره
+            # مثال:
+            # response = requests.get(f"{self.api1_base_url}/endpoint", timeout=30)
+            # data = response.json()
+            # df = pd.DataFrame(data)
             
-            # ارسال درخواست
-            response = requests.get(url, headers=self.headers, timeout=15)
-            response.raise_for_status()
+            # فعلاً برای نمونه:
+            df = pd.DataFrame()  # جایگزین با کد واقعی
             
-            # تبدیل JSON به DataFrame
-            data = response.json()
-            
-            if not data:
-                logger.warning(f"داده‌ای برای صنعت {industry_code} دریافت نشد")
-                return None
-            
-            df = pd.DataFrame(data, columns=self.columns)
-            
-            # اضافه کردن اطلاعات صنعت
-            df['industry_code'] = industry_code
-            df['industry_name'] = self.industry_names.get(industry_code, 'نامشخص')
-            
-            # تبدیل نوع داده‌ها برای عملکرد بهتر
-            df = self._convert_dtypes(df)
-            
-            logger.info(f"✅ {len(df)} سهم از صنعت {self.industry_names.get(industry_code)} دریافت شد")
-            
+            logger.info(f"✅ API اول: {len(df)} سهم دریافت شد")
             return df
             
-        except requests.exceptions.Timeout:
-            logger.error(f"❌ Timeout در دریافت داده صنعت {industry_code}")
+        except Exception as e:
+            logger.error(f"❌ خطا در دریافت از API اول: {e}")
             return None
+
+    # ========================================
+    # API دوم (BrsApi) - داده‌های لحظه‌ای
+    # ========================================
+    
+    def fetch_from_api2(self) -> Optional[pd.DataFrame]:
+        """
+        دریافت داده از API دوم (BrsApi)
+        
+        این API شامل:
+        - اطلاعات لحظه‌ای قیمت
+        - صف‌های خرید و فروش (5 سطح)
+        - حجم و ارزش حقیقی/حقوقی
+        - اطلاعات معاملات امروز
+        
+        Returns:
+            DataFrame یا None
+        """
+        if not self.api2_key:
+            logger.warning("کلید API دوم تنظیم نشده است")
+            return None
+        
+        url = f"{self.api2_base_url}/AllSymbols.php?key={self.api2_key}"
+        
+        try:
+            logger.info("📥 دریافت داده از API دوم (BrsApi - لحظه‌ای)...")
+            response = requests.get(url, headers=self.headers, timeout=30)
             
-        except requests.exceptions.RequestException as e:
-            logger.error(f"❌ خطا در دریافت داده صنعت {industry_code}: {e}")
+            if response.status_code == 200:
+                data = response.json()
+                
+                if isinstance(data, list) and len(data) > 0:
+                    df = pd.DataFrame(data)
+                    logger.info(f"✅ API دوم: {len(df)} نماد دریافت شد")
+                    return df
+                else:
+                    logger.error("❌ API دوم: داده خالی یا فرمت نامعتبر")
+                    return None
+            else:
+                logger.error(f"❌ API دوم: خطای {response.status_code}")
+                return None
+                
+        except requests.exceptions.Timeout:
+            logger.error("❌ API دوم: خطای Timeout")
             return None
+        except Exception as e:
+            logger.error(f"❌ خطا در دریافت از API دوم: {e}")
+            return None
+
+    def fetch_symbol_details_api2(self, symbol: str) -> Optional[Dict]:
+        """
+        دریافت جزئیات یک نماد از API دوم
+        
+        Args:
+            symbol: نام نماد
+            
+        Returns:
+            دیکشنری اطلاعات یا None
+        """
+        if not self.api2_key:
+            return None
+        
+        url = f"{self.api2_base_url}/SymbolDetails.php?key={self.api2_key}&symbol={symbol}"
+        
+        try:
+            response = requests.get(url, headers=self.headers, timeout=30)
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                logger.error(f"❌ خطا در دریافت {symbol}: {response.status_code}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ خطا در دریافت {symbol}: {e}")
+            return None
+
+    # ========================================
+    # دریافت از هر دو API همزمان
+    # ========================================
+    
+    def fetch_all_data(self, industry_codes: List[str] = None) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
+        """
+        دریافت داده از هر دو API
+        
+        Args:
+            industry_codes: لیست کدهای صنعت (فقط برای API اول)
+            
+        Returns:
+            Tuple[df_api1, df_api2]
+            - df_api1: DataFrame از API اول (داده‌های تاریخی)
+            - df_api2: DataFrame از API دوم (داده‌های لحظه‌ای)
+        """
+        logger.info("=" * 80)
+        logger.info("🚀 شروع دریافت داده از هر دو API")
+        logger.info("=" * 80)
+        
+        # دریافت از API اول (تاریخی)
+        df_api1 = self.fetch_from_api1(industry_codes)
+        
+        # دریافت از API دوم (لحظه‌ای)
+        df_api2 = self.fetch_from_api2()
+        
+        # گزارش نهایی
+        logger.info("\n" + "=" * 80)
+        logger.info("📊 خلاصه دریافت داده:")
+        logger.info(f"  • API اول (تاریخی): {len(df_api1) if df_api1 is not None else 0} سهم")
+        logger.info(f"  • API دوم (لحظه‌ای): {len(df_api2) if df_api2 is not None else 0} نماد")
+        logger.info("=" * 80)
+        
+        return df_api1, df_api2
+
+    def merge_data(self, df_api1: pd.DataFrame, df_api2: pd.DataFrame, on: str = 'symbol') -> pd.DataFrame:
+        """
+        ترکیب داده‌های دو API بر اساس نماد
+        
+        Args:
+            df_api1: DataFrame از API اول
+            df_api2: DataFrame از API دوم
+            on: ستون کلید برای join (معمولاً 'symbol')
+            
+        Returns:
+            DataFrame ترکیب شده
+        """
+        if df_api1 is None or df_api1.empty:
+            logger.warning("API اول خالی است، فقط داده API دوم برگردانده می‌شود")
+            return df_api2 if df_api2 is not None else pd.DataFrame()
+        
+        if df_api2 is None or df_api2.empty:
+            logger.warning("API دوم خالی است، فقط داده API اول برگردانده می‌شود")
+            return df_api1
+        
+        try:
+            # اگه API دوم ستون l18 داره، اونو به symbol تبدیل کن
+            if 'l18' in df_api2.columns and 'symbol' not in df_api2.columns:
+                df_api2 = df_api2.rename(columns={'l18': 'symbol'})
+            
+            # Merge با outer join تا همه داده‌ها حفظ بشن
+            merged = pd.merge(
+                df_api1, 
+                df_api2, 
+                on=on, 
+                how='outer',
+                suffixes=('_api1', '_api2')
+            )
+            
+            logger.info(f"✅ {len(merged)} سهم از ترکیب دو API")
+            return merged
             
         except Exception as e:
-            logger.error(f"❌ خطای غیرمنتظره در پردازش داده صنعت {industry_code}: {e}")
-            return None
-    
-    def fetch_all_industries(self, industry_codes: Optional[List[str]] = None, batch_size: int = 5) -> pd.DataFrame:
-        """
-        دریافت داده همه صنایع به صورت batch
-        
-        Args:
-            industry_codes: لیست کدهای صنعت (اگر None باشد، همه صنایع دریافت می‌شود)
-            batch_size: تعداد صنایع در هر batch (پیش‌فرض: 5)
-            
-        Returns:
-            DataFrame حاوی داده‌های تمام صنایع
-        """
-        if industry_codes is None:
-            industry_codes = self.industry_codes
-        
-        all_data = []
-        failed_industries = []
-        
-        total_industries = len(industry_codes)
-        logger.info(f"شروع دریافت داده از {total_industries} صنعت (هر batch: {batch_size} صنعت)...")
-        
-        # تقسیم به batch
-        for batch_num, i in enumerate(range(0, total_industries, batch_size), 1):
-            batch = industry_codes[i:i + batch_size]
-            
-            logger.info(f"📦 Batch {batch_num}/{(total_industries + batch_size - 1) // batch_size}: "
-                       f"دریافت {len(batch)} صنعت...")
-            
-            for code in batch:
-                df = self.fetch_industry_data(code)
-                
-                if df is not None and not df.empty:
-                    all_data.append(df)
-                else:
-                    failed_industries.append(code)
-                
-                # تاخیر کوتاه برای جلوگیری از فشار به سرور
-                time.sleep(0.3)
-            
-            # تاخیر بین batch‌ها
-            if i + batch_size < total_industries:
-                logger.info(f"⏸️  توقف 2 ثانیه بین batch‌ها...")
-                time.sleep(2)
-        
-        # گزارش نتیجه
-        if failed_industries:
-            logger.warning(f"⚠️  صنایع با خطا ({len(failed_industries)}): {', '.join(failed_industries)}")
-        
-        if not all_data:
-            logger.error("❌ هیچ داده‌ای دریافت نشد!")
+            logger.error(f"❌ خطا در ترکیب داده‌ها: {e}")
             return pd.DataFrame()
-        
-        # ادغام همه دیتافریم‌ها
-        final_df = pd.concat(all_data, ignore_index=True)
-        
-        logger.info(f"✅ جمع {len(final_df)} سهم از {len(all_data)}/{total_industries} صنعت دریافت شد")
-        
-        return final_df
+
+
+# ========================================
+# مثال استفاده
+# ========================================
+if __name__ == "__main__":
+    # تنظیم لاگ
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s"
+    )
     
-    def get_available_industries(self) -> dict:
-        """
-        دریافت لیست صنایع موجود
-        
-        Returns:
-            دیکشنری کدها و نام‌های صنایع
-        """
-        return self.industry_names
+    # ایجاد نمونه
+    fetcher = UnifiedDataFetcher(
+        api1_base_url="http://your-api1-url.com",  # آدرس API قدیمی
+        api2_key="YourApiKey"  # کلید BrsApi
+    )
     
-    def _convert_dtypes(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        تبدیل نوع داده ستون‌ها برای عملکرد بهتر
-        
-        Args:
-            df: DataFrame ورودی
-            
-        Returns:
-            DataFrame با نوع داده‌های صحیح و واحدهای تبدیل شده
-        """
-        # ستون‌های عددی (integer)
-        int_columns = [
-            'id', 'volume', 'value', 'first_price', 'high_price', 'low_price',
-            'last_price', 'final_price', 'diff_last_final',
-            'buy_order_value', 'sell_order_value', 'diff_buy_sell_order',
-            'avg_monthly_value', 'avg_3_month_value', 'marketcap'
-        ]
-        
-        # ستون‌های عددی (float)
-        float_columns = [
-            'first_price_change_percent', 'high_price_change_percent',
-            'low_price_change_percent', 'last_price_change_percent',
-            'final_price_change_percent', 'volatility',
-            'sarane_kharid', 'sarane_forosh', 'godrat_kharid', 'pol_hagigi',
-            'avg_5_day_pol_hagigi', 'avg_20_day_pol_hagigi', 'avg_60_day_pol_hagigi',
-            '5_day_pol_hagigi', '20_day_pol_hagigi', '60_day_pol_hagigi',
-            '5_day_godrat_kharid', '20_day_godrat_kharid',
-            'value_to_avg_monthly_value', 'value_to_avg_3_month_value',
-            '5_day_return', '20_day_return', '60_day_return', 'value_to_marketcap'
-        ]
-        
-        # تبدیل به int
-        for col in int_columns:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype('int64')
-        
-        # تبدیل به float
-        for col in float_columns:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0).astype('float64')
-        
-        # symbol باید string بمونه
-        if 'symbol' in df.columns:
-            df['symbol'] = df['symbol'].astype(str)
-        
-        # ========================================
-        # تبدیل واحدها برای محاسبات راحت‌تر
-        # ========================================
-        
-        # ستون‌های مالی بزرگ: تقسیم بر 10 میلیارد (به میلیارد تومان)
-        billion_columns = [
-            'pol_hagigi', 'value', 'marketcap',
-            'buy_order_value', 'sell_order_value', 'diff_buy_sell_order',
-            'avg_5_day_pol_hagigi', 'avg_20_day_pol_hagigi', 'avg_60_day_pol_hagigi',
-            '5_day_pol_hagigi', '20_day_pol_hagigi', '60_day_pol_hagigi',
-            'avg_monthly_value', 'avg_3_month_value'
-        ]
-        
-        for col in billion_columns:
-            if col in df.columns:
-                df[col] = df[col] / 10_000_000_000  # تبدیل به میلیارد تومان
-        
-        # سرانه خرید و فروش: تقسیم بر 10 میلیون (به میلیون تومان)
-        million_columns = [
-            'sarane_kharid', 'sarane_forosh'
-        ]
-        
-        for col in million_columns:
-            if col in df.columns:
-                df[col] = df[col] / 10_000_000  # تبدیل به میلیون تومان
-        
-        # ========================================
-        # محاسبه ستون‌های جدید
-        # ========================================
-        
-        # نسبت ورود پول حقیقی به میانگین ارزش معاملات ماهانه
-        if 'pol_hagigi' in df.columns and 'avg_monthly_value' in df.columns:
-            df['pol_hagigi_to_avg_monthly_value'] = df.apply(
-                lambda row: row['pol_hagigi'] / row['avg_monthly_value'] 
-                if row['avg_monthly_value'] != 0 else 0, 
-                axis=1
-            )
-        
-        return df
+    # دریافت از هر دو API
+    df_api1, df_api2 = fetcher.fetch_all_data()
+    
+    # نمایش نمونه
+    if df_api2 is not None and not df_api2.empty:
+        print("\n📊 نمونه داده API دوم:")
+        print(df_api2.head(2))
+        print(f"\n📈 ستون‌های API دوم: {df_api2.columns.tolist()}")
