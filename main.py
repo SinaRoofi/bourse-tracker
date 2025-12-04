@@ -20,7 +20,7 @@ from config import (
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
    GIST_ID,
-   GIST_TOKEN
+   GIST_TOKEN,
     validate_config,
 )
 from utils.holidays import is_holiday, is_working_day
