@@ -44,6 +44,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          BRSAPI_KEY: ${{ secrets.BRSAPI_KEY }}
         run: |
           python main.py
 
@@ -56,7 +57,16 @@ jobs:
           path: bourse_tracker.log
           retention-days: 7
 
-      # 7. اعلان در صورت خطا
+      # 7. بروزرسانی Gist
+      - name: "✏️ Update Gist"
+        env:
+          GIST_ID: ${{ secrets.GIST_ID }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+        run: |
+          echo "در حال آپدیت Gist..."
+          python scripts/update_gist.py
+
+      # 8. اعلان در صورت خطا
       - name: "❌ Notify on failure"
         if: failure()
         run: |
