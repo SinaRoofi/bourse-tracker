@@ -22,7 +22,7 @@ BRSAPI_KEY = os.getenv('BRSAPI_KEY')      # کلید BrsApi
 # ========================================
 # GitHub Gist
 # ========================================
-GITHUB_TOKEN = os.getenv('GIST_TOKEN')
+GIST_TOKEN = os.getenv('GIST_TOKEN')
 GIST_ID = os.getenv('GIST_ID')
 
 # ========================================
