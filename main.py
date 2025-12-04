@@ -19,6 +19,8 @@ from config import (
     BRSAPI_KEY,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
+   GIST_ID,
+   GIST_TOKEN
     validate_config,
 )
 from utils.holidays import is_holiday, is_working_day
@@ -139,9 +141,7 @@ def main():
 
         logger.info("\n📤 شروع ارسال هشدارها به تلگرام...")
         alert = TelegramAlert()
-        GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
-        GIST_ID = os.getenv('GIST_ID')  # اختیاری
-        alert_manager = GistAlertManager(GITHUB_TOKEN, GIST_ID)
+        alert_manager = GistAlertManager(GIST_TOKEN, GIST_ID)
 
         total_sent = 0
         total_skipped = 0
