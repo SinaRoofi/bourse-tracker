@@ -4,12 +4,12 @@
 ماژول ابزارهای پروژه Bourse Tracker
 """
 
-from .data_fetcher import BourseDataFetcher
+from .data_fetcher import UnifiedDataFetcher
 from .data_processor import BourseDataProcessor
 from .alerts import TelegramAlert
 
 __all__ = [
-    'BourseDataFetcher',
+    'UnifiedDataFetcher',
     'BourseDataProcessor', 
     'TelegramAlert'
 ]
