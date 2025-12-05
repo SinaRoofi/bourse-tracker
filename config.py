@@ -16,7 +16,7 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 # ========================================
 # تنظیمات API
 # ========================================
-API_BASE_URL = os.getenv('API_BASE_URL')  # API اول (https://tradersarena.ir)
+API_BASE_URL = os.getenv('API_BASE_URL')  # API اول 
 BRSAPI_KEY = os.getenv('BRSAPI_KEY')      # کلید BrsApi
 
 # ========================================
