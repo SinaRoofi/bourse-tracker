@@ -83,6 +83,20 @@ INDUSTRY_NAMES = {
 # تنظیمات فیلترها
 # ========================================
 
+# فیلتر 1: قدرت خرید قوی
+STRONG_BUYING_CONFIG = {
+    'min_value_to_avg_monthly': 1.0,
+    'min_sarane_kharid': 5.0,  # میلیون تومان
+    'min_godrat_kharid': 1.0,
+    'godrat_greater_than_5day': True,  # قدرت خرید > میانگین 5 روز
+}
+
+# فیلتر 2: کراس سرانه خرید
+SARANE_CROSS_CONFIG = {
+    'sarane_kharid_greater_than_forosh': True,
+    'min_value_to_avg_monthly': 0.5,  # شرط جدید
+}
+
 # فیلتر 3: نمادهای خاص
 WATCHLIST_SYMBOLS = {
     'فولاد': 2.99,
@@ -91,17 +105,13 @@ WATCHLIST_SYMBOLS = {
     'فملی': 2.99,
 }
 
-# فیلتر 4: صف خرید سنگین در سقف
-CEILING_FILTER_CONFIG = {
-    'price_range_percent': 5.0,  # دامنه نوسان (درصد)
-    'min_buy_queue_value': 1_000_000_000,  # حداقل صف خرید (1 میلیارد تومان)
-    'max_sell_queue_value': 10_000_000,  # حداکثر صف فروش (10 میلیون تومان)
-}
+# فیلتر 4: رزرو شده
+FILTER_4_CONFIG = {}
 
 # فیلتر 5: نسبت پول حقیقی
 POL_HAGIGI_FILTER_CONFIG = {
     'min_pol_to_value_ratio': 0.3,
-    'min_sarane_kharid': 50,
+    'min_sarane_kharid': 5.0,  # میلیون تومان
     'min_godrat_kharid': 1.5,
 }
 
@@ -122,7 +132,8 @@ SWING_TRADE_CONFIG = {
     'min_allowed_price': -3.0,
     'max_last_change_percent': -2.0,
     'min_godrat_kharid': 2.0,
-    'min_sarane_kharid': 50,
+    'min_sarane_kharid': 5.0,  # میلیون تومان
+    'min_value_to_avg_monthly': 1.0,
 }
 
 # فیلتر 9: یک ساعت اول
@@ -134,7 +145,9 @@ FIRST_HOUR_CONFIG = {
 
 # فیلتر 10: صف خرید میلیاردی
 HEAVY_BUY_QUEUE_CONFIG = {
-    'min_buy_order': 70,  # حداقل buy_order به میلیون تومان
+    'min_buy_order': 70,  # میلیون تومان
+    'min_buy_queue_value': 10.0,  # میلیارد تومان - شرط جدید
+    'price_at_ceiling': True,  # آخرین قیمت = سقف
 }
 
 # ========================================
