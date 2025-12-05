@@ -1,5 +1,6 @@
 """
 مدیریت هشدارها با ذخیره در GitHub Gist
+نسخه بهبود یافته با Lock و Retry برای جلوگیری از 409 Conflict
 """
 import json
 import requests
@@ -7,6 +8,8 @@ from datetime import datetime
 import jdatetime
 import logging
 from typing import Optional
+import time
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -23,51 +26,125 @@ class GistAlertManager:
             "Accept": "application/vnd.github.v3+json"
         }
         self.today_jalali = jdatetime.date.today().strftime("%Y-%m-%d")
+        
+        # اضافه کردن Lock برای جلوگیری از race condition
+        self._lock = threading.Lock()
+        
+        # Cache محلی برای کاهش تعداد درخواست‌های GET
+        self._cache = None
+        self._cache_time = 0
+        self._cache_duration = 5  # ثانیه
 
         if not self.gist_id:
             self._create_new_gist()
 
-    def _load_gist_content(self) -> dict:
-        """بارگذاری محتوای Gist"""
+    def _load_gist_content(self, use_cache: bool = True) -> dict:
+        """بارگذاری محتوای Gist با امکان استفاده از cache"""
         if not self.gist_id:
             return {}
+        
+        # استفاده از cache اگر هنوز معتبر است
+        current_time = time.time()
+        if use_cache and self._cache is not None and (current_time - self._cache_time) < self._cache_duration:
+            return self._cache.copy()
+        
         try:
             url = f"{self.api_url}/{self.gist_id}"
             response = requests.get(url, headers=self.headers, timeout=10)
             if response.status_code == 200:
                 gist_data = response.json()
                 content = gist_data["files"].get("alert_cache.json", {}).get("content", "{}")
-                return json.loads(content)
+                data = json.loads(content)
+                
+                # به‌روزرسانی cache
+                self._cache = data
+                self._cache_time = current_time
+                
+                return data
             logger.error(f"❌ خطای دریافت Gist: {response.status_code}")
         except Exception as e:
             logger.error(f"❌ خطا در بارگذاری Gist: {e}")
         return {}
 
-    def _save_to_gist(self, data: dict):
-        """ذخیره داده در Gist"""
+    def _save_to_gist(self, data: dict, max_retries: int = 5) -> bool:
+        """
+        ذخیره داده در Gist با retry mechanism
+        
+        Args:
+            data: داده‌ای که باید ذخیره شود
+            max_retries: تعداد تلاش مجدد در صورت خطا
+        
+        Returns:
+            True در صورت موفقیت
+        """
         if not self.gist_id:
             logger.error("❌ Gist ID موجود نیست")
             return False
-        try:
-            # نگهداری فقط ۳ روز اخیر
-            sorted_days = sorted(data.keys(), reverse=True)[:3]
-            new_data = {day: data[day] for day in sorted_days}
+        
+        # استفاده از Lock برای جلوگیری از همزمان بودن درخواست‌ها
+        with self._lock:
+            for attempt in range(max_retries):
+                try:
+                    # در صورت Conflict، داده جدید را بخوانیم
+                    if attempt > 0:
+                        logger.warning(f"🔄 تلاش مجدد {attempt}/{max_retries}...")
+                        time.sleep(0.5 * attempt)  # exponential backoff
+                        # خواندن آخرین نسخه Gist
+                        current_data = self._load_gist_content(use_cache=False)
+                        # ادغام داده‌های جدید با داده‌های موجود
+                        if self.today_jalali in current_data and self.today_jalali in data:
+                            # جلوگیری از duplicate
+                            existing_alerts = {
+                                (a["symbol"], a["alert_type"]) 
+                                for a in current_data[self.today_jalali]
+                            }
+                            new_alerts = [
+                                a for a in data[self.today_jalali]
+                                if (a["symbol"], a["alert_type"]) not in existing_alerts
+                            ]
+                            current_data[self.today_jalali].extend(new_alerts)
+                            data = current_data
+                        else:
+                            data.update(current_data)
+                    
+                    # نگهداری فقط ۳ روز اخیر
+                    sorted_days = sorted(data.keys(), reverse=True)[:3]
+                    new_data = {day: data[day] for day in sorted_days}
 
-            payload = {
-                "files": {
-                    "alert_cache.json": {
-                        "content": json.dumps(new_data, ensure_ascii=False, indent=2)
+                    payload = {
+                        "files": {
+                            "alert_cache.json": {
+                                "content": json.dumps(new_data, ensure_ascii=False, indent=2)
+                            }
+                        }
                     }
-                }
-            }
-            url = f"{self.api_url}/{self.gist_id}"
-            response = requests.patch(url, headers=self.headers, json=payload, timeout=10)
-            if response.status_code == 200:
-                return True
-            logger.error(f"❌ خطای ذخیره در Gist: {response.status_code}")
-        except Exception as e:
-            logger.error(f"❌ خطا در ذخیره Gist: {e}")
-        return False
+                    
+                    url = f"{self.api_url}/{self.gist_id}"
+                    response = requests.patch(url, headers=self.headers, json=payload, timeout=10)
+                    
+                    if response.status_code == 200:
+                        # به‌روزرسانی cache
+                        self._cache = new_data
+                        self._cache_time = time.time()
+                        
+                        if attempt > 0:
+                            logger.info(f"✅ ذخیره موفق در تلاش {attempt + 1}")
+                        return True
+                    elif response.status_code == 409:
+                        # Conflict - ادامه به تلاش بعدی
+                        logger.warning(f"⚠️ Conflict (409) در تلاش {attempt + 1}/{max_retries}")
+                        continue
+                    else:
+                        logger.error(f"❌ خطای ذخیره در Gist: {response.status_code}")
+                        return False
+                        
+                except Exception as e:
+                    logger.error(f"❌ خطا در ذخیره Gist (تلاش {attempt + 1}): {e}")
+                    if attempt == max_retries - 1:
+                        return False
+            
+            logger.error(f"❌ ذخیره ناموفق بعد از {max_retries} تلاش")
+            return False
 
     def _create_new_gist(self):
         """ایجاد Gist جدید"""
@@ -101,13 +178,54 @@ class GistAlertManager:
                 return False
         return True
 
-    def mark_as_sent(self, symbol: str, alert_type: str):
-        """علامت‌گذاری هشدار به عنوان ارسال شده"""
-        data = self._load_gist_content()
+    def mark_as_sent(self, symbol: str, alert_type: str) -> bool:
+        """
+        علامت‌گذاری هشدار به عنوان ارسال شده
+        
+        Returns:
+            True در صورت موفقیت
+        """
+        data = self._load_gist_content(use_cache=False)  # همیشه آخرین نسخه را بخوان
+        
         if self.today_jalali not in data:
             data[self.today_jalali] = []
-        data[self.today_jalali].append({"symbol": symbol, "alert_type": alert_type})
-        self._save_to_gist(data)
+        
+        # جلوگیری از duplicate
+        existing_alerts = {(a["symbol"], a["alert_type"]) for a in data[self.today_jalali]}
+        if (symbol, alert_type) not in existing_alerts:
+            data[self.today_jalali].append({"symbol": symbol, "alert_type": alert_type})
+        
+        return self._save_to_gist(data)
+
+    def mark_multiple_as_sent(self, alerts: list) -> bool:
+        """
+        علامت‌گذاری چندین هشدار به صورت یکجا (بهتر از تک‌تک)
+        
+        Args:
+            alerts: لیستی از tuple های (symbol, alert_type)
+        
+        Returns:
+            True در صورت موفقیت
+        """
+        data = self._load_gist_content(use_cache=False)
+        
+        if self.today_jalali not in data:
+            data[self.today_jalali] = []
+        
+        # جلوگیری از duplicate
+        existing_alerts = {(a["symbol"], a["alert_type"]) for a in data[self.today_jalali]}
+        
+        new_alerts = [
+            {"symbol": symbol, "alert_type": alert_type}
+            for symbol, alert_type in alerts
+            if (symbol, alert_type) not in existing_alerts
+        ]
+        
+        if new_alerts:
+            data[self.today_jalali].extend(new_alerts)
+            return self._save_to_gist(data)
+        
+        return True
 
     def get_today_stats(self) -> dict:
         """دریافت آمار هشدارهای امروز"""
