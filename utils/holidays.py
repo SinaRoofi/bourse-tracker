@@ -45,21 +45,12 @@ class HolidayManager:
         self.holidays_set: Set[str] = set(ALL_HOLIDAYS)
 
     def is_holiday(self, date_str: str = None) -> bool:
-        """موقتاً همه روزها کاری در نظر گرفته شوند"""
+        """موقتاً همه روزها غیرتعطیل در نظر گرفته شوند"""
         return False
 
     def is_working_day(self, date_str: str = None) -> bool:
-        if date_str is None:
-            today = jdatetime.date.today()
-            date_str = today.strftime("%Y-%m-%d")
-        else:
-            year, month, day = map(int, date_str.split("-"))
-            today = jdatetime.date(year, month, day)
-
-        if today.weekday() == 5:  # جمعه
-            return False
-
-        return not self.is_holiday(date_str)
+        """موقتاً همه روزها کاری در نظر گرفته شوند"""
+        return True
 
     def get_holidays_in_range(self, start_date: str, end_date: str) -> List[str]:
         holidays_in_range = []
