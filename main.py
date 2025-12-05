@@ -13,6 +13,7 @@ from datetime import datetime
 import jdatetime
 import pytz
 import os
+import asyncio
 
 from config import (
     MARKET_START_TIME,
@@ -46,6 +47,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# تنظیمات گروه‌بندی پیام‌ها
+STOCKS_PER_MESSAGE = 5  # تعداد سهم در هر پیام
+
 # ========================================
 # توابع کمکی
 # ========================================
@@ -77,9 +81,15 @@ def is_market_open() -> bool:
     logger.info(f"✅ بازار باز است - {today_str} {current_time}")
     return True
 
-def send_alerts_for_filters(alert: TelegramAlert, alert_manager: GistAlertManager, filters_results: dict, api_name: str) -> tuple:
+def chunk_dataframe(df, chunk_size):
+    """تقسیم DataFrame به چانک‌های کوچکتر"""
+    for i in range(0, len(df), chunk_size):
+        yield df.iloc[i:i + chunk_size]
+
+async def send_alerts_for_filters_async(alert: TelegramAlert, alert_manager: GistAlertManager, 
+                                         filters_results: dict, api_name: str) -> tuple:
     """
-    ارسال هشدارها برای فیلترهای یک API
+    ارسال هشدارها برای فیلترهای یک API (نسخه async)
     
     Args:
         alert: شیء TelegramAlert
@@ -104,26 +114,36 @@ def send_alerts_for_filters(alert: TelegramAlert, alert_manager: GistAlertManage
 
         logger.info(f"\n🔍 پردازش فیلتر {filter_name}: {len(filtered_df)} سهم")
 
-        for idx, row in filtered_df.iterrows():
-            symbol = row['symbol']
-            
-            # بررسی اینکه آیا قبلاً امروز ارسال شده یا نه
-            if not alert_manager.should_send_alert(symbol, filter_name):
-                logger.info(f"⏭️  {symbol}: قبلاً امروز ارسال شده")
-                skipped_count += 1
-                continue
+        # گروه‌بندی سهام - 5 سهم در هر پیام
+        for chunk_idx, chunk_df in enumerate(chunk_dataframe(filtered_df, STOCKS_PER_MESSAGE), 1):
+            # بررسی spam برای همه سهام در chunk
+            symbols_to_send = []
+            for idx, row in chunk_df.iterrows():
+                symbol = row['symbol']
+                if not alert_manager.should_send_alert(symbol, filter_name):
+                    logger.info(f"⏭️  {symbol}: قبلاً امروز ارسال شده")
+                    skipped_count += 1
+                else:
+                    symbols_to_send.append(symbol)
 
-            # ارسال هشدار برای یک سهم
-            single_row_df = row.to_frame().T
-            success = alert.send_filter_alert_sync(single_row_df, filter_name)
+            # اگر سهمی برای ارسال باشد
+            if symbols_to_send:
+                # فیلتر کردن فقط سهم‌هایی که باید ارسال بشن
+                chunk_to_send = chunk_df[chunk_df['symbol'].isin(symbols_to_send)]
+                
+                # ارسال یک پیام برای گروه
+                success = await alert.send_filter_alert(chunk_to_send, filter_name)
 
-            if success:
-                # علامت‌گذاری به عنوان ارسال شده در Gist
-                alert_manager.mark_as_sent(symbol, filter_name)
-                sent_count += 1
-                logger.info(f"✅ {symbol} - {filter_name}: ارسال شد")
+                if success:
+                    # علامت‌گذاری همه به عنوان ارسال شده
+                    for symbol in symbols_to_send:
+                        alert_manager.mark_as_sent(symbol, filter_name)
+                    sent_count += len(symbols_to_send)
+                    logger.info(f"✅ گروه {chunk_idx} از {filter_name}: {len(symbols_to_send)} سهم ارسال شد")
+                else:
+                    logger.error(f"❌ گروه {chunk_idx} از {filter_name}: خطا در ارسال")
             else:
-                logger.error(f"❌ {symbol} - {filter_name}: خطا در ارسال")
+                logger.info(f"⏭️  گروه {chunk_idx}: همه قبلاً ارسال شده‌اند")
 
     return sent_count, skipped_count
 
@@ -131,7 +151,8 @@ def send_alerts_for_filters(alert: TelegramAlert, alert_manager: GistAlertManage
 # تابع اصلی
 # ========================================
 
-def main():
+async def main_async():
+    """تابع اصلی async"""
     logger.info("=" * 80)
     logger.info("🚀 شروع Bourse Tracker")
     logger.info("=" * 80)
@@ -170,7 +191,7 @@ def main():
 
         # ارسال هشدارهای API اول (فیلترهای 1-9)
         if 'api1' in all_results and all_results['api1']:
-            sent, skipped = send_alerts_for_filters(
+            sent, skipped = await send_alerts_for_filters_async(
                 alert, 
                 alert_manager, 
                 all_results['api1'], 
@@ -181,7 +202,7 @@ def main():
 
         # ارسال هشدارهای API دوم (فیلتر 10)
         if 'api2' in all_results and all_results['api2']:
-            sent, skipped = send_alerts_for_filters(
+            sent, skipped = await send_alerts_for_filters_async(
                 alert, 
                 alert_manager, 
                 all_results['api2'], 
@@ -213,6 +234,10 @@ def main():
     except Exception as e:
         logger.error(f"\n❌ خطای غیرمنتظره: {e}", exc_info=True)
         sys.exit(1)
+
+def main():
+    """wrapper برای اجرای async"""
+    asyncio.run(main_async())
 
 # ========================================
 # نقطه ورود
