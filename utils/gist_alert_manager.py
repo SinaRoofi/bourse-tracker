@@ -1,3 +1,6 @@
+"""
+مدیریت هشدارها با ذخیره در GitHub Gist
+"""
 import json
 import requests
 from datetime import datetime, timedelta
@@ -9,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class GistAlertManager:
     """مدیریت هشدارها با ذخیره مستقیم در GitHub Gist، ۳ روز اخیر نگه داشته می‌شود"""
-    
+
     def __init__(self, github_token: str, gist_id: str = None):
         self.github_token = github_token
         self.gist_id = gist_id
@@ -19,11 +22,12 @@ class GistAlertManager:
             "Accept": "application/vnd.github.v3+json"
         }
         self.today_jalali = jdatetime.date.today().strftime("%Y-%m-%d")
-        
+
         if not self.gist_id:
             self._create_new_gist()
-    
+
     def _load_gist_content(self) -> dict:
+        """بارگذاری محتوای Gist"""
         if not self.gist_id:
             return {}
         try:
@@ -37,8 +41,9 @@ class GistAlertManager:
         except Exception as e:
             logger.error(f"❌ خطا در بارگذاری Gist: {e}")
         return {}
-    
+
     def _save_to_gist(self, data: dict):
+        """ذخیره داده در Gist"""
         if not self.gist_id:
             logger.error("❌ Gist ID موجود نیست")
             return False
@@ -46,7 +51,7 @@ class GistAlertManager:
             # نگهداری فقط ۳ روز اخیر
             sorted_days = sorted(data.keys(), reverse=True)[:3]
             new_data = {day: data[day] for day in sorted_days}
-            
+
             payload = {
                 "files": {
                     "alert_cache.json": {
@@ -62,8 +67,9 @@ class GistAlertManager:
         except Exception as e:
             logger.error(f"❌ خطا در ذخیره Gist: {e}")
         return False
-    
+
     def _create_new_gist(self):
+        """ایجاد Gist جدید"""
         initial_data = {self.today_jalali: []}
         payload = {
             "description": "Bourse Tracker Alert Cache - هشدارهای ارسال شده بورس",
@@ -86,21 +92,24 @@ class GistAlertManager:
             raise
 
     def should_send_alert(self, symbol: str, alert_type: str) -> bool:
+        """بررسی اینکه آیا باید هشدار ارسال شود یا نه"""
         data = self._load_gist_content()
         today_alerts = data.get(self.today_jalali, [])
         for alert in today_alerts:
             if alert["symbol"] == symbol and alert["alert_type"] == alert_type:
                 return False
         return True
-    
+
     def mark_as_sent(self, symbol: str, alert_type: str):
+        """علامت‌گذاری هشدار به عنوان ارسال شده"""
         data = self._load_gist_content()
         if self.today_jalali not in data:
             data[self.today_jalali] = []
         data[self.today_jalali].append({"symbol": symbol, "alert_type": alert_type})
         self._save_to_gist(data)
-    
+
     def get_today_stats(self) -> dict:
+        """دریافت آمار هشدارهای امروز"""
         data = self._load_gist_content()
         today_alerts = data.get(self.today_jalali, [])
         alert_counts = {}
@@ -113,8 +122,9 @@ class GistAlertManager:
             "alerts_by_type": alert_counts,
             "gist_id": self.gist_id
         }
-    
+
     def get_gist_url(self) -> Optional[str]:
+        """دریافت آدرس Gist"""
         if self.gist_id:
             return f"https://gist.github.com/{self.gist_id}"
         return None
