@@ -86,15 +86,15 @@ class TelegramAlert:
             else:
                 message += "\n\n"
             if "value" in row and "value_to_avg_monthly_value" in row:
-                message += f"💰 ارزش معاملات: {row['value']} تومان\n"
+                message += f"💰 ارزش معاملات: {row['value']:,0f} تومان\n"
                 message += f"📊 نسبت به میانگین ماهانه: {row['value_to_avg_monthly_value']:.2f}x\n"
             if "godrat_kharid" in row:
                 message += f"💪 قدرت خریدار: {row['godrat_kharid']:.2f}\n"
             if "sarane_kharid" in row:
-                message += f"📈 سرانه خرید: {row['sarane_kharid']} تومان\n"
+                message += f"📈 سرانه خرید: {row['sarane_kharid']:,0f} تومان\n"
             if "pol_hagigi" in row:
                 emoji = "✅" if row["pol_hagigi"] > 0 else "⚠️"
-                message += f"{emoji} ورود پول حقیقی: {row['pol_hagigi']} تومان\n"
+                message += f"{emoji} ورود پول حقیقی: {row['pol_hagigi']:,0f} تومان\n"
             message += "\n"
         date_str, time_str = self._current_tehran_jdatetime()
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
@@ -120,7 +120,7 @@ class TelegramAlert:
             if "final_price" in row:
                 message += f"💵 قیمت پایانی: {row['final_price']}\n"
             if "value" in row:
-                message += f"💰 ارزش: {row['value']} میلیارد تومان\n"
+                message += f"💰 ارزش: {row['value']:,0f} میلیارد تومان\n"
             message += "\n"
         date_str, time_str = self._current_tehran_jdatetime()
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
@@ -141,7 +141,7 @@ class TelegramAlert:
             if "final_price" in row:
                 message += f"💰 قیمت پایانی: {row['final_price']}\n"
             if "buy_order_value" in row:
-                message += f"🟢 <b>ارزش صف خرید: {row['buy_order_value']} تومان</b>\n"
+                message += f"🟢 <b>ارزش صف خرید: {row['buy_order_value']:0f} میلیون تومان</b>\n"
             if "sell_order_value" in row:
                 sell_val = row["sell_order_value"]
                 message += f"🔴 ارزش صف فروش: {sell_val if sell_val !=0 else 'صفر'}\n"
@@ -168,18 +168,17 @@ class TelegramAlert:
             emoji_pol = "🟢" if row.get("pol_hagigi", 0) > 0 else "🔴"
             message += f"{emoji_pol} ورود پول حقیقی: {row.get('pol_hagigi', 0)} میلیارد تومان\n"
             if "value" in row:
-                message += f"💰 ارزش معاملات: {row['value']} میلیارد تومان\n"
+                message += f"💰 ارزش معاملات: {row['value']:0f} میلیارد تومان\n"
             if "godrat_kharid" in row:
                 message += f"💪 قدرت خریدار: {row['godrat_kharid']:.2f}\n"
             if "sarane_kharid" in row:
-                message += f"📈 سرانه خرید: {row['sarane_kharid']} میلیون تومان\n"
+                message += f"📈 سرانه خرید: {row['sarane_kharid']:,0f} میلیون تومان\n"
             if "last_price_change_percent" in row:
                 emoji_price = "🟢" if row["last_price_change_percent"] > 0 else "🔴"
                 message += f"{emoji_price} تغییر قیمت: {row['last_price_change_percent']:+.2f}%\n"
             if "last_price" in row:
                 message += f"💵 آخرین قیمت: {row['last_price']}\n"
-            if "volume" in row:
-                message += f"📦 حجم: {row['volume']}\n"
+            
             message += "\n"
         date_str, time_str = self._current_tehran_jdatetime()
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
@@ -204,12 +203,12 @@ class TelegramAlert:
                 if "final_price_change_percent" in row:
                     message += f"   (آخرین: {row.get('last_price_change_percent',0):.2f}% | پایانی: {row['final_price_change_percent']:.2f}%)\n"
             if "value" in row and "value_to_avg_monthly_value" in row:
-                message += f"💵 ارزش معاملات: {row['value']}\n📊 نسبت به میانگین ماهانه: {row['value_to_avg_monthly_value']:.2f}x\n"
+                message += f"💵 ارزش معاملات: {row['value']:,0f}\n📊 نسبت به میانگین ماهانه: {row['value_to_avg_monthly_value']:.2f}x\n"
             if "pol_hagigi" in row:
                 emoji_pol = "🟢" if row['pol_hagigi'] > 0 else "🔴"
-                message += f"{emoji_pol} ورود پول حقیقی: {row['pol_hagigi']}\n"
+                message += f"{emoji_pol} ورود پول حقیقی: {row['pol_hagigi']:,0f}\n"
             if "sarane_kharid" in row:
-                message += f"📈 سرانه خرید: {row['sarane_kharid']}\n"
+                message += f"📈 سرانه خرید: {row['sarane_kharid']:,0f}\n"
             if "godrat_kharid" in row:
                 message += f"💪 قدرت خرید: {row['godrat_kharid']:.2f}\n"
             message += "\n"
@@ -233,14 +232,14 @@ class TelegramAlert:
         for _, row in df.iterrows():
             message += f"📌 <b>{row['symbol']}</b>\n"
             if "buy_queue_value" in row:
-                message += f"🟢 <b>صف خرید: {row['buy_queue_value']} تومان</b>\n"
+                message += f"🟢 <b>صف خرید: {row['buy_queue_value']:,0f} تومان</b>\n"
             if "last_price" in row:
-                message += f"💰 قیمت آخرین: {row['last_price']} ریال\n"
+                message += f"💰 قیمت آخرین: {row['last_price']}\n"
             if "last_price_change_percent" in row:
                 emoji = "🟢" if row["last_price_change_percent"] > 0 else "🔴"
                 message += f"{emoji} تغییر: {row['last_price_change_percent']:+.2f}%\n"
             if "value" in row:
-                message += f"💵 ارزش معاملات: {row['value']} میلیارد تومان\n"
+                message += f"💵 ارزش معاملات: {row['value']:,0f} میلیارد تومان\n"
             message += "\n"
         date_str, time_str = self._current_tehran_jdatetime()
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
