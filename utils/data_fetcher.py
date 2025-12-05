@@ -19,11 +19,11 @@ class UnifiedDataFetcher:
     def __init__(self, api1_base_url: str = None, api2_key: str = None):
         """
         Args:
-            api1_base_url: آدرس پایه API اول (TradersArena) - پیش‌فرض: https://tradersarena.ir
+            api1_base_url: آدرس پایه API اول
             api2_key: کلید API دوم (BrsApi.ir)
         """
-        # API اول (TradersArena)
-        self.api1_base_url = api1_base_url or "https://tradersarena.ir"
+        # API اول
+        self.api1_base_url = api1_base_url 
 
         # API دوم (BrsApi)
         self.api2_key = api2_key
@@ -374,7 +374,7 @@ if __name__ == "__main__":
 
     # ایجاد نمونه
     fetcher = UnifiedDataFetcher(
-        api1_base_url="https://tradersarena.ir",  # پیش‌فرض
+        api1_base_url="API_BASE_URL",  # پیش‌فرض
         api2_key="YOUR_BRSAPI_KEY"  # کلید BrsApi
     )
 
