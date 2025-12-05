@@ -157,10 +157,10 @@ class BourseDataProcessor:
         """
         فیلتر 1: سهام با قدرت خرید قوی
         
-        شرایط:
-        - ارزش امروز به میانگین ماهانه > 1
-        - سرانه خرید > 50 میلیون تومان (واحد: میلیون)
-        - قدرت خرید > 1
+        شرایط (از config):
+        - ارزش امروز به میانگین ماهانه > min_value_to_avg_monthly
+        - سرانه خرید > min_sarane_kharid (میلیون تومان)
+        - قدرت خرید > min_godrat_kharid
         - قدرت خرید امروز > میانگین 5 روز
         
         Args:
@@ -172,12 +172,15 @@ class BourseDataProcessor:
         if df.empty:
             return df
 
+        from config import STRONG_BUYING_CONFIG
+        config = STRONG_BUYING_CONFIG
+
         logger.info("اعمال فیلتر 1: قدرت خرید قوی")
 
         filtered = df[
-            (df['value_to_avg_monthly_value'] > 1) &
-            (df['sarane_kharid'] > 5.0) &
-            (df['godrat_kharid'] > 1) &
+            (df['value_to_avg_monthly_value'] > config['min_value_to_avg_monthly']) &
+            (df['sarane_kharid'] > config['min_sarane_kharid']) &
+            (df['godrat_kharid'] > config['min_godrat_kharid']) &
             (df['godrat_kharid'] > df['5_day_godrat_kharid'])
         ].copy()
 
@@ -193,8 +196,9 @@ class BourseDataProcessor:
         """
         فیلتر 2: کراس سرانه خرید
         
-        شرایط:
+        شرایط (از config):
         - سرانه خرید > سرانه فروش
+        - ارزش معاملات / میانگین ماهانه >= min_value_to_avg_monthly
         
         Args:
             df: DataFrame کل سهام از API اول
@@ -205,10 +209,14 @@ class BourseDataProcessor:
         if df.empty:
             return df
 
+        from config import SARANE_CROSS_CONFIG
+        config = SARANE_CROSS_CONFIG
+
         logger.info("اعمال فیلتر 2: کراس سرانه خرید")
 
         filtered = df[
-            df['sarane_kharid'] > df['sarane_forosh']
+            (df['sarane_kharid'] > df['sarane_forosh']) &
+            (df['value_to_avg_monthly_value'] >= config['min_value_to_avg_monthly'])
         ].copy()
 
         filtered = filtered.sort_values('sarane_kharid', ascending=False)
@@ -296,10 +304,10 @@ class BourseDataProcessor:
         """
         فیلتر 5: نسبت پول حقیقی به ارزش معاملات
         
-        شرایط:
-        - نسبت پول حقیقی به میانگین ماهانه >= 0.5
-        - سرانه خرید >= 50 میلیون تومان
-        - قدرت خرید >= 1.5
+        شرایط (از config):
+        - نسبت پول حقیقی به میانگین ماهانه >= min_pol_to_value_ratio
+        - سرانه خرید >= min_sarane_kharid (میلیون تومان)
+        - قدرت خرید >= min_godrat_kharid
         
         Args:
             df: DataFrame کل سهام از API اول
@@ -315,16 +323,12 @@ class BourseDataProcessor:
             from config import POL_HAGIGI_FILTER_CONFIG
             config = POL_HAGIGI_FILTER_CONFIG
 
-        min_ratio = config.get('min_pol_to_value_ratio', 0.5)
-        min_sarane = config.get('min_sarane_kharid', 5.0)
-        min_godrat = config.get('min_godrat_kharid', 1.5)
-
-        logger.info(f"اعمال فیلتر 5: نسبت پول حقیقی (آستانه: {min_ratio})")
+        logger.info(f"اعمال فیلتر 5: نسبت پول حقیقی")
 
         filtered = df[
-            (df['pol_hagigi_to_avg_monthly_value'] >= min_ratio) &
-            (df['sarane_kharid'] >= min_sarane) &
-            (df['godrat_kharid'] >= min_godrat)
+            (df['pol_hagigi_to_avg_monthly_value'] >= config['min_pol_to_value_ratio']) &
+            (df['sarane_kharid'] >= config['min_sarane_kharid']) &
+            (df['godrat_kharid'] >= config['min_godrat_kharid'])
         ].copy()
 
         if filtered.empty:
@@ -436,13 +440,13 @@ class BourseDataProcessor:
         """
         فیلتر 8: نوسان‌گیری - خرید در کف
         
-        شرایط:
+        شرایط (از config):
         - پایین‌ترین قیمت = حداقل آستانه مجاز
         - آخرین قیمت > حداقل آستانه مجاز
-        - قدرت خرید >= 2.0
-        - سرانه خرید >= 50 میلیون
+        - قدرت خرید >= min_godrat_kharid
+        - سرانه خرید >= min_sarane_kharid (میلیون تومان)
         - ارزش معاملات >= میانگین ماهانه
-        - درصد آخرین < -2%
+        - درصد آخرین < max_last_change_percent
         
         Args:
             df: DataFrame کل سهام از API اول
@@ -458,20 +462,15 @@ class BourseDataProcessor:
             from config import SWING_TRADE_CONFIG
             config = SWING_TRADE_CONFIG
 
-        min_allowed = config.get('min_allowed_price', -5.0)
-        max_last_change = config.get('max_last_change_percent', -2.0)
-        min_godrat = config.get('min_godrat_kharid', 2.0)
-        min_sarane = config.get('min_sarane_kharid', 5.0)
-
         logger.info(f"اعمال فیلتر 8: نوسان‌گیری")
 
         filtered = df[
-            (df['low_price_change_percent'] == min_allowed) &
-            (df['last_price_change_percent'] > min_allowed) &
-            (df['godrat_kharid'] >= min_godrat) &
-            (df['sarane_kharid'] >= min_sarane) &
-            (df['value_to_avg_monthly_value'] >= 1.0) &
-            (df['last_price_change_percent'] < max_last_change)
+            (df['low_price_change_percent'] == config['min_allowed_price']) &
+            (df['last_price_change_percent'] > config['min_allowed_price']) &
+            (df['godrat_kharid'] >= config['min_godrat_kharid']) &
+            (df['sarane_kharid'] >= config['min_sarane_kharid']) &
+            (df['value_to_avg_monthly_value'] >= config['min_value_to_avg_monthly']) &
+            (df['last_price_change_percent'] < config['max_last_change_percent'])
         ].copy()
 
         if filtered.empty:
@@ -547,9 +546,10 @@ class BourseDataProcessor:
         فیلتر 10: صف خرید میلیاردی
         استفاده از API دوم (BrsApi)
         
-        شرایط:
+        شرایط (از config):
         - آخرین قیمت = آستانه مجاز بالا (سقف)
-        - buy_order >= 70 میلیون تومان
+        - buy_order >= min_buy_order (میلیون تومان)
+        - buy_queue_value >= min_buy_queue_value (میلیارد تومان)
         
         Args:
             df: DataFrame کل نمادها از API دوم
@@ -565,14 +565,13 @@ class BourseDataProcessor:
             from config import HEAVY_BUY_QUEUE_CONFIG
             config = HEAVY_BUY_QUEUE_CONFIG
 
-        min_buy_order = config.get('min_buy_order', 70)
-
         logger.info(f"اعمال فیلتر 10: صف خرید میلیاردی")
         logger.info(f"  • شرط 1: آخرین قیمت = سقف")
-        logger.info(f"  • شرط 2: buy_order >= {min_buy_order} میلیون تومان")
+        logger.info(f"  • شرط 2: buy_order >= {config['min_buy_order']} میلیون تومان")
+        logger.info(f"  • شرط 3: buy_queue_value >= {config['min_buy_queue_value']} میلیارد تومان")
 
         # بررسی وجود ستون‌های لازم
-        required_cols = ['last_price', 'ceiling_price', 'buy_order']
+        required_cols = ['last_price', 'ceiling_price', 'buy_order', 'buy_queue_value']
         missing_cols = [col for col in required_cols if col not in df.columns]
         
         if missing_cols:
@@ -582,7 +581,8 @@ class BourseDataProcessor:
         # اعمال فیلتر
         filtered = df[
             (df['last_price'] == df['ceiling_price']) &
-            (df['buy_order'] >= min_buy_order)
+            (df['buy_order'] >= config['min_buy_order']) &
+            (df['buy_queue_value'] >= config['min_buy_queue_value'])
         ].copy()
 
         if filtered.empty:
