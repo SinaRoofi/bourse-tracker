@@ -48,7 +48,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # تنظیمات گروه‌بندی پیام‌ها
-STOCKS_PER_MESSAGE = 5  # تعداد سهم در هر پیام
+STOCKS_PER_MESSAGE = 10  # تعداد سهم در هر پیام
 
 # ========================================
 # توابع کمکی
