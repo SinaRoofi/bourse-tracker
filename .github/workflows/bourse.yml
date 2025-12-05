@@ -45,10 +45,12 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
           BRSAPI_KEY: ${{ secrets.BRSAPI_KEY }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
         run: |
           python main.py
 
-      # 6. آپلود لاگ‌ها (در صورت خطا)
+      # 6. آپلود لاگ‌ها (در صورت خطا یا همیشه)
       - name: "📋 Upload logs"
         if: always()
         uses: actions/upload-artifact@v4
@@ -57,7 +59,7 @@ jobs:
           path: bourse_tracker.log
           retention-days: 7
 
-      # 7. بروزرسانی Gist
+      # 7. بروزرسانی Gist (اختیاری، اگر نیاز به آپدیت جداگانه دارید)
       - name: "✏️ Update Gist"
         env:
           GIST_ID: ${{ secrets.GIST_ID }}
