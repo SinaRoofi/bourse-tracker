@@ -2,6 +2,9 @@
 Main script برای Bourse Tracker
 اجرای فیلترها و ارسال هشدارها به تلگرام
 با مدیریت هشدارها از طریق GitHub Gist
+
+فیلترهای 1-9: روی API اول (داده‌های تاریخی)
+فیلتر 10: روی API دوم (داده‌های لحظه‌ای)
 """
 
 import sys
@@ -19,15 +22,15 @@ from config import (
     BRSAPI_KEY,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
-   GIST_ID,
-   GIST_TOKEN,
+    GIST_ID,
+    GIST_TOKEN,
     validate_config,
 )
 from utils.holidays import is_holiday, is_working_day
 from utils.data_fetcher import UnifiedDataFetcher
 from utils.data_processor import BourseDataProcessor
 from utils.alerts import TelegramAlert
-from utils.gist_alert_manager import GistAlertManager  # نسخه جدید
+from utils.gist_alert_manager import GistAlertManager
 
 # تنظیم timezone تهران
 TEHRAN_TZ = pytz.timezone("Asia/Tehran")
@@ -74,39 +77,54 @@ def is_market_open() -> bool:
     logger.info(f"✅ بازار باز است - {today_str} {current_time}")
     return True
 
-def send_alerts_for_api(alert: TelegramAlert, alert_manager: GistAlertManager, filters_results: dict, api_name: str) -> tuple:
-    """ارسال هشدارها برای یک API"""
+def send_alerts_for_filters(alert: TelegramAlert, alert_manager: GistAlertManager, filters_results: dict, api_name: str) -> tuple:
+    """
+    ارسال هشدارها برای فیلترهای یک API
+    
+    Args:
+        alert: شیء TelegramAlert
+        alert_manager: شیء GistAlertManager
+        filters_results: نتایج فیلترها
+        api_name: نام API (برای لاگ)
+        
+    Returns:
+        tuple: (تعداد ارسال شده، تعداد رد شده)
+    """
     sent_count = 0
     skipped_count = 0
-    
+
     logger.info(f"\n{'='*60}")
     logger.info(f"📤 ارسال هشدارهای {api_name}")
     logger.info(f"{'='*60}")
-    
+
     for filter_name, filtered_df in filters_results.items():
         if filtered_df.empty:
             logger.info(f"فیلتر {filter_name}: نتیجه‌ای یافت نشد")
             continue
-        
+
         logger.info(f"\n🔍 پردازش فیلتر {filter_name}: {len(filtered_df)} سهم")
-        
+
         for idx, row in filtered_df.iterrows():
             symbol = row['symbol']
+            
+            # بررسی اینکه آیا قبلاً امروز ارسال شده یا نه
             if not alert_manager.should_send_alert(symbol, filter_name):
                 logger.info(f"⏭️  {symbol}: قبلاً امروز ارسال شده")
                 skipped_count += 1
                 continue
-            
+
+            # ارسال هشدار برای یک سهم
             single_row_df = row.to_frame().T
             success = alert.send_filter_alert_sync(single_row_df, filter_name)
-            
+
             if success:
-                alert_manager.mark_as_sent(symbol, filter_name)  # ذخیره فقط در Gist
+                # علامت‌گذاری به عنوان ارسال شده در Gist
+                alert_manager.mark_as_sent(symbol, filter_name)
                 sent_count += 1
                 logger.info(f"✅ {symbol} - {filter_name}: ارسال شد")
             else:
                 logger.error(f"❌ {symbol} - {filter_name}: خطا در ارسال")
-    
+
     return sent_count, skipped_count
 
 # ========================================
@@ -119,21 +137,30 @@ def main():
     logger.info("=" * 80)
 
     try:
+        # اعتبارسنجی تنظیمات
         validate_config()
         logger.info("✅ تنظیمات معتبر است")
 
+        # بررسی بازار
         if not is_market_open():
             logger.info("⏸️  بازار بسته است. خروج از برنامه.")
             return
 
+        # دریافت داده از APIها
         logger.info("\n📥 شروع دریافت داده از APIها...")
         fetcher = UnifiedDataFetcher(api1_base_url=API_BASE_URL, api2_key=BRSAPI_KEY)
         df_api1_raw, df_api2_raw = fetcher.fetch_all_data()
 
+        # پردازش داده‌ها
         logger.info("\n🔄 شروع پردازش داده‌ها...")
         processor = BourseDataProcessor()
         df_api1, df_api2 = processor.process_all_data(df_api1_raw, df_api2_raw)
 
+        # اعمال فیلترها
+        logger.info("\n🔍 اعمال فیلترها...")
+        all_results = processor.apply_all_filters(df_api1, df_api2)
+
+        # آماده‌سازی ارسال هشدارها
         logger.info("\n📤 شروع ارسال هشدارها به تلگرام...")
         alert = TelegramAlert()
         alert_manager = GistAlertManager(GIST_TOKEN, GIST_ID)
@@ -141,18 +168,31 @@ def main():
         total_sent = 0
         total_skipped = 0
 
-        if 'api1' in all_results:
-            sent, skipped = send_alerts_for_api(alert, alert_manager, all_results['api1'], "API اول")
+        # ارسال هشدارهای API اول (فیلترهای 1-9)
+        if 'api1' in all_results and all_results['api1']:
+            sent, skipped = send_alerts_for_filters(
+                alert, 
+                alert_manager, 
+                all_results['api1'], 
+                "API اول (فیلترهای 1-9)"
+            )
             total_sent += sent
             total_skipped += skipped
 
-        if 'api2' in all_results:
-            sent, skipped = send_alerts_for_api(alert, alert_manager, all_results['api2'], "API دوم")
+        # ارسال هشدارهای API دوم (فیلتر 10)
+        if 'api2' in all_results and all_results['api2']:
+            sent, skipped = send_alerts_for_filters(
+                alert, 
+                alert_manager, 
+                all_results['api2'], 
+                "API دوم (فیلتر 10)"
+            )
             total_sent += sent
             total_skipped += skipped
 
+        # گزارش نهایی
         stats = alert_manager.get_today_stats()
-        
+
         logger.info("\n" + "=" * 80)
         logger.info("📊 گزارش نهایی:")
         logger.info(f"  • تاریخ: {stats['date']}")
