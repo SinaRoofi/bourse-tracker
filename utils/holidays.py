@@ -170,7 +170,7 @@ class HolidayManager:
             today = jdatetime.date(year, month, day)
 
         # جمعه = 6 در jdatetime
-        if today.weekday() == 6:
+        if today.weekday() == 5:
             return False
 
         return not self.is_holiday(date_str)
