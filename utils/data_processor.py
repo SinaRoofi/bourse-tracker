@@ -75,8 +75,7 @@ class BourseDataProcessor:
             'avg_monthly_value', 'value_to_avg_monthly_value',
             'avg_3_month_value', 'value_to_avg_3_month_value',
             '5_day_return', '20_day_return', '60_day_return',
-            'marketcap', 'value_to_marketcap',
-            'pol_hagigi_to_avg_monthly_value'
+            'marketcap', 'value_to_marketcap'
         ]
 
         for col in numeric_columns:
@@ -84,6 +83,19 @@ class BourseDataProcessor:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
 
         logger.info("✅ تبدیل ستون‌های عددی API اول انجام شد")
+
+        # محاسبه pol_hagigi_to_avg_monthly_value
+        if all(col in df.columns for col in ['pol_hagigi', 'avg_monthly_value']):
+            df['pol_hagigi_to_avg_monthly_value'] = df.apply(
+                lambda row: row['pol_hagigi'] / row['avg_monthly_value']
+                if row['avg_monthly_value'] != 0 and pd.notna(row['avg_monthly_value'])
+                else 0,
+                axis=1
+            )
+            logger.info("✅ محاسبه pol_hagigi_to_avg_monthly_value انجام شد")
+        else:
+            logger.warning("⚠️ ستون‌های pol_hagigi یا avg_monthly_value برای محاسبه نسبت یافت نشد")
+            df['pol_hagigi_to_avg_monthly_value'] = 0
 
         return df
 
