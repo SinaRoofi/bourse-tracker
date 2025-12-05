@@ -154,7 +154,7 @@ HEAVY_BUY_QUEUE_CONFIG = {
 # زمان‌بندی
 # ========================================
 MARKET_START_TIME = "08:00"
-MARKET_END_TIME = "12:30"
+MARKET_END_TIME = "22:30"
 CHECK_INTERVAL_MINUTES = 5
 
 # روزهای کاری (0=شنبه تا 6=جمعه)
