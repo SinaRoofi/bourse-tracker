@@ -1,28 +1,23 @@
-# Core dependencies
-requests==2.31.0
-pandas==2.2.0
-python-telegram-bot==20.7
-python-dotenv==1.0.0
-jdatetime==5.0.0
-pytz==2024.1
+# Dependencies for Bourse Tracker
 
-# Telegram
-telethon==1.35.0
+# Data handling
+pandas>=2.0.0
+numpy>=1.24.0
 
-# Visualization
-plotly==5.18.0
-kaleido==0.2.1
-matplotlib==3.8.2
-squarify==0.4.3
-Pillow==10.2.0
+# API requests
+requests>=2.31.0
 
-# Utilities
-numpy==1.26.3
-persiantools==4.2.0
-arabic-reshaper==3.0.0
-python-bidi==0.6.7
+# Telegram bot
+python-telegram-bot>=20.0
 
-# Google APIs
-google-auth==2.27.0
-google-auth-oauthlib==1.2.0
-google-api-python-client==2.116.0
+# Persian date handling
+jdatetime>=4.1.0
+
+# Timezone handling
+pytz>=2023.3
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# Logging (built-in, but listed for reference)
+# logging (standard library)
