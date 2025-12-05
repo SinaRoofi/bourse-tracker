@@ -16,7 +16,7 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 # ========================================
 # تنظیمات API
 # ========================================
-API_BASE_URL = os.getenv('API_BASE_URL')  # API اول (قدیمی)
+API_BASE_URL = os.getenv('API_BASE_URL')  # API اول (https://tradersarena.ir)
 BRSAPI_KEY = os.getenv('BRSAPI_KEY')      # کلید BrsApi
 
 # ========================================
@@ -134,7 +134,7 @@ FIRST_HOUR_CONFIG = {
 
 # فیلتر 10: صف خرید میلیاردی
 HEAVY_BUY_QUEUE_CONFIG = {
-    'min_buy_order_per_code': 70,  # میلیون تومان
+    'min_buy_order': 70,  # حداقل buy_order به میلیون تومان
 }
 
 # ========================================
