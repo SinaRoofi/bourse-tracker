@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 import jdatetime
 import logging
 from typing import Optional
+from config import GIST_TOKEN, GIST_ID
+alert_manager = GistAlertManager(github_token=GIST_TOKEN, gist_id=GIST_ID)
 
 logger = logging.getLogger(__name__)
 
