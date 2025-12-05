@@ -3,13 +3,13 @@
 """
 import json
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime
 import jdatetime
 import logging
 from typing import Optional
-from config import GIST_TOKEN, GIST_ID
 
 logger = logging.getLogger(__name__)
+
 
 class GistAlertManager:
     """مدیریت هشدارها با ذخیره مستقیم در GitHub Gist، ۳ روز اخیر نگه داشته می‌شود"""
@@ -129,6 +129,3 @@ class GistAlertManager:
         if self.gist_id:
             return f"https://gist.github.com/{self.gist_id}"
         return None
-
-# --- ایجاد شیء بعد از تعریف کلاس ---
-alert_manager = GistAlertManager(github_token=GIST_TOKEN, gist_id=GIST_ID)
