@@ -86,8 +86,8 @@ INDUSTRY_NAMES = {
 # فیلتر 1: قدرت خرید قوی
 STRONG_BUYING_CONFIG = {
     'min_value_to_avg_monthly': 2.0,
-    'min_sarane_kharid': 50,  # میلیون تومان
-    'min_godrat_kharid': 1,
+    'min_sarane_kharid': 60,  # میلیون تومان
+    'min_godrat_kharid': 2,
     'godrat_greater_than_5day': True,  # قدرت خرید > میانگین 5 روز
 }
 
@@ -99,7 +99,7 @@ SARANE_CROSS_CONFIG = {
 
 # فیلتر 3: نمادهای خاص
 WATCHLIST_SYMBOLS = {
-    'فولاد': 2.99,
+    'پارسان': 2.99,
     'خودرو': 2.99,
     'شپنا': 2.99,
     'فملی': 2.99,
@@ -111,7 +111,7 @@ FILTER_4_CONFIG = {}
 # فیلتر 5: نسبت پول حقیقی
 POL_HAGIGI_FILTER_CONFIG = {
     'min_pol_to_value_ratio': 0.5,
-    'min_sarane_kharid': 50,  # میلیون تومان
+    'min_sarane_kharid': 60,  # میلیون تومان
     'min_godrat_kharid': 1.5,
 }
 
@@ -132,7 +132,7 @@ SWING_TRADE_CONFIG = {
     'min_allowed_price': -3.0,
     'max_last_change_percent': -2.0,
     'min_godrat_kharid': 2.0,
-    'min_sarane_kharid': 50,  # میلیون تومان
+    'min_sarane_kharid': 60,  # میلیون تومان
     'min_value_to_avg_monthly': 1.0,
 }
 
