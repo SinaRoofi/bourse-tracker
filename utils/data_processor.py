@@ -120,7 +120,7 @@ class BourseDataProcessor:
 
         logger.info("✅ تقسیم ستون‌ها به 10 میلیون انجام شد")
 
-        # تقسیم ستون‌ها به 10 میلیون (برای ستون‌های خاص)
+        # تقسیم ستون‌ها به 10 میلیارد (برای ستون‌های خاص)
         columns_to_divide = [
             "value",
             "pol_hagigi",
@@ -140,7 +140,7 @@ class BourseDataProcessor:
 
         for col in columns_to_divide:
             if col in df.columns:
-                df[col] = df[col] / 10_000_000_000  # تقسیم به 10 میلیون
+                df[col] = df[col] / 10_000_000_000  # تقسیم به 10 میلیارد
 
         logger.info("✅ تقسیم ستون‌ها به 10 میلیارد انجام شد")
 
