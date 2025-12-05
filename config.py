@@ -91,6 +91,13 @@ WATCHLIST_SYMBOLS = {
     'فملی': 2.99,
 }
 
+# فیلتر 4: صف خرید سنگین در سقف
+CEILING_FILTER_CONFIG = {
+    'price_range_percent': 5.0,  # دامنه نوسان (درصد)
+    'min_buy_queue_value': 1_000_000_000,  # حداقل صف خرید (1 میلیارد تومان)
+    'max_sell_queue_value': 10_000_000,  # حداکثر صف فروش (10 میلیون تومان)
+}
+
 # فیلتر 5: نسبت پول حقیقی
 POL_HAGIGI_FILTER_CONFIG = {
     'min_pol_to_value_ratio': 0.3,
@@ -152,17 +159,17 @@ LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 def validate_config():
     """بررسی صحت تنظیمات"""
     errors = []
-    
+
     if not TELEGRAM_BOT_TOKEN:
         errors.append("TELEGRAM_BOT_TOKEN تنظیم نشده است")
-    
+
     if not TELEGRAM_CHAT_ID:
         errors.append("TELEGRAM_CHAT_ID تنظیم نشده است")
-    
+
     if not API_BASE_URL and not BRSAPI_KEY:
         errors.append("حداقل یکی از API_BASE_URL یا BRSAPI_KEY باید تنظیم شود")
-    
+
     if errors:
         raise ValueError("خطاهای تنظیمات:\n" + "\n".join(errors))
-    
+
     return True
