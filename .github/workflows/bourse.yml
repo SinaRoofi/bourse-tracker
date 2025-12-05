@@ -30,15 +30,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4. نمایش اطلاعات محیط
-      - name: "ℹ️ Display info"
-        run: |
-          echo "🕐 زمان اجرا: $(date)"
-          echo "🐍 نسخه Python: $(python --version)"
-          echo "📦 کتابخانه‌های نصب شده:"
-          pip list
-
-      # 5. اجرای main.py
+      # 4. اجرای main.py
       - name: "🚀 Run Bourse Tracker"
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -50,7 +42,7 @@ jobs:
         run: |
           python main.py
 
-      # 6. آپلود لاگ‌ها (در صورت خطا یا موفقیت)
+      # 5. آپلود لاگ‌ها (در صورت خطا یا موفقیت)
       - name: "📋 Upload logs"
         if: always()
         uses: actions/upload-artifact@v4
@@ -59,7 +51,7 @@ jobs:
           path: bourse_tracker.log
           retention-days: 7
 
-      # 7. اعلان در صورت خطا
+      # 6. اعلان در صورت خطا
       - name: "❌ Notify on failure"
         if: failure()
         run: |
