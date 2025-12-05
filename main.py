@@ -4,7 +4,7 @@ Main script برای Bourse Tracker
 با مدیریت هشدارها از طریق GitHub Gist
 
 فیلترهای 1-9: روی API اول (داده‌های تاریخی)
-فیلتر 10: روی API دوم (داده‌های لحظه‌ای)
+فیلتر 10: روی API دوم (داده‌های لحظه‌ای) + غنی‌سازی با API اول
 """
 
 import sys
@@ -59,7 +59,7 @@ logger = logging.getLogger(__name__)
 # تعداد سهام در هر پیام بر اساس فیلتر
 # ===========================
 STOCKS_PER_MESSAGE_MAP = {
-    'filter_1': 5,
+    'filter_1_strong_buying': 5,
     'filter_2_sarane_cross': 3,
     'filter_3_watchlist': 5,
     'filter_4_ceiling_queue': 4,
@@ -111,6 +111,18 @@ def chunk_dataframe(df, filter_name):
 # ===========================
 async def send_alerts_for_filters_async(alert: TelegramAlert, alert_manager: GistAlertManager, 
                                         filters_results: dict, api_name: str) -> tuple:
+    """
+    ارسال هشدارها برای فیلترهای یک API
+    
+    Args:
+        alert: شیء TelegramAlert
+        alert_manager: شیء GistAlertManager
+        filters_results: دیکشنری نتایج فیلترها
+        api_name: نام API (برای لاگ)
+    
+    Returns:
+        tuple: (تعداد ارسال شده, تعداد رد شده)
+    """
     sent_count = 0
     skipped_count = 0
 
@@ -128,6 +140,8 @@ async def send_alerts_for_filters_async(alert: TelegramAlert, alert_manager: Gis
         # گروه‌بندی بر اساس فیلتر
         for chunk_idx, chunk_df in enumerate(chunk_dataframe(filtered_df, filter_name), 1):
             symbols_to_send = []
+            
+            # چک کردن اینکه کدوم سهام قبلاً ارسال نشده
             for idx, row in chunk_df.iterrows():
                 symbol = row['symbol']
                 if not alert_manager.should_send_alert(symbol, filter_name):
@@ -137,11 +151,14 @@ async def send_alerts_for_filters_async(alert: TelegramAlert, alert_manager: Gis
                     symbols_to_send.append(symbol)
 
             if symbols_to_send:
+                # فقط سهام جدید رو ارسال می‌کنیم
                 chunk_to_send = chunk_df[chunk_df['symbol'].isin(symbols_to_send)]
 
                 # ارسال با مدیریت Flood Control
                 success = await alert.send_filter_alert_safe(chunk_to_send, filter_name)
+                
                 if success:
+                    # علامت‌گذاری به عنوان ارسال شده
                     alert_manager.mark_multiple_as_sent([(s, filter_name) for s in symbols_to_send])
                     sent_count += len(symbols_to_send)
                     logger.info(f"✅ گروه {chunk_idx} از {filter_name}: {len(symbols_to_send)} سهم ارسال شد")
@@ -164,24 +181,30 @@ async def main_async():
     logger.info("=" * 80)
 
     try:
+        # اعتبارسنجی تنظیمات
         validate_config()
         logger.info("✅ تنظیمات معتبر است")
 
+        # بررسی وضعیت بازار
         if not is_market_open():
             logger.info("⏸️  بازار بسته است. خروج از برنامه.")
             return
 
+        # دریافت داده از APIها
         logger.info("\n📥 شروع دریافت داده از APIها...")
         fetcher = UnifiedDataFetcher(api1_base_url=API_BASE_URL, api2_key=BRSAPI_KEY)
         df_api1_raw, df_api2_raw = fetcher.fetch_all_data()
 
+        # پردازش داده‌ها
         logger.info("\n🔄 شروع پردازش داده‌ها...")
         processor = BourseDataProcessor()
         df_api1, df_api2 = processor.process_all_data(df_api1_raw, df_api2_raw)
 
+        # اعمال فیلترها
         logger.info("\n🔍 اعمال فیلترها...")
         all_results = processor.apply_all_filters(df_api1, df_api2)
 
+        # ارسال هشدارها
         logger.info("\n📤 شروع ارسال هشدارها به تلگرام...")
         alert = TelegramAlert()
         alert_manager = GistAlertManager(GIST_TOKEN, GIST_ID)
@@ -189,6 +212,7 @@ async def main_async():
         total_sent = 0
         total_skipped = 0
 
+        # ارسال هشدارهای API اول (فیلترهای 1-9)
         if 'api1' in all_results and all_results['api1']:
             sent, skipped = await send_alerts_for_filters_async(
                 alert, alert_manager, all_results['api1'], "API اول (فیلترهای 1-9)"
@@ -196,6 +220,7 @@ async def main_async():
             total_sent += sent
             total_skipped += skipped
 
+        # ارسال هشدارهای API دوم (فیلتر 10)
         if 'api2' in all_results and all_results['api2']:
             sent, skipped = await send_alerts_for_filters_async(
                 alert, alert_manager, all_results['api2'], "API دوم (فیلتر 10)"
@@ -203,6 +228,7 @@ async def main_async():
             total_sent += sent
             total_skipped += skipped
 
+        # گزارش نهایی
         stats = alert_manager.get_today_stats()
         logger.info("\n" + "=" * 80)
         logger.info("📊 گزارش نهایی:")
@@ -226,6 +252,7 @@ async def main_async():
         sys.exit(1)
 
 def main():
+    """نقطه ورود اصلی برنامه"""
     asyncio.run(main_async())
 
 if __name__ == "__main__":
