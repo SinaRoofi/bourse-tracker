@@ -166,7 +166,7 @@ async def send_alerts_for_filters_async(alert: TelegramAlert, alert_manager: Gis
                     logger.error(f"❌ گروه {chunk_idx} از {filter_name}: خطا در ارسال")
 
                 # تأخیر بین گروه‌ها برای کاهش Flood Control
-                await asyncio.sleep(20)
+                await asyncio.sleep(5)
             else:
                 logger.info(f"⏭️  گروه {chunk_idx}: همه قبلاً ارسال شده‌اند")
 
