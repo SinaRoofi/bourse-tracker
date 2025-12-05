@@ -278,31 +278,3 @@ def is_working_day(date_str: str = None) -> bool:
 def get_next_working_day(date_str: str = None) -> str:
     """پیدا کردن روز کاری بعدی"""
     return holiday_manager.get_next_working_day(date_str)
-
-
-if __name__ == "__main__":
-    # تست‌های ساده
-    print("=== تست تعطیلات ===")
-
-    # بررسی تعطیل بودن نوروز
-    print(f"1404-01-01 تعطیل است؟ {is_holiday('1404-01-01')}")
-
-    # بررسی روز کاری
-    print(f"1404-01-15 روز کاری است؟ {is_working_day('1404-01-15')}")
-
-    # تعطیلات در یک ماه
-    holidays_in_farvardin = holiday_manager.get_holidays_in_range(
-        "1404-01-01", "1404-01-31"
-    )
-    print(f"\nتعطیلات فروردین 1404:")
-    for h in holidays_in_farvardin:
-        desc = holiday_manager.get_holiday_description(h)
-        print(f"  {h}: {desc}")
-
-    # روز کاری بعدی بعد از نوروز
-    next_working = get_next_working_day("1404-01-04")
-    print(f"\nاولین روز کاری بعد از نوروز: {next_working}")
-
-    # شمارش روزهای کاری در یک ماه
-    working_days = holiday_manager.count_working_days("1404-01-01", "1404-01-31")
-    print(f"تعداد روزهای کاری در فروردین 1404: {working_days}")
