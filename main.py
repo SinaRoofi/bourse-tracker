@@ -89,7 +89,7 @@ def chunk_dataframe(df, chunk_size):
 async def send_alerts_for_filters_async(alert: TelegramAlert, alert_manager: GistAlertManager, 
                                          filters_results: dict, api_name: str) -> tuple:
     """
-    ارسال هشدارها برای فیلترهای یک API (نسخه async)
+    ارسال هشدارها برای فیلترهای یک API (نسخه async با بهبود ذخیره‌سازی)
     
     Args:
         alert: شیء TelegramAlert
@@ -130,16 +130,21 @@ async def send_alerts_for_filters_async(alert: TelegramAlert, alert_manager: Gis
             if symbols_to_send:
                 # فیلتر کردن فقط سهم‌هایی که باید ارسال بشن
                 chunk_to_send = chunk_df[chunk_df['symbol'].isin(symbols_to_send)]
-                
+
                 # ارسال یک پیام برای گروه
                 success = await alert.send_filter_alert(chunk_to_send, filter_name)
 
                 if success:
-                    # علامت‌گذاری همه به عنوان ارسال شده
-                    for symbol in symbols_to_send:
-                        alert_manager.mark_as_sent(symbol, filter_name)
-                    sent_count += len(symbols_to_send)
-                    logger.info(f"✅ گروه {chunk_idx} از {filter_name}: {len(symbols_to_send)} سهم ارسال شد")
+                    # ✅ بهبود: ذخیره گروهی به جای تک‌تک
+                    alerts_to_save = [(symbol, filter_name) for symbol in symbols_to_send]
+                    save_success = alert_manager.mark_multiple_as_sent(alerts_to_save)
+                    
+                    if save_success:
+                        sent_count += len(symbols_to_send)
+                        logger.info(f"✅ گروه {chunk_idx} از {filter_name}: {len(symbols_to_send)} سهم ارسال و ذخیره شد")
+                    else:
+                        logger.warning(f"⚠️ گروه {chunk_idx}: ارسال موفق اما ذخیره ناموفق")
+                        sent_count += len(symbols_to_send)
                 else:
                     logger.error(f"❌ گروه {chunk_idx} از {filter_name}: خطا در ارسال")
             else:
