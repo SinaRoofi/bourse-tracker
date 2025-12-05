@@ -96,143 +96,154 @@ class TelegramAlert:
 
         return message
 
-    def format_filter_2_sarane_cross(self, df: pd.DataFrame) -> str:
-        """فرمت پیام برای فیلتر 2: کراس سرانه خرید"""
-        if df.empty:
-            return ""
 
-        now = jdatetime.datetime.now()
-        date_str = now.strftime('%Y/%m/%d')
-        time_str = now.strftime('%H:%M')
+def format_filter_2_sarane_cross(self, df: pd.DataFrame) -> str:
+    """فرمت پیام برای فیلتر 2: کراس سرانه خرید"""
+    if df.empty:
+        return ""
 
-        message = f"🔔 <b>هشدار کراس سرانه خرید</b>\n"
-        message += f"📅 {date_str} | 🕐 {time_str}\n"
+    message = f"🔔 <b>هشدار کراس سرانه خرید</b>\n"
+    message += "\n"
+
+    for idx, row in df.iterrows():
+        message += f"📌 <b>{row['symbol']}</b>"
+        if "industry_name" in row:
+            message += f" - {row['industry_name']}\n"
+        else:
+            message += "\n\n"
+
+        if "value" in row and "value_to_avg_monthly_value" in row:
+            value_formatted = self._format_number(row["value"])
+            value_ratio = row["value_to_avg_monthly_value"]
+            message += f"💰 ارزش معاملات: {value_formatted} تومان\n"
+            message += f"   📊 نسبت به میانگین ماهانه: {value_ratio:.2f}x\n"
+
+        if "godrat_kharid" in row:
+            message += f"💪 قدرت خریدار: {row['godrat_kharid']:.2f}\n"
+
+        if "sarane_kharid" in row:
+            sarane_kharid_formatted = self._format_number(row["sarane_kharid"])
+            message += f"📈 سرانه خرید: {sarane_kharid_formatted} تومان\n"
+
+        if "pol_hagigi" in row:
+            pol_hagigi_formatted = self._format_number(row["pol_hagigi"])
+            emoji = "✅" if row["pol_hagigi"] > 0 else "⚠️"
+            message += f"{emoji} ورود پول حقیقی: {pol_hagigi_formatted}\n"
+
         message += "\n"
 
-        for idx, row in df.iterrows():
-            message += f"📌 <b>{row['symbol']}</b>"
-            if 'industry_name' in row:
-                message += f" - {row['industry_name']}\n"
-            else:
-                message += "\n\n"
+    # انتقال تاریخ و ساعت به انتهای پیام
+    now = jdatetime.datetime.now()
+    date_str = now.strftime("%Y/%m/%d")
+    time_str = now.strftime("%H:%M")
 
-            if 'value' in row and 'value_to_avg_monthly_value' in row:
-                value_formatted = self._format_number(row['value'])
-                value_ratio = row['value_to_avg_monthly_value']
-                message += f"💰 ارزش معاملات: {value_formatted} تومان\n"
-                message += f"   📊 نسبت به میانگین ماهانه: {value_ratio:.2f}x\n"
+    message += f"📅 {date_str} | 🕐 {time_str}\n"
+    message += f"📢 {self.channel_name}"
 
-            if 'godrat_kharid' in row:
-                message += f"💪 قدرت خریدار: {row['godrat_kharid']:.2f}\n"
+    return message
 
-            if 'sarane_kharid' in row:
-                sarane_kharid_formatted = self._format_number(row['sarane_kharid'])
-                message += f"📈 سرانه خرید: {sarane_kharid_formatted} تومان\n"
 
-            if 'pol_hagigi' in row:
-                pol_hagigi_formatted = self._format_number(row['pol_hagigi'])
-                emoji = "✅" if row['pol_hagigi'] > 0 else "⚠️"
-                message += f"{emoji} ورود پول حقیقی: {pol_hagigi_formatted}\n"
+def format_filter_3_watchlist(self, df: pd.DataFrame) -> str:
+    """فرمت پیام برای فیلتر 3: هشدار درصد تغییر نمادهای خاص"""
+    if df.empty:
+        return ""
 
+    message = f"⚠️ <b>هشدار عبور از آستانه</b>\n"
+    message += "\n"
+
+    for idx, row in df.iterrows():
+        if row.get("last_price_change_percent", 0) > 5:
+            emoji = "🚀"
+        elif row.get("last_price_change_percent", 0) > 3:
+            emoji = "📈"
+        else:
+            emoji = "✅"
+
+        message += f"{emoji} <b>{row['symbol']}</b>"
+        if "industry_name" in row:
+            message += f" - {row['industry_name']}\n"
+        else:
             message += "\n"
 
-        message += f"📢 {self.channel_name}"
-        return message
+        message += f"📊 درصد تغییر آخرین: <b>{row.get('last_price_change_percent', 0):.2f}%</b>\n"
+        if "threshold" in row:
+            message += f"🎯 آستانه تعریف شده: {row['threshold']:.2f}%\n"
+            message += f"🔺 عبور: +{row.get('last_price_change_percent', 0) - row['threshold']:.2f}%\n"
 
-    def format_filter_3_watchlist(self, df: pd.DataFrame) -> str:
-        """فرمت پیام برای فیلتر 3: هشدار درصد تغییر نمادهای خاص"""
-        if df.empty:
-            return ""
+        if "last_price" in row:
+            message += f"💰 قیمت آخرین: {row['last_price']:,} ریال\n"
+        if "final_price" in row:
+            message += f"💵 قیمت پایانی: {row['final_price']:,} ریال\n"
 
-        now = jdatetime.datetime.now()
-        date_str = now.strftime('%Y/%m/%d')
-        time_str = now.strftime('%H:%M')
+        if "volume" in row and "value" in row:
+            volume_formatted = self._format_number(row["volume"])
+            value_formatted = self._format_number(row["value"])
+            message += f"📦 حجم: {volume_formatted}\n"
+            message += f"💰 ارزش: {value_formatted} تومان\n"
 
-        message = f"⚠️ <b>هشدار عبور از آستانه</b>\n"
-        message += f"📅 {date_str} | 🕐 {time_str}\n"
         message += "\n"
 
-        for idx, row in df.iterrows():
-            if row.get('last_price_change_percent', 0) > 5:
-                emoji = "🚀"
-            elif row.get('last_price_change_percent', 0) > 3:
-                emoji = "📈"
-            else:
-                emoji = "✅"
+    # انتقال تاریخ و ساعت به انتهای پیام
+    now = jdatetime.datetime.now()
+    date_str = now.strftime("%Y/%m/%d")
+    time_str = now.strftime("%H:%M")
 
-            message += f"{emoji} <b>{row['symbol']}</b>"
-            if 'industry_name' in row:
-                message += f" - {row['industry_name']}\n"
-            else:
-                message += "\n"
+    message += f"📅 {date_str} | 🕐 {time_str}\n"
+    message += f"📢 {self.channel_name}"
 
-            message += f"📊 درصد تغییر آخرین: <b>{row.get('last_price_change_percent', 0):.2f}%</b>\n"
-            if 'threshold' in row:
-                message += f"🎯 آستانه تعریف شده: {row['threshold']:.2f}%\n"
-                message += f"🔺 عبور: +{row.get('last_price_change_percent', 0) - row['threshold']:.2f}%\n"
+    return message
 
-            if 'last_price' in row:
-                message += f"💰 قیمت آخرین: {row['last_price']:,} ریال\n"
-            if 'final_price' in row:
-                message += f"💵 قیمت پایانی: {row['final_price']:,} ریال\n"
 
-            if 'volume' in row and 'value' in row:
-                volume_formatted = self._format_number(row['volume'])
-                value_formatted = self._format_number(row['value'])
-                message += f"📦 حجم: {volume_formatted}\n"
-                message += f"💰 ارزش: {value_formatted} تومان\n"
+def format_filter_4_ceiling_queue(self, df: pd.DataFrame) -> str:
+    """فرمت پیام برای فیلتر 4: صف خرید سنگین در سقف قیمت"""
+    if df.empty:
+        return ""
 
+    message = f"🔥 <b>صف‌های خرید سنگین</b>\n"
+    message += "\n"
+
+    for idx, row in df.iterrows():
+        message += f"🎯 <b>{row['symbol']}</b>"
+        if "industry_name" in row:
+            message += f" - {row['industry_name']}\n"
+        else:
             message += "\n"
 
-        message += f"📢 {self.channel_name}"
-        return message
+        if "final_price_change_percent" in row:
+            message += (
+                f"📊 تغییر قیمت: <b>+{row['last_price_change_percent']:.2f}%</b>\n"
+            )
+        if "final_price" in row:
+            message += f"💰 قیمت پایانی: {row['final_price']:,} ریال\n\n"
 
-    def format_filter_4_ceiling_queue(self, df: pd.DataFrame) -> str:
-        """فرمت پیام برای فیلتر 4: صف خرید سنگین در سقف قیمت"""
-        if df.empty:
-            return ""
+        if "buy_order_value" in row:
+            buy_queue_formatted = self._format_number(row["buy_order_value"])
+            message += f"🟢 <b>ارزش صف خرید: {buy_queue_formatted} تومان</b>\n"
 
-        now = jdatetime.datetime.now()
-        date_str = now.strftime('%Y/%m/%d')
-        time_str = now.strftime('%H:%M')
+        if "sell_order_value" in row:
+            sell_queue_formatted = self._format_number(row["sell_order_value"])
+            if row["sell_order_value"] == 0:
+                message += f"🔴 ارزش صف فروش: <b>صفر</b> ✅\n\n"
+            else:
+                message += f"🔴 ارزش صف فروش: {sell_queue_formatted} تومان\n\n"
 
-        message = f"🔥 <b>صف‌های خرید سنگین</b>\n"
-        message += f"📅 {date_str} | 🕐 {time_str}\n"
+        if "value" in row and "volume" in row:
+            value_formatted = self._format_number(row["value"])
+            volume_formatted = self._format_number(row["volume"])
+            message += f"💵 ارزش معاملات: {value_formatted} تومان\n"
+            message += f"📦 حجم معاملات: {volume_formatted}\n"
+
         message += "\n"
 
-        for idx, row in df.iterrows():
-            message += f"🎯 <b>{row['symbol']}</b>"
-            if 'industry_name' in row:
-                message += f" - {row['industry_name']}\n"
-            else:
-                message += "\n"
+    # انتقال تاریخ و ساعت به انتهای پیام
+    now = jdatetime.datetime.now()
+    date_str = now.strftime("%Y/%m/%d")
+    time_str = now.strftime("%H:%M")
 
-            if 'final_price_change_percent' in row:
-                message += f"📊 تغییر قیمت: <b>+{row['last_price_change_percent']:.2f}%</b>\n"
-            if 'final_price' in row:
-                message += f"💰 قیمت پایانی: {row['final_price']:,} ریال\n\n"
+    message += f"📅 {date_str} | 🕐 {time_str}\n"
+    message += f"📢 {self.channel_name}"
 
-            if 'buy_order_value' in row:
-                buy_queue_formatted = self._format_number(row['buy_order_value'])
-                message += f"🟢 <b>ارزش صف خرید: {buy_queue_formatted} تومان</b>\n"
-
-            if 'sell_order_value' in row:
-                sell_queue_formatted = self._format_number(row['sell_order_value'])
-                if row['sell_order_value'] == 0:
-                    message += f"🔴 ارزش صف فروش: <b>صفر</b> ✅\n\n"
-                else:
-                    message += f"🔴 ارزش صف فروش: {sell_queue_formatted} تومان\n\n"
-
-            if 'value' in row and 'volume' in row:
-                value_formatted = self._format_number(row['value'])
-                volume_formatted = self._format_number(row['volume'])
-                message += f"💵 ارزش معاملات: {value_formatted} تومان\n"
-                message += f"📦 حجم معاملات: {volume_formatted}\n"
-
-            message += "\n"
-
-        message += f"📢 {self.channel_name}"
-        return message
+    return message
 
     def format_filter_5_pol_hagigi_ratio(self, df: pd.DataFrame) -> str:
         """فرمت پیام برای فیلتر 5: نسبت پول حقیقی به ارزش معاملات"""
@@ -240,51 +251,51 @@ class TelegramAlert:
             return ""
 
         now = jdatetime.datetime.now()
-        date_str = now.strftime('%Y/%m/%d')
-        time_str = now.strftime('%H:%M')
+        date_str = now.strftime("%Y/%m/%d")
+        time_str = now.strftime("%H:%M")
 
         message = f"💎 <b>هشدار ورود پول حقیقی قوی</b>\n"
         message += f"📅 {date_str} | 🕐 {time_str}\n"
         message += "\n"
 
         for idx, row in df.iterrows():
-            if row.get('pol_hagigi_to_avg_monthly_value', 0) > 2:
+            if row.get("pol_hagigi_to_avg_monthly_value", 0) > 2:
                 emoji = "🔥"
-            elif row.get('pol_hagigi_to_avg_monthly_value', 0) > 1:
+            elif row.get("pol_hagigi_to_avg_monthly_value", 0) > 1:
                 emoji = "⭐"
             else:
                 emoji = "✅"
 
             message += f"{emoji} <b>{row['symbol']}</b>"
-            if 'industry_name' in row:
+            if "industry_name" in row:
                 message += f" - {row['industry_name']}\n"
             else:
                 message += "\n"
 
-            if 'pol_hagigi_to_avg_monthly_value' in row:
+            if "pol_hagigi_to_avg_monthly_value" in row:
                 message += f"📊 <b>نسبت پول حقیقی به ارزش معاملات: {row['pol_hagigi_to_avg_monthly_value']:.2f}x</b>\n"
 
-            if 'pol_hagigi' in row:
-                pol_formatted = self._format_number(row['pol_hagigi'])
-                emoji_pol = "🟢" if row['pol_hagigi'] > 0 else "🔴"
+            if "pol_hagigi" in row:
+                pol_formatted = self._format_number(row["pol_hagigi"])
+                emoji_pol = "🟢" if row["pol_hagigi"] > 0 else "🔴"
                 message += f"{emoji_pol} ورود پول حقیقی: {pol_formatted} تومان\n"
 
-            if 'value' in row and 'avg_monthly_value' in row:
-                value_formatted = self._format_number(row['value'])
-                avg_monthly_formatted = self._format_number(row['avg_monthly_value'])
+            if "value" in row and "avg_monthly_value" in row:
+                value_formatted = self._format_number(row["value"])
+                avg_monthly_formatted = self._format_number(row["avg_monthly_value"])
                 message += f"💰 ارزش معاملات : {value_formatted} تومان\n"
 
-            if 'godrat_kharid' in row:
+            if "godrat_kharid" in row:
                 message += f"💪 قدرت خریدار: {row['godrat_kharid']:.2f}\n"
-            if 'sarane_kharid' in row:
+            if "sarane_kharid" in row:
                 message += f"📈 سرانه خرید: {row['sarane_kharid']:.0f} میلیون تومان\n"
 
-            if 'final_price_change_percent' in row:
-                emoji_price = "🟢" if row['last_price_change_percent'] > 0 else "🔴"
+            if "final_price_change_percent" in row:
+                emoji_price = "🟢" if row["last_price_change_percent"] > 0 else "🔴"
                 message += f"{emoji_price} تغییر قیمت: {row['last_price_change_percent']:+.2f}%\n"
-            if 'final_price' in row:
+            if "final_price" in row:
                 message += f"💵 آخرین قیمت: {row['last_price']:,} ریال\n"
-            if 'volume' in row:
+            if "volume" in row:
                 message += f"📦 حجم: {row['volume']:,}\n"
 
             message += "\n"
@@ -298,8 +309,8 @@ class TelegramAlert:
             return ""
 
         now = jdatetime.datetime.now()
-        date_str = now.strftime('%Y/%m/%d')
-        time_str = now.strftime('%H:%M')
+        date_str = now.strftime("%Y/%m/%d")
+        time_str = now.strftime("%H:%M")
 
         message = f"⏰ <b>تیک و ساعت</b>\n"
         message += f"📅 {date_str} | 🕐 {time_str}\n"
@@ -307,23 +318,25 @@ class TelegramAlert:
 
         for idx, row in df.iterrows():
             message += f"📌 <b>{row['symbol']}</b>"
-            if 'industry_name' in row:
+            if "industry_name" in row:
                 message += f" - {row['industry_name']}\n"
             else:
                 message += "\n"
 
-            if 'last_price' in row:
+            if "last_price" in row:
                 message += f"💰 قیمت آخرین: {row['last_price']:,} ریال "
-            if 'last_price_change_percent' in row:
+            if "last_price_change_percent" in row:
                 message += f"(<b>{row['last_price_change_percent']:+.2f}%</b>)\n\n"
 
-            if 'tick_diff' in row:
+            if "tick_diff" in row:
                 message += f"📈 <b>تیک: +{row['tick_diff']:.2f}%</b>\n"
-                if 'final_price_change_percent' in row:
-                    message += f"   (آخرین: {row.get('last_price_change_percent', 0):.2f}% | "
+                if "final_price_change_percent" in row:
+                    message += (
+                        f"   (آخرین: {row.get('last_price_change_percent', 0):.2f}% | "
+                    )
                     message += f"پایانی: {row['final_price_change_percent']:.2f}%)\n\n"
 
-            if 'value' in row and 'value_to_avg_monthly_value' in row:
+            if "value" in row and "value_to_avg_monthly_value" in row:
                 value_formatted = self._format_number(row['value'])
                 value_ratio = row['value_to_avg_monthly_value']
                 message += f"💵 ارزش معاملات: {value_formatted} تومان\n"
@@ -356,40 +369,43 @@ class TelegramAlert:
         """فرمت پیام فیلتر 9 با اطلاعات پیش‌فرض"""
         return self._format_default_alert(df, "۱ ساعت اول")
 
-    def format_filter_10_heavy_buy_queue(self, df: pd.DataFrame) -> str:
-        """فرمت پیام برای فیلتر 10: صف خرید میلیاردی (API دوم)"""
-        if df.empty:
-            return ""
 
-        now = jdatetime.datetime.now()
-        date_str = now.strftime('%Y/%m/%d')
-        time_str = now.strftime('%H:%M')
+def format_filter_10_heavy_buy_queue(self, df: pd.DataFrame) -> str:
+    """فرمت پیام برای فیلتر 10: صف خرید میلیاردی (API دوم)"""
+    if df.empty:
+        return ""
 
-        message = f"💰 <b>صف خرید میلیاردی</b>\n"
-        message += f"📅 {date_str} | 🕐 {time_str}\n"
+    message = f"💰 <b>صف خرید میلیاردی</b>\n"
+    message += "\n"
+
+    for idx, row in df.iterrows():
+        message += f"📌 <b>{row['symbol']}</b>\n"
+
+        if "buy_order_value" in row:
+            buy_queue_formatted = self._format_number(row["buy_order_value"])
+            message += f"🟢 <b>صف خرید: {buy_queue_formatted} تومان</b>\n"
+
+        if "last_price" in row:
+            message += f"💰 قیمت آخرین: {row['last_price']:,} ریال\n"
+        if "last_price_change_percent" in row:
+            emoji = "🟢" if row["last_price_change_percent"] > 0 else "🔴"
+            message += f"{emoji} تغییر: {row['last_price_change_percent']:+.2f}%\n\n"
+
+        if "value" in row:
+            value_formatted = self._format_number(row["value"])
+            message += f"💵 ارزش معاملات: {value_formatted} تومان\n"
+
         message += "\n"
 
-        for idx, row in df.iterrows():
-            message += f"📌 <b>{row['symbol']}</b>\n"
+    # انتقال تاریخ و ساعت به انتهای پیام
+    now = jdatetime.datetime.now()
+    date_str = now.strftime("%Y/%m/%d")
+    time_str = now.strftime("%H:%M")
 
-            if 'buy_order_value' in row:
-                buy_queue_formatted = self._format_number(row['buy_order_value'])
-                message += f"🟢 <b>صف خرید: {buy_queue_formatted} تومان</b>\n"
+    message += f"📅 {date_str} | 🕐 {time_str}\n"
+    message += f"📢 {self.channel_name}"
 
-            if 'last_price' in row:
-                message += f"💰 قیمت آخرین: {row['last_price']:,} ریال\n"
-            if 'last_price_change_percent' in row:
-                emoji = "🟢" if row['last_price_change_percent'] > 0 else "🔴"
-                message += f"{emoji} تغییر: {row['last_price_change_percent']:+.2f}%\n\n"
-
-            if 'value' in row:
-                value_formatted = self._format_number(row['value'])
-                message += f"💵 ارزش معاملات: {value_formatted} تومان\n"
-
-            message += "\n"
-
-        message += f"📢 {self.channel_name}"
-        return message
+    return message
 
     async def send_filter_alert(self, df: pd.DataFrame, filter_name: str) -> bool:
         """ارسال هشدار یک فیلتر"""
