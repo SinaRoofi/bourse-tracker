@@ -85,9 +85,9 @@ INDUSTRY_NAMES = {
 
 # فیلتر 1: قدرت خرید قوی
 STRONG_BUYING_CONFIG = {
-    'min_value_to_avg_monthly': 1.0,
-    'min_sarane_kharid': 5.0,  # میلیون تومان
-    'min_godrat_kharid': 1.0,
+    'min_value_to_avg_monthly': 2.0,
+    'min_sarane_kharid': 50,  # میلیون تومان
+    'min_godrat_kharid': 1,
     'godrat_greater_than_5day': True,  # قدرت خرید > میانگین 5 روز
 }
 
@@ -110,8 +110,8 @@ FILTER_4_CONFIG = {}
 
 # فیلتر 5: نسبت پول حقیقی
 POL_HAGIGI_FILTER_CONFIG = {
-    'min_pol_to_value_ratio': 0.3,
-    'min_sarane_kharid': 5.0,  # میلیون تومان
+    'min_pol_to_value_ratio': 0.5,
+    'min_sarane_kharid': 50,  # میلیون تومان
     'min_godrat_kharid': 1.5,
 }
 
@@ -132,7 +132,7 @@ SWING_TRADE_CONFIG = {
     'min_allowed_price': -3.0,
     'max_last_change_percent': -2.0,
     'min_godrat_kharid': 2.0,
-    'min_sarane_kharid': 5.0,  # میلیون تومان
+    'min_sarane_kharid': 50,  # میلیون تومان
     'min_value_to_avg_monthly': 1.0,
 }
 
