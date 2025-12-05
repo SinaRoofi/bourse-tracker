@@ -385,7 +385,7 @@ class TelegramAlert:
                 message += f"💰 قیمت آخرین: {row['last_price']:,} ریال\n"
             if "last_price_change_percent" in row:
                 emoji = "🟢" if row["last_price_change_percent"] > 0 else "🔴"
-                message += f"{emoji} تغییر: {row['last_price_change_percent']:+.2f}%\n\n"
+                message += f"{emoji} تغییر: {row['last_price_change_percent']:+.2f}%\n"
 
             if "value" in row:
                 value_formatted = self._format_number(row["value"])
