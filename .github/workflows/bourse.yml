@@ -30,7 +30,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4. نمایش اطلاعات
+      # 4. نمایش اطلاعات محیط
       - name: "ℹ️ Display info"
         run: |
           echo "🕐 زمان اجرا: $(date)"
@@ -45,12 +45,12 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
           BRSAPI_KEY: ${{ secrets.BRSAPI_KEY }}
-          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
         run: |
           python main.py
 
-      # 6. آپلود لاگ‌ها (در صورت خطا یا همیشه)
+      # 6. آپلود لاگ‌ها (در صورت خطا یا موفقیت)
       - name: "📋 Upload logs"
         if: always()
         uses: actions/upload-artifact@v4
@@ -59,16 +59,7 @@ jobs:
           path: bourse_tracker.log
           retention-days: 7
 
-      # 7. بروزرسانی Gist (اختیاری، اگر نیاز به آپدیت جداگانه دارید)
-      - name: "✏️ Update Gist"
-        env:
-          GIST_ID: ${{ secrets.GIST_ID }}
-          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
-        run: |
-          echo "در حال آپدیت Gist..."
-          python scripts/update_gist.py
-
-      # 8. اعلان در صورت خطا
+      # 7. اعلان در صورت خطا
       - name: "❌ Notify on failure"
         if: failure()
         run: |
