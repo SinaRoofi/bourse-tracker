@@ -281,4 +281,4 @@ class TelegramAlert:
         return await self.send_message(message)
 
     async def send_multiple_alerts(self, alerts: List[Tuple[pd.DataFrame, str]]) -> None:
-        """ارسال همزمان
+        """ارسال همزمان"""
