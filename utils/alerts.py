@@ -228,21 +228,49 @@ class TelegramAlert:
         message = f"💰 <b>صف خرید با اردر سنگین</b>\n\n"
         for _, row in df.iterrows():
             message += f"📌 <b>{row['symbol']}</b>\n"
-            if "buy_queue_value" in row:
+            
+            # ارزش صف خرید (از API دوم - همیشه موجود)
+            if "buy_queue_value" in row and pd.notna(row['buy_queue_value']):
                 message += f"🟢 <b>صف خرید: {self._format_billion(row['buy_queue_value'])} میلیارد تومان</b>\n"
-            if "last_price" in row:
+            
+            # سفارش هر کد (از API دوم - همیشه موجود)
+            if "buy_order" in row and pd.notna(row['buy_order']):
+                message += f"📋 سفارش هر کد: {row['buy_order']:,.0f} میلیون تومان\n"
+            
+            # قیمت و تغییر (از API دوم)
+            if "last_price" in row and pd.notna(row['last_price']):
                 message += f"💰 قیمت آخرین: {row['last_price']}\n"
-            if "last_price_change_percent" in row:
+            if "last_price_change_percent" in row and pd.notna(row['last_price_change_percent']):
                 emoji = "🟢" if row["last_price_change_percent"] > 0 else "🔴"
                 message += f"{emoji} تغییر: {row['last_price_change_percent']:+.2f}%\n"
-            if "value" in row:
+            
+            # ارزش معاملات (اگر از API اول غنی شده باشه)
+            if "value" in row and pd.notna(row['value']):
                 message += f"💵 ارزش معاملات: {self._format_billion(row['value'])} میلیارد تومان\n"
-            if "sarane_kharid" in row:
+            
+            # ارزش معاملات به میانگین ماهانه (از API اول)
+            if "value_to_avg_monthly_value" in row and pd.notna(row['value_to_avg_monthly_value']):
+                message += f"📊 ارزش / میانگین ماهانه: <b>{row['value_to_avg_monthly_value']:.2f}x</b>\n"
+            
+            # سرانه خرید (از API اول)
+            if "sarane_kharid" in row and pd.notna(row['sarane_kharid']):
                 message += f"📈 سرانه خرید: {row['sarane_kharid']:,.0f} میلیون تومان\n"
-            if "pol_hagigi" in row:
+            
+            # پول حقیقی (از API اول)
+            if "pol_hagigi" in row and pd.notna(row['pol_hagigi']):
                 emoji = "🟢" if row["pol_hagigi"] > 0 else "🔴"
                 message += f"{emoji} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
+            
+            # نسبت پول حقیقی به ارزش معاملات (از API اول - محاسبه شده)
+            if "pol_hagigi_to_value" in row and pd.notna(row['pol_hagigi_to_value']):
+                message += f"💎 پول حقیقی / ارزش معاملات: {row['pol_hagigi_to_value']:.2f}\n"
+            
+            # قدرت خرید (از API اول)
+            if "godrat_kharid" in row and pd.notna(row['godrat_kharid']):
+                message += f"💪 قدرت خرید: {row['godrat_kharid']:.2f}\n"
+            
             message += "\n"
+        
         date_str, time_str = self._current_tehran_jdatetime()
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
         return message
@@ -288,6 +316,53 @@ class TelegramAlert:
         except Exception as e:
             logger.error(f"❌ خطا در ارسال پیام فیلتر {filter_name}: {e}")
             return False
+
+    async def send_filter_alert_safe(self, df: pd.DataFrame, filter_name: str) -> bool:
+        """
+        ارسال امن پیام فیلتر با مدیریت Flood Control
+        
+        Args:
+            df: DataFrame سهام برای ارسال
+            filter_name: نام فیلتر
+            
+        Returns:
+            bool: True در صورت موفقیت
+        """
+        max_retries = 3
+        base_delay = 3
+        
+        for attempt in range(max_retries):
+            try:
+                success = await self.send_filter_alert(df, filter_name)
+                if success:
+                    return True
+                
+                # اگر ارسال ناموفق بود، تأخیر قبل از تلاش مجدد
+                if attempt < max_retries - 1:
+                    delay = base_delay * (attempt + 1)
+                    logger.warning(f"⚠️ تلاش مجدد {attempt + 1}/{max_retries} بعد از {delay} ثانیه...")
+                    await asyncio.sleep(delay)
+                    
+            except Exception as e:
+                error_msg = str(e).lower()
+                
+                # مدیریت خطای Flood Control
+                if 'flood' in error_msg or 'too many requests' in error_msg or '429' in error_msg:
+                    if attempt < max_retries - 1:
+                        delay = 30 * (attempt + 1)  # تأخیر بیشتر برای flood control
+                        logger.warning(f"⚠️ Flood Control: انتظار {delay} ثانیه...")
+                        await asyncio.sleep(delay)
+                    else:
+                        logger.error(f"❌ Flood Control: ناموفق بعد از {max_retries} تلاش")
+                        return False
+                else:
+                    logger.error(f"❌ خطا در ارسال فیلتر {filter_name}: {e}")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(base_delay)
+                    else:
+                        return False
+        
+        return False
 
     def send_filter_alert_sync(self, df: pd.DataFrame, filter_name: str) -> bool:
         return asyncio.run(self.send_filter_alert(df, filter_name))
