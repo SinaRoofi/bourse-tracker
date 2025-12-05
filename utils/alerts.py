@@ -389,7 +389,7 @@ class TelegramAlert:
 
             if "value" in row:
                 value_formatted = self._format_number(row["value"])
-                message += f"💵 ارزش معاملات: {value_formatted} تومان\n"
+                message += f"💵 ارزش معاملات: {value/10_000_000_000:,0f}میلیارد تومان\n"
 
             message += "\n"
 
