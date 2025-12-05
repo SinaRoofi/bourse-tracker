@@ -57,6 +57,34 @@ class BourseDataProcessor:
         if 'symbol' in df.columns:
             df = df.dropna(subset=['symbol'])
 
+        # تبدیل ستون‌های عددی از string به numeric
+        numeric_columns = [
+            'volume', 'value', 
+            'first_price', 'first_price_change_percent',
+            'high_price', 'high_price_change_percent',
+            'low_price', 'low_price_change_percent',
+            'last_price', 'last_price_change_percent',
+            'final_price', 'final_price_change_percent',
+            'diff_last_final', 'volatility',
+            'sarane_kharid', 'sarane_forosh', 'godrat_kharid',
+            'pol_hagigi', 'buy_order_value', 'sell_order_value',
+            'diff_buy_sell_order',
+            'avg_5_day_pol_hagigi', 'avg_20_day_pol_hagigi', 'avg_60_day_pol_hagigi',
+            '5_day_pol_hagigi', '20_day_pol_hagigi', '60_day_pol_hagigi',
+            '5_day_godrat_kharid', '20_day_godrat_kharid',
+            'avg_monthly_value', 'value_to_avg_monthly_value',
+            'avg_3_month_value', 'value_to_avg_3_month_value',
+            '5_day_return', '20_day_return', '60_day_return',
+            'marketcap', 'value_to_marketcap',
+            'pol_hagigi_to_avg_monthly_value'
+        ]
+
+        for col in numeric_columns:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        logger.info("✅ تبدیل ستون‌های عددی API اول انجام شد")
+
         return df
 
     def _clean_and_prepare_api2(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -233,51 +261,21 @@ class BourseDataProcessor:
         return filtered
 
     # ========================================
-    # فیلتر 4: صف خرید سنگین در سقف قیمت (API اول)
+    # فیلتر 4: رزرو شده برای آینده
     # ========================================
     def filter_4_heavy_buy_queue_at_ceiling(self, df: pd.DataFrame, config: dict = None) -> pd.DataFrame:
         """
-        فیلتر 4: صف خرید سنگین در سقف دامنه نوسان
-        
-        شرایط:
-        - درصد تغییر قیمت پایانی >= دامنه نوسان
-        - صف فروش صفر یا خیلی کم
-        - صف خرید سنگین
+        فیلتر 4: غیرفعال (رزرو شده برای فیلتر جدید)
         
         Args:
             df: DataFrame کل سهام از API اول
             config: تنظیمات فیلتر
             
         Returns:
-            DataFrame سهام فیلتر شده
+            DataFrame خالی
         """
-        if df.empty:
-            return df
-
-        if config is None:
-            from config import CEILING_FILTER_CONFIG
-            config = CEILING_FILTER_CONFIG
-
-        price_range = config.get('price_range_percent', 5.0)
-        min_buy_value = config.get('min_buy_queue_value', 1_000_000_000)
-        max_sell_value = config.get('max_sell_queue_value', 10_000_000)
-
-        logger.info(f"اعمال فیلتر 4: صف خرید سنگین در سقف (دامنه نوسان: {price_range}%)")
-
-        filtered = df[
-            (df['final_price_change_percent'] >= price_range) &
-            (df['sell_order_value'] <= max_sell_value) &
-            (df['buy_order_value'] >= min_buy_value)
-        ].copy()
-
-        if filtered.empty:
-            logger.info("فیلتر 4: هیچ سهمی یافت نشد")
-            return pd.DataFrame()
-
-        filtered = filtered.sort_values('buy_order_value', ascending=False)
-        logger.info(f"✅ فیلتر 4: {len(filtered)} سهم با صف خرید سنگین در سقف")
-
-        return filtered
+        logger.info("فیلتر 4: غیرفعال است")
+        return pd.DataFrame()
 
     # ========================================
     # فیلتر 5: نسبت پول حقیقی (API اول)
