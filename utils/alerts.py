@@ -372,7 +372,7 @@ class TelegramAlert:
         if df.empty:
             return ""
 
-        message = f"💰 <b>صف خرید میلیاردی</b>\n\n"
+        message = f"💰 <b>صف خرید با اردر سنگین</b>\n\n"
 
         for idx, row in df.iterrows():
             message += f"📌 <b>{row['symbol']}</b>\n"
