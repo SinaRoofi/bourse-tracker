@@ -101,19 +101,19 @@ class UnifiedDataFetcher:
             لیست دیکشنری اطلاعات سهام
         """
         url = f"{self.api1_base_url}/data/industries-stocks-csv/{industry_code}"
-        
+
         try:
             response = self.session_api1.get(url, timeout=30)
-            
+
             if response.status_code != 200:
                 logger.warning(f"⚠️ خطا در دریافت صنعت {industry_code}: {response.status_code}")
                 return []
-            
+
             json_data = response.json()
             data = json_data["data"] if isinstance(json_data, dict) and "data" in json_data else json_data
-            
+
             return data
-            
+
         except Exception as e:
             logger.error(f"❌ خطا در دریافت صنعت {industry_code}: {e}")
             return []
@@ -140,6 +140,7 @@ class UnifiedDataFetcher:
             # اگر کدهای صنعت داده نشده، از config استفاده کن
             if industry_codes is None:
                 from config import INDUSTRY_CODES, INDUSTRY_NAMES
+                industry_codes = INDUSTRY_CODES
             else:
                 from config import INDUSTRY_NAMES
 
@@ -149,9 +150,9 @@ class UnifiedDataFetcher:
             # دریافت داده هر صنعت
             for idx, code in enumerate(industry_codes, 1):
                 logger.info(f"  📊 دریافت صنعت {code} ({idx}/{total_industries})...")
-                
+
                 data = self._fetch_industry_data(code)
-                
+
                 if not data:
                     continue
 
@@ -177,9 +178,9 @@ class UnifiedDataFetcher:
 
             # ساخت DataFrame
             df = pd.DataFrame(all_rows)
-            
+
             logger.info(f"✅ API اول: {len(df)} سهم از {total_industries} صنعت دریافت شد")
-            
+
             return df
 
         except ImportError:
@@ -321,7 +322,7 @@ class UnifiedDataFetcher:
         """
         if df is None or df.empty:
             return False
-        
+
         required_columns = [
             'symbol',
             'last_price',
@@ -331,13 +332,13 @@ class UnifiedDataFetcher:
             'godrat_kharid',
             'pol_hagigi'
         ]
-        
+
         missing_columns = [col for col in required_columns if col not in df.columns]
-        
+
         if missing_columns:
             logger.warning(f"⚠️ ستون‌های گمشده در API اول: {missing_columns}")
             return False
-        
+
         return True
 
     def validate_api2_data(self, df: pd.DataFrame) -> bool:
@@ -353,12 +354,12 @@ class UnifiedDataFetcher:
         """
         if df is None or df.empty:
             return False
-        
+
         # چک کردن وجود ستون symbol (یا l18)
         if 'symbol' not in df.columns and 'l18' not in df.columns:
             logger.warning("⚠️ ستون symbol یا l18 در API دوم یافت نشد")
             return False
-        
+
         return True
 
 
