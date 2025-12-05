@@ -33,10 +33,17 @@ from utils.data_processor import BourseDataProcessor
 from utils.alerts import TelegramAlert
 from utils.gist_alert_manager import GistAlertManager
 
+# ===========================
 # تنظیم timezone تهران
+# ===========================
 TEHRAN_TZ = pytz.timezone("Asia/Tehran")
 
-# تنظیمات لاگ
+# ===========================
+# تنظیم logging به وقت تهران
+# ===========================
+def tehran_time(*args):
+    return datetime.now(TEHRAN_TZ).timetuple()
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -45,28 +52,40 @@ logging.basicConfig(
         logging.FileHandler("bourse_tracker.log", encoding="utf-8"),
     ],
 )
+logging.Formatter.converter = tehran_time
 logger = logging.getLogger(__name__)
 
-# تنظیمات گروه‌بندی پیام‌ها
-STOCKS_PER_MESSAGE = 10  # تعداد سهم در هر پیام
+# ===========================
+# تعداد سهام در هر پیام بر اساس فیلتر
+# ===========================
+STOCKS_PER_MESSAGE_MAP = {
+    'filter_1': 5,
+    'filter_2_sarane_cross': 3,
+    'filter_3_watchlist': 5,
+    'filter_4_ceiling_queue': 4,
+    'filter_5_pol_hagigi_ratio': 3,
+    'filter_6_tick_time': 5,
+    'filter_7_suspicious_volume': 5,
+    'filter_8_swing_trade': 5,
+    'filter_9_first_hour': 5,
+    'filter_10_heavy_buy_queue': 2
+}
 
-# ========================================
+# ===========================
 # توابع کمکی
-# ========================================
-
+# ===========================
 def is_market_open() -> bool:
-    """بررسی اینکه آیا بازار باز است یا نه"""
-    utc_now = datetime.now(pytz.UTC)
-    now = utc_now.astimezone(TEHRAN_TZ)
-
-    logger.info(f"🕐 زمان UTC: {utc_now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+    """بررسی اینکه آیا بازار باز است یا نه (به وقت تهران)"""
+    now = datetime.now(TEHRAN_TZ)
     logger.info(f"🕐 زمان تهران: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
 
+    # روز هفته به وقت تهران
     weekday = (now.weekday() + 2) % 7
     if weekday not in WORKING_DAYS:
         logger.info(f"امروز روز کاری نیست (روز هفته: {weekday})")
         return False
 
+    # تاریخ شمسی
     jnow = jdatetime.datetime.fromgregorian(datetime=now.replace(tzinfo=None))
     today_str = jnow.strftime("%Y-%m-%d")
     if is_holiday(today_str):
@@ -81,25 +100,17 @@ def is_market_open() -> bool:
     logger.info(f"✅ بازار باز است - {today_str} {current_time}")
     return True
 
-def chunk_dataframe(df, chunk_size):
-    """تقسیم DataFrame به چانک‌های کوچکتر"""
+def chunk_dataframe(df, filter_name):
+    """تقسیم DataFrame به چانک‌های کوچکتر بر اساس فیلتر"""
+    chunk_size = STOCKS_PER_MESSAGE_MAP.get(filter_name, 5)
     for i in range(0, len(df), chunk_size):
         yield df.iloc[i:i + chunk_size]
 
+# ===========================
+# ارسال هشدارها
+# ===========================
 async def send_alerts_for_filters_async(alert: TelegramAlert, alert_manager: GistAlertManager, 
-                                         filters_results: dict, api_name: str) -> tuple:
-    """
-    ارسال هشدارها برای فیلترهای یک API (نسخه async با بهبود ذخیره‌سازی)
-    
-    Args:
-        alert: شیء TelegramAlert
-        alert_manager: شیء GistAlertManager
-        filters_results: نتایج فیلترها
-        api_name: نام API (برای لاگ)
-        
-    Returns:
-        tuple: (تعداد ارسال شده، تعداد رد شده)
-    """
+                                        filters_results: dict, api_name: str) -> tuple:
     sent_count = 0
     skipped_count = 0
 
@@ -114,9 +125,8 @@ async def send_alerts_for_filters_async(alert: TelegramAlert, alert_manager: Gis
 
         logger.info(f"\n🔍 پردازش فیلتر {filter_name}: {len(filtered_df)} سهم")
 
-        # گروه‌بندی سهام - 5 سهم در هر پیام
-        for chunk_idx, chunk_df in enumerate(chunk_dataframe(filtered_df, STOCKS_PER_MESSAGE), 1):
-            # بررسی spam برای همه سهام در chunk
+        # گروه‌بندی بر اساس فیلتر
+        for chunk_idx, chunk_df in enumerate(chunk_dataframe(filtered_df, filter_name), 1):
             symbols_to_send = []
             for idx, row in chunk_df.iterrows():
                 symbol = row['symbol']
@@ -126,67 +136,52 @@ async def send_alerts_for_filters_async(alert: TelegramAlert, alert_manager: Gis
                 else:
                     symbols_to_send.append(symbol)
 
-            # اگر سهمی برای ارسال باشد
             if symbols_to_send:
-                # فیلتر کردن فقط سهم‌هایی که باید ارسال بشن
                 chunk_to_send = chunk_df[chunk_df['symbol'].isin(symbols_to_send)]
 
-                # ارسال یک پیام برای گروه
-                success = await alert.send_filter_alert(chunk_to_send, filter_name)
-
+                # ارسال با مدیریت Flood Control
+                success = await alert.send_filter_alert_safe(chunk_to_send, filter_name)
                 if success:
-                    # ✅ بهبود: ذخیره گروهی به جای تک‌تک
-                    alerts_to_save = [(symbol, filter_name) for symbol in symbols_to_send]
-                    save_success = alert_manager.mark_multiple_as_sent(alerts_to_save)
-                    
-                    if save_success:
-                        sent_count += len(symbols_to_send)
-                        logger.info(f"✅ گروه {chunk_idx} از {filter_name}: {len(symbols_to_send)} سهم ارسال و ذخیره شد")
-                    else:
-                        logger.warning(f"⚠️ گروه {chunk_idx}: ارسال موفق اما ذخیره ناموفق")
-                        sent_count += len(symbols_to_send)
+                    alert_manager.mark_multiple_as_sent([(s, filter_name) for s in symbols_to_send])
+                    sent_count += len(symbols_to_send)
+                    logger.info(f"✅ گروه {chunk_idx} از {filter_name}: {len(symbols_to_send)} سهم ارسال شد")
                 else:
                     logger.error(f"❌ گروه {chunk_idx} از {filter_name}: خطا در ارسال")
+
+                # تأخیر بین گروه‌ها برای کاهش Flood Control
+                await asyncio.sleep(20)
             else:
                 logger.info(f"⏭️  گروه {chunk_idx}: همه قبلاً ارسال شده‌اند")
 
     return sent_count, skipped_count
 
-# ========================================
+# ===========================
 # تابع اصلی
-# ========================================
-
+# ===========================
 async def main_async():
-    """تابع اصلی async"""
     logger.info("=" * 80)
     logger.info("🚀 شروع Bourse Tracker")
     logger.info("=" * 80)
 
     try:
-        # اعتبارسنجی تنظیمات
         validate_config()
         logger.info("✅ تنظیمات معتبر است")
 
-        # بررسی بازار
         if not is_market_open():
             logger.info("⏸️  بازار بسته است. خروج از برنامه.")
             return
 
-        # دریافت داده از APIها
         logger.info("\n📥 شروع دریافت داده از APIها...")
         fetcher = UnifiedDataFetcher(api1_base_url=API_BASE_URL, api2_key=BRSAPI_KEY)
         df_api1_raw, df_api2_raw = fetcher.fetch_all_data()
 
-        # پردازش داده‌ها
         logger.info("\n🔄 شروع پردازش داده‌ها...")
         processor = BourseDataProcessor()
         df_api1, df_api2 = processor.process_all_data(df_api1_raw, df_api2_raw)
 
-        # اعمال فیلترها
         logger.info("\n🔍 اعمال فیلترها...")
         all_results = processor.apply_all_filters(df_api1, df_api2)
 
-        # آماده‌سازی ارسال هشدارها
         logger.info("\n📤 شروع ارسال هشدارها به تلگرام...")
         alert = TelegramAlert()
         alert_manager = GistAlertManager(GIST_TOKEN, GIST_ID)
@@ -194,31 +189,21 @@ async def main_async():
         total_sent = 0
         total_skipped = 0
 
-        # ارسال هشدارهای API اول (فیلترهای 1-9)
         if 'api1' in all_results and all_results['api1']:
             sent, skipped = await send_alerts_for_filters_async(
-                alert, 
-                alert_manager, 
-                all_results['api1'], 
-                "API اول (فیلترهای 1-9)"
+                alert, alert_manager, all_results['api1'], "API اول (فیلترهای 1-9)"
             )
             total_sent += sent
             total_skipped += skipped
 
-        # ارسال هشدارهای API دوم (فیلتر 10)
         if 'api2' in all_results and all_results['api2']:
             sent, skipped = await send_alerts_for_filters_async(
-                alert, 
-                alert_manager, 
-                all_results['api2'], 
-                "API دوم (فیلتر 10)"
+                alert, alert_manager, all_results['api2'], "API دوم (فیلتر 10)"
             )
             total_sent += sent
             total_skipped += skipped
 
-        # گزارش نهایی
         stats = alert_manager.get_today_stats()
-
         logger.info("\n" + "=" * 80)
         logger.info("📊 گزارش نهایی:")
         logger.info(f"  • تاریخ: {stats['date']}")
@@ -241,12 +226,7 @@ async def main_async():
         sys.exit(1)
 
 def main():
-    """wrapper برای اجرای async"""
     asyncio.run(main_async())
-
-# ========================================
-# نقطه ورود
-# ========================================
 
 if __name__ == "__main__":
     main()
