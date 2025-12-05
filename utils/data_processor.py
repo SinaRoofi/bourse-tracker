@@ -1,5 +1,7 @@
 """
 ماژول پردازش و فیلتر داده‌های بورس
+فیلترهای 1 تا 9: روی API اول
+فیلتر 10: روی API دوم
 """
 import pandas as pd
 from typing import Dict, List
@@ -10,12 +12,70 @@ logger = logging.getLogger(__name__)
 
 class BourseDataProcessor:
     """کلاس پردازش و اعمال فیلترها بر روی داده‌های بورس"""
-    
+
     def __init__(self):
         self.filters_results = {}
-    
+
     # ========================================
-    # فیلتر 1: قدرت خرید قوی
+    # پردازش داده‌های خام
+    # ========================================
+    
+    def process_all_data(self, df_api1_raw: pd.DataFrame, df_api2_raw: pd.DataFrame) -> tuple:
+        """
+        پردازش داده‌های خام از هر دو API
+        
+        Args:
+            df_api1_raw: DataFrame خام از API اول (برای فیلترهای 1-9)
+            df_api2_raw: DataFrame خام از API دوم (برای فیلتر 10)
+            
+        Returns:
+            tuple: (df_api1_processed, df_api2_processed)
+        """
+        logger.info("شروع پردازش داده‌های خام...")
+        
+        # پردازش API اول
+        if df_api1_raw is not None and not df_api1_raw.empty:
+            df_api1 = self._clean_and_prepare_api1(df_api1_raw)
+            logger.info(f"✅ API اول: {len(df_api1)} سهم پردازش شد")
+        else:
+            df_api1 = pd.DataFrame()
+            logger.warning("⚠️ API اول خالی است")
+        
+        # پردازش API دوم
+        if df_api2_raw is not None and not df_api2_raw.empty:
+            df_api2 = self._clean_and_prepare_api2(df_api2_raw)
+            logger.info(f"✅ API دوم: {len(df_api2)} نماد پردازش شد")
+        else:
+            df_api2 = pd.DataFrame()
+            logger.warning("⚠️ API دوم خالی است")
+        
+        return df_api1, df_api2
+    
+    def _clean_and_prepare_api1(self, df: pd.DataFrame) -> pd.DataFrame:
+        """پاکسازی و آماده‌سازی داده‌های API اول"""
+        # حذف ردیف‌های نال
+        if 'symbol' in df.columns:
+            df = df.dropna(subset=['symbol'])
+        
+        # TODO: اینجا منطق پردازش و محاسبات اضافی API اول رو اضافه کنید
+        # مثلاً تبدیل واحدها، محاسبه نسبت‌ها و ...
+        
+        return df
+    
+    def _clean_and_prepare_api2(self, df: pd.DataFrame) -> pd.DataFrame:
+        """پاکسازی و آماده‌سازی داده‌های API دوم"""
+        # تبدیل نام ستون l18 به symbol
+        if 'l18' in df.columns:
+            df = df.rename(columns={'l18': 'symbol'})
+        
+        # حذف ردیف‌های نال
+        if 'symbol' in df.columns:
+            df = df.dropna(subset=['symbol'])
+        
+        return df
+
+    # ========================================
+    # فیلتر 1: قدرت خرید قوی (API اول)
     # ========================================
     def filter_1_strong_buying_power(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -28,64 +88,60 @@ class BourseDataProcessor:
         - قدرت خرید امروز > میانگین 5 روز
         
         Args:
-            df: DataFrame کل سهام
+            df: DataFrame کل سهام از API اول
             
         Returns:
             DataFrame سهام فیلتر شده
         """
         if df.empty:
             return df
-        
+
         logger.info("اعمال فیلتر 1: قدرت خرید قوی")
-        
+
         filtered = df[
             (df['value_to_avg_monthly_value'] > 1) &
-            (df['sarane_kharid'] > 5.0) &  # 50 میلیون تومان = 5 واحد (میلیون)
+            (df['sarane_kharid'] > 5.0) &
             (df['godrat_kharid'] > 1) &
             (df['godrat_kharid'] > df['5_day_godrat_kharid'])
         ].copy()
-        
-        # مرتب‌سازی بر اساس قدرت خرید (نزولی)
+
         filtered = filtered.sort_values('godrat_kharid', ascending=False)
-        
         logger.info(f"✅ فیلتر 1: {len(filtered)} سهم یافت شد")
-        
+
         return filtered
-    
+
     # ========================================
-    # فیلتر 2: کراس سرانه خرید
+    # فیلتر 2: کراس سرانه خرید (API اول)
     # ========================================
     def filter_2_sarane_kharid_cross(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        فیلتر 2: کراس سرانه خرید (سرانه خرید از سرانه فروش بالاتر رفت)
+        فیلتر 2: کراس سرانه خرید
         
         شرایط:
         - سرانه خرید > سرانه فروش
         
         Args:
-            df: DataFrame کل سهام
+            df: DataFrame کل سهام از API اول
             
         Returns:
             DataFrame سهام فیلتر شده
         """
         if df.empty:
             return df
-        
+
         logger.info("اعمال فیلتر 2: کراس سرانه خرید")
-        
+
         filtered = df[
             df['sarane_kharid'] > df['sarane_forosh']
         ].copy()
-        
-        # مرتب‌سازی بر اساس سرانه خرید (نزولی)
+
         filtered = filtered.sort_values('sarane_kharid', ascending=False)
-        
         logger.info(f"✅ فیلتر 2: {len(filtered)} سهم یافت شد")
-        
+
         return filtered
-    
+
     # ========================================
-    # فیلتر 3: هشدار درصد تغییر نمادهای خاص
+    # فیلتر 3: هشدار درصد تغییر نمادهای خاص (API اول)
     # ========================================
     def filter_3_watchlist_symbols(self, df: pd.DataFrame, watchlist: dict = None) -> pd.DataFrame:
         """
@@ -96,221 +152,198 @@ class BourseDataProcessor:
         - درصد تغییر آخرین > آستانه تعریف شده
         
         Args:
-            df: DataFrame کل سهام
+            df: DataFrame کل سهام از API اول
             watchlist: دیکشنری {نماد: آستانه_درصد}
-                      اگر None باشد، از config استفاده می‌شود
             
         Returns:
             DataFrame سهام فیلتر شده
         """
         if df.empty:
             return df
-        
-        # اگه watchlist داده نشده، از config استفاده کن
+
         if watchlist is None:
             from config import WATCHLIST_SYMBOLS
             watchlist = WATCHLIST_SYMBOLS
-        
+
         if not watchlist:
             logger.warning("فیلتر 3: watchlist خالی است!")
             return pd.DataFrame()
-        
+
         logger.info(f"اعمال فیلتر 3: بررسی {len(watchlist)} نماد")
-        
+
         filtered_list = []
-        
+
         for symbol, threshold in watchlist.items():
-            # پیدا کردن نماد در دیتافریم
             symbol_df = df[df['symbol'] == symbol]
-            
+
             if symbol_df.empty:
                 continue
-            
-            # بررسی آستانه
+
             symbol_data = symbol_df.iloc[0]
             if symbol_data['last_price_change_percent'] > threshold:
-                # اضافه کردن ستون آستانه برای نمایش
                 symbol_row = symbol_data.to_frame().T
                 symbol_row['threshold'] = threshold
                 filtered_list.append(symbol_row)
-                
                 logger.info(f"🔔 {symbol}: {symbol_data['last_price_change_percent']:.2f}% > {threshold}%")
-        
+
         if not filtered_list:
             logger.info("فیلتر 3: هیچ نمادی از آستانه عبور نکرد")
             return pd.DataFrame()
-        
+
         filtered = pd.concat(filtered_list, ignore_index=True)
-        
-        # مرتب‌سازی بر اساس درصد تغییر (نزولی)
         filtered = filtered.sort_values('last_price_change_percent', ascending=False)
-        
         logger.info(f"✅ فیلتر 3: {len(filtered)} نماد از آستانه عبور کرد")
-        
+
         return filtered
-    
+
     # ========================================
-    # فیلتر 4: صف خرید سنگین در سقف قیمت
+    # فیلتر 4: صف خرید سنگین در سقف قیمت (API اول)
     # ========================================
     def filter_4_heavy_buy_queue_at_ceiling(self, df: pd.DataFrame, config: dict = None) -> pd.DataFrame:
         """
         فیلتر 4: صف خرید سنگین در سقف دامنه نوسان
         
         شرایط:
-        - درصد تغییر قیمت پایانی >= دامنه نوسان (مثلاً 5%)
-          یعنی سهم در سقف مثبت قیمت
+        - درصد تغییر قیمت پایانی >= دامنه نوسان
         - صف فروش صفر یا خیلی کم
-        - صف خرید سنگین (بالای 1 میلیارد تومان)
+        - صف خرید سنگین
         
         Args:
-            df: DataFrame کل سهام
-            config: تنظیمات فیلتر (اگر None باشد از config استفاده می‌شود)
+            df: DataFrame کل سهام از API اول
+            config: تنظیمات فیلتر
             
         Returns:
             DataFrame سهام فیلتر شده
         """
         if df.empty:
             return df
-        
-        # بارگذاری تنظیمات
+
         if config is None:
             from config import CEILING_FILTER_CONFIG
             config = CEILING_FILTER_CONFIG
-        
+
         price_range = config.get('price_range_percent', 5.0)
         min_buy_value = config.get('min_buy_queue_value', 1_000_000_000)
         max_sell_value = config.get('max_sell_queue_value', 10_000_000)
-        
+
         logger.info(f"اعمال فیلتر 4: صف خرید سنگین در سقف (دامنه نوسان: {price_range}%)")
-        
-        # اعمال فیلتر
+
         filtered = df[
-            (df['final_price_change_percent'] >= price_range) &    # در سقف مثبت دامنه
-            (df['sell_order_value'] <= max_sell_value) &           # صف فروش کم/صفر
-            (df['buy_order_value'] >= min_buy_value)               # صف خرید سنگین
+            (df['final_price_change_percent'] >= price_range) &
+            (df['sell_order_value'] <= max_sell_value) &
+            (df['buy_order_value'] >= min_buy_value)
         ].copy()
-        
+
         if filtered.empty:
             logger.info("فیلتر 4: هیچ سهمی یافت نشد")
             return pd.DataFrame()
-        
-        # مرتب‌سازی بر اساس ارزش صف خرید (نزولی)
+
         filtered = filtered.sort_values('buy_order_value', ascending=False)
-        
         logger.info(f"✅ فیلتر 4: {len(filtered)} سهم با صف خرید سنگین در سقف")
-        
+
         return filtered
-    
+
     # ========================================
-    # فیلتر 5: نسبت پول حقیقی به ارزش معاملات
+    # فیلتر 5: نسبت پول حقیقی (API اول)
     # ========================================
     def filter_5_pol_hagigi_ratio(self, df: pd.DataFrame, config: dict = None) -> pd.DataFrame:
         """
-        فیلتر 5: نسبت پول حقیقی به میانگین ارزش معاملات ماهانه
+        فیلتر 5: نسبت پول حقیقی به ارزش معاملات
         
         شرایط:
         - نسبت پول حقیقی به میانگین ماهانه >= 0.5
-        - سرانه خرید >= 50 میلیون تومان (واحد: میلیون)
+        - سرانه خرید >= 50 میلیون تومان
         - قدرت خرید >= 1.5
         
         Args:
-            df: DataFrame کل سهام
-            config: تنظیمات فیلتر (اگر None باشد از config استفاده می‌شود)
+            df: DataFrame کل سهام از API اول
+            config: تنظیمات فیلتر
             
         Returns:
             DataFrame سهام فیلتر شده
         """
         if df.empty:
             return df
-        
-        # بارگذاری تنظیمات
+
         if config is None:
             from config import POL_HAGIGI_FILTER_CONFIG
             config = POL_HAGIGI_FILTER_CONFIG
-        
+
         min_ratio = config.get('min_pol_to_value_ratio', 0.5)
         min_sarane = config.get('min_sarane_kharid', 5.0)
         min_godrat = config.get('min_godrat_kharid', 1.5)
-        
+
         logger.info(f"اعمال فیلتر 5: نسبت پول حقیقی (آستانه: {min_ratio})")
-        
-        # اعمال فیلتر
+
         filtered = df[
             (df['pol_hagigi_to_avg_monthly_value'] >= min_ratio) &
             (df['sarane_kharid'] >= min_sarane) &
             (df['godrat_kharid'] >= min_godrat)
         ].copy()
-        
+
         if filtered.empty:
             logger.info("فیلتر 5: هیچ سهمی یافت نشد")
             return pd.DataFrame()
-        
-        # مرتب‌سازی بر اساس نسبت پول حقیقی (نزولی)
+
         filtered = filtered.sort_values('pol_hagigi_to_avg_monthly_value', ascending=False)
-        
         logger.info(f"✅ فیلتر 5: {len(filtered)} سهم با نسبت پول حقیقی بالا")
-        
+
         return filtered
-    
+
     # ========================================
-    # فیلتر 6: تیک و ساعت (رشد قیمتی در آخر معاملات)
+    # فیلتر 6: تیک و ساعت (API اول)
     # ========================================
     def filter_6_tick_and_time(self, df: pd.DataFrame, config: dict = None) -> pd.DataFrame:
         """
-        فیلتر 6: تیک و ساعت - شناسایی سهامی که در آخر روز تیک مثبت خوردند
+        فیلتر 6: تیک و ساعت - رشد قیمتی در آخر معاملات
         
         شرایط:
-        - 0.98 × قیمت اولین > قیمت کف (کف بالاتر از 98% اولین)
-        - 0.98 × قیمت آخرین > قیمت اولین (آخرین حداقل 2% بالاتر از اولین)
-        - درصد تغییر آخرین - درصد تغییر پایانی > 2% (تیک مثبت)
+        - 0.98 × قیمت اولین > قیمت کف
+        - 0.98 × قیمت آخرین > قیمت اولین
+        - درصد تغییر آخرین - درصد تغییر پایانی > 2%
         
         Args:
-            df: DataFrame کل سهام
-            config: تنظیمات فیلتر (اگر None باشد از config استفاده می‌شود)
+            df: DataFrame کل سهام از API اول
+            config: تنظیمات فیلتر
             
         Returns:
             DataFrame سهام فیلتر شده
         """
         if df.empty:
             return df
-        
-        # بارگذاری تنظیمات
+
         if config is None:
             from config import TICK_FILTER_CONFIG
             config = TICK_FILTER_CONFIG
-        
+
         first_to_low_ratio = config.get('first_to_low_ratio', 0.98)
         last_to_first_ratio = config.get('last_to_first_ratio', 0.98)
         tick_diff_percent = config.get('tick_diff_percent', 2.0)
-        
+
         logger.info(f"اعمال فیلتر 6: تیک و ساعت")
-        
-        # محاسبه اختلاف درصد تغییر آخرین و پایانی
+
         df_copy = df.copy()
         df_copy['tick_diff'] = (
             df_copy['last_price_change_percent'] - df_copy['final_price_change_percent']
         )
-        
-        # اعمال فیلتر
+
         filtered = df_copy[
-            (first_to_low_ratio * df_copy['first_price'] > df_copy['low_price']) &     # کف بالاتر از 98% اولین
-            (last_to_first_ratio * df_copy['last_price'] > df_copy['first_price']) &    # آخرین بالاتر از اولین
-            (df_copy['tick_diff'] > tick_diff_percent)                                   # تیک مثبت بیش از 2%
+            (first_to_low_ratio * df_copy['first_price'] > df_copy['low_price']) &
+            (last_to_first_ratio * df_copy['last_price'] > df_copy['first_price']) &
+            (df_copy['tick_diff'] > tick_diff_percent)
         ].copy()
-        
+
         if filtered.empty:
             logger.info("فیلتر 6: هیچ سهمی یافت نشد")
             return pd.DataFrame()
-        
-        # مرتب‌سازی بر اساس اختلاف تیک (نزولی)
+
         filtered = filtered.sort_values('tick_diff', ascending=False)
-        
         logger.info(f"✅ فیلتر 6: {len(filtered)} سهم با تیک مثبت در آخر روز")
-        
+
         return filtered
-    
+
     # ========================================
-    # فیلتر 7: حجم مشکوک
+    # فیلتر 7: حجم مشکوک (API اول)
     # ========================================
     def filter_7_suspicious_volume(self, df: pd.DataFrame, config: dict = None) -> pd.DataFrame:
         """
@@ -320,7 +353,7 @@ class BourseDataProcessor:
         - ارزش معاملات به میانگین ماهانه > 2
         
         Args:
-            df: DataFrame کل سهام
+            df: DataFrame کل سهام از API اول
             config: تنظیمات فیلتر
             
         Returns:
@@ -328,39 +361,37 @@ class BourseDataProcessor:
         """
         if df.empty:
             return df
-        
+
         if config is None:
             from config import SUSPICIOUS_VOLUME_CONFIG
             config = SUSPICIOUS_VOLUME_CONFIG
-        
+
         min_ratio = config.get('min_value_to_avg_ratio', 2.0)
-        
+
         logger.info(f"اعمال فیلتر 7: حجم مشکوک (آستانه: {min_ratio}x)")
-        
+
         filtered = df[
             df['value_to_avg_monthly_value'] > min_ratio
         ].copy()
-        
+
         if filtered.empty:
             logger.info("فیلتر 7: هیچ سهمی یافت نشد")
             return pd.DataFrame()
-        
-        # مرتب‌سازی بر اساس نسبت ارزش (نزولی)
+
         filtered = filtered.sort_values('value_to_avg_monthly_value', ascending=False)
-        
         logger.info(f"✅ فیلتر 7: {len(filtered)} سهم با حجم مشکوک")
-        
+
         return filtered
-    
+
     # ========================================
-    # فیلتر 8: نوسان‌گیری (خرید در کف)
+    # فیلتر 8: نوسان‌گیری (API اول)
     # ========================================
     def filter_8_swing_trade(self, df: pd.DataFrame, config: dict = None) -> pd.DataFrame:
         """
-        فیلتر 8: نوسان‌گیری - شناسایی فرصت خرید در کف
+        فیلتر 8: نوسان‌گیری - خرید در کف
         
         شرایط:
-        - پایین‌ترین قیمت = حداقل آستانه مجاز (مثلاً -5% دامنه)
+        - پایین‌ترین قیمت = حداقل آستانه مجاز
         - آخرین قیمت > حداقل آستانه مجاز
         - قدرت خرید >= 2.0
         - سرانه خرید >= 50 میلیون
@@ -368,7 +399,7 @@ class BourseDataProcessor:
         - درصد آخرین < -2%
         
         Args:
-            df: DataFrame کل سهام
+            df: DataFrame کل سهام از API اول
             config: تنظیمات فیلتر
             
         Returns:
@@ -376,40 +407,38 @@ class BourseDataProcessor:
         """
         if df.empty:
             return df
-        
+
         if config is None:
             from config import SWING_TRADE_CONFIG
             config = SWING_TRADE_CONFIG
-        
+
         min_allowed = config.get('min_allowed_price', -5.0)
         max_last_change = config.get('max_last_change_percent', -2.0)
         min_godrat = config.get('min_godrat_kharid', 2.0)
         min_sarane = config.get('min_sarane_kharid', 5.0)
-        
+
         logger.info(f"اعمال فیلتر 8: نوسان‌گیری")
-        
+
         filtered = df[
-            (df['low_price_change_percent'] == min_allowed) &              # کف در آستانه منفی
-            (df['last_price_change_percent'] > min_allowed) &              # آخرین بالاتر از کف
-            (df['godrat_kharid'] >= min_godrat) &                          # قدرت خرید قوی
-            (df['sarane_kharid'] >= min_sarane) &                          # سرانه بالا
-            (df['value_to_avg_monthly_value'] >= 1.0) &                    # ارزش >= میانگین
-            (df['last_price_change_percent'] < max_last_change)            # هنوز منفی
+            (df['low_price_change_percent'] == min_allowed) &
+            (df['last_price_change_percent'] > min_allowed) &
+            (df['godrat_kharid'] >= min_godrat) &
+            (df['sarane_kharid'] >= min_sarane) &
+            (df['value_to_avg_monthly_value'] >= 1.0) &
+            (df['last_price_change_percent'] < max_last_change)
         ].copy()
-        
+
         if filtered.empty:
             logger.info("فیلتر 8: هیچ سهمی یافت نشد")
             return pd.DataFrame()
-        
-        # مرتب‌سازی بر اساس قدرت خرید (نزولی)
+
         filtered = filtered.sort_values('godrat_kharid', ascending=False)
-        
         logger.info(f"✅ فیلتر 8: {len(filtered)} سهم برای نوسان‌گیری")
-        
+
         return filtered
-    
+
     # ========================================
-    # فیلتر 9: یک ساعت اول (فقط 9:00 - 10:00)
+    # فیلتر 9: یک ساعت اول (API اول)
     # ========================================
     def filter_9_first_hour(self, df: pd.DataFrame, config: dict = None, current_hour: int = None) -> pd.DataFrame:
         """
@@ -420,206 +449,148 @@ class BourseDataProcessor:
         - ارزش معاملات به میانگین ماهانه >= 1
         
         Args:
-            df: DataFrame کل سهام
+            df: DataFrame کل سهام از API اول
             config: تنظیمات فیلتر
-            current_hour: ساعت فعلی (برای تست، اگر None باشد از سیستم می‌گیره)
+            current_hour: ساعت فعلی (برای تست)
             
         Returns:
-            DataFrame سهام فیلتر شده یا خالی (اگه خارج از ساعت کاری)
+            DataFrame سهام فیلتر شده یا خالی
         """
         if df.empty:
             return df
-        
-        # بررسی ساعت (با timezone تهران)
+
         if current_hour is None:
             from datetime import datetime
             import pytz
             tehran_tz = pytz.timezone('Asia/Tehran')
             now_tehran = datetime.now(tehran_tz)
             current_hour = now_tehran.hour
-        
+
         if config is None:
             from config import FIRST_HOUR_CONFIG
             config = FIRST_HOUR_CONFIG
-        
+
         start_hour = config.get('start_hour', 9)
         end_hour = config.get('end_hour', 10)
         min_ratio = config.get('min_value_to_avg_ratio', 1.0)
-        
-        # اگه خارج از بازه زمانی، خالی برگردون
+
         if not (start_hour <= current_hour < end_hour):
-            logger.info(f"فیلتر 9: خارج از بازه زمانی ({start_hour}-{end_hour}). ساعت فعلی تهران: {current_hour}")
+            logger.info(f"فیلتر 9: خارج از بازه زمانی ({start_hour}-{end_hour}). ساعت فعلی: {current_hour}")
             return pd.DataFrame()
-        
+
         logger.info(f"اعمال فیلتر 9: یک ساعت اول (ساعت تهران: {current_hour})")
-        
+
         filtered = df[
             df['value_to_avg_monthly_value'] >= min_ratio
         ].copy()
-        
+
         if filtered.empty:
             logger.info("فیلتر 9: هیچ سهمی یافت نشد")
             return pd.DataFrame()
-        
-        # مرتب‌سازی بر اساس نسبت ارزش (نزولی)
+
         filtered = filtered.sort_values('value_to_avg_monthly_value', ascending=False)
-        
         logger.info(f"✅ فیلتر 9: {len(filtered)} سهم در ساعت اول")
-        
+
         return filtered
-    
+
     # ========================================
-    # فیلتر 10: (منتظر اطلاعات)
+    # فیلتر 10: صف خرید میلیاردی (API دوم)
     # ========================================
-    def filter_10_placeholder(self, df: pd.DataFrame) -> pd.DataFrame:
-        """فیلتر 10: در انتظار تعریف"""
-        return pd.DataFrame()
-    
+    def filter_10_heavy_buy_queue(self, df: pd.DataFrame, config: dict = None) -> pd.DataFrame:
+        """
+        فیلتر 10: صف خرید میلیاردی
+        استفاده از API دوم (BrsApi)
+        
+        شرایط:
+        - ارزش صف خرید >= 70 میلیون تومان
+        
+        Args:
+            df: DataFrame کل نمادها از API دوم
+            config: تنظیمات فیلتر
+            
+        Returns:
+            DataFrame نمادهای فیلتر شده
+        """
+        if df.empty:
+            return df
+
+        if config is None:
+            from config import HEAVY_BUY_QUEUE_CONFIG
+            config = HEAVY_BUY_QUEUE_CONFIG
+
+        min_buy_order = config.get('min_buy_order_per_code', 70)
+
+        logger.info(f"اعمال فیلتر 10: صف خرید میلیاردی (حداقل: {min_buy_order} میلیون تومان)")
+
+        if 'buy_order_value' not in df.columns:
+            logger.error("❌ ستون buy_order_value در API دوم یافت نشد")
+            return pd.DataFrame()
+
+        filtered = df[
+            df['buy_order_value'] >= min_buy_order
+        ].copy()
+
+        if filtered.empty:
+            logger.info("فیلتر 10: هیچ نمادی یافت نشد")
+            return pd.DataFrame()
+
+        filtered = filtered.sort_values('buy_order_value', ascending=False)
+        logger.info(f"✅ فیلتر 10: {len(filtered)} نماد با صف خرید میلیاردی")
+
+        return filtered
+
     # ========================================
     # اعمال همه فیلترها
     # ========================================
-    def apply_all_filters(self, df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+    def apply_all_filters(self, df_api1: pd.DataFrame, df_api2: pd.DataFrame) -> Dict[str, Dict[str, pd.DataFrame]]:
         """
-        اعمال همه فیلترها بر روی DataFrame
+        اعمال همه فیلترها
+        فیلترهای 1-9 روی API اول
+        فیلتر 10 روی API دوم
         
         Args:
-            df: DataFrame کل سهام
+            df_api1: DataFrame از API اول
+            df_api2: DataFrame از API دوم
             
         Returns:
-            دیکشنری شامل نتایج هر فیلتر
+            دیکشنری شامل نتایج هر فیلتر تفکیک شده به api1 و api2
         """
-        logger.info(f"شروع اعمال فیلترها بر روی {len(df)} سهم")
-        
+        logger.info(f"شروع اعمال فیلترها")
+        logger.info(f"  • API اول: {len(df_api1)} سهم")
+        logger.info(f"  • API دوم: {len(df_api2)} نماد")
+
         results = {
-            'filter_1_strong_buying': self.filter_1_strong_buying_power(df),
-            'filter_2_sarane_cross': self.filter_2_sarane_kharid_cross(df),
-            'filter_3_watchlist': self.filter_3_watchlist_symbols(df),
-            'filter_4_ceiling_queue': self.filter_4_heavy_buy_queue_at_ceiling(df),
-            'filter_5_pol_hagigi_ratio': self.filter_5_pol_hagigi_ratio(df),
-            'filter_6_tick_time': self.filter_6_tick_and_time(df),
-            'filter_7_suspicious_volume': self.filter_7_suspicious_volume(df),
-            'filter_8_swing_trade': self.filter_8_swing_trade(df),
-            'filter_9_first_hour': self.filter_9_first_hour(df),
-            # فیلتر 10 اینجا اضافه می‌شود
+            'api1': {},
+            'api2': {}
         }
+
+        # فیلترهای 1 تا 9 روی API اول
+        if not df_api1.empty:
+            results['api1'] = {
+                'filter_1_strong_buying': self.filter_1_strong_buying_power(df_api1),
+                'filter_2_sarane_cross': self.filter_2_sarane_kharid_cross(df_api1),
+                'filter_3_watchlist': self.filter_3_watchlist_symbols(df_api1),
+                'filter_4_ceiling_queue': self.filter_4_heavy_buy_queue_at_ceiling(df_api1),
+                'filter_5_pol_hagigi_ratio': self.filter_5_pol_hagigi_ratio(df_api1),
+                'filter_6_tick_time': self.filter_6_tick_and_time(df_api1),
+                'filter_7_suspicious_volume': self.filter_7_suspicious_volume(df_api1),
+                'filter_8_swing_trade': self.filter_8_swing_trade(df_api1),
+                'filter_9_first_hour': self.filter_9_first_hour(df_api1),
+            }
         
+        # فیلتر 10 روی API دوم
+        if not df_api2.empty:
+            results['api2'] = {
+                'filter_10_heavy_buy_queue': self.filter_10_heavy_buy_queue(df_api2),
+            }
+
         # خلاصه نتایج
-        total_filtered = sum(len(v) for v in results.values())
-        logger.info(f"✅ جمع {total_filtered} سهم از {len(results)} فیلتر یافت شد")
+        total_api1 = sum(len(v) for v in results['api1'].values())
+        total_api2 = sum(len(v) for v in results['api2'].values())
         
+        logger.info(f"✅ جمع نتایج فیلترها:")
+        logger.info(f"  • API اول (فیلتر 1-9): {total_api1} سهم")
+        logger.info(f"  • API دوم (فیلتر 10): {total_api2} نماد")
+
         self.filters_results = results
         return results
-    
-    # ========================================
-    # توابع کمکی برای آمار
-    # ========================================
-    def get_market_summary(self, df: pd.DataFrame) -> Dict:
-        """
-        تولید خلاصه کلی بازار
-        
-        Args:
-            df: DataFrame کل سهام
-            
-        Returns:
-            دیکشنری حاوی آمار کلی
-        """
-        if df.empty:
-            return {}
-        
-        summary = {
-            'total_stocks': len(df),
-            'positive_stocks': len(df[df['final_price_change_percent'] > 0]),
-            'negative_stocks': len(df[df['final_price_change_percent'] < 0]),
-            'neutral_stocks': len(df[df['final_price_change_percent'] == 0]),
-            'avg_change_percent': df['final_price_change_percent'].mean(),
-            'total_value': df['value'].sum(),
-            'total_volume': df['volume'].sum(),
-            'total_pol_hagigi': df['pol_hagigi'].sum(),
-        }
-        
-        return summary
-    
-    def get_top_industries(self, df: pd.DataFrame, n: int = 5) -> pd.DataFrame:
-        """
-        برترین صنایع بر اساس ارزش معاملات و ورود پول
-        
-        Args:
-            df: DataFrame کل سهام
-            n: تعداد صنایع برتر
-            
-        Returns:
-            DataFrame حاوی آمار صنایع برتر
-        """
-        if df.empty:
-            return pd.DataFrame()
-        
-        industry_stats = df.groupby('industry_name').agg({
-            'symbol': 'count',
-            'value': 'sum',
-            'pol_hagigi': 'sum',
-            'final_price_change_percent': lambda x: (x > 0).sum()
-        }).reset_index()
-        
-        industry_stats.columns = [
-            'industry_name', 
-            'stock_count', 
-            'total_value', 
-            'total_pol_hagigi',
-            'positive_count'
-        ]
-        
-        # محاسبه تعداد منفی
-        negative_counts = df.groupby('industry_name').apply(
-            lambda x: (x['final_price_change_percent'] < 0).sum()
-        ).reset_index(name='negative_count')
-        
-        industry_stats = industry_stats.merge(negative_counts, on='industry_name')
-        
-        # مرتب‌سازی بر اساس ارزش معاملات
-        industry_stats = industry_stats.sort_values('total_value', ascending=False).head(n)
-        
-        return industry_stats
-    
-    def get_top_stocks(self, df: pd.DataFrame, by: str = 'final_price_change_percent', n: int = 10) -> pd.DataFrame:
-        """
-        برترین سهام بر اساس معیار مشخص
-        
-        Args:
-            df: DataFrame کل سهام
-            by: ستون مورد نظر برای مرتب‌سازی
-            n: تعداد سهام برتر
-            
-        Returns:
-            DataFrame حاوی سهام برتر
-        """
-        if df.empty:
-            return pd.DataFrame()
-        
-        return df.nlargest(n, by)
-    
-    def format_number(self, num: float) -> str:
-        """
-        فرمت‌بندی اعداد به فارسی
-        
-        توجه: اعداد مالی از قبل به میلیارد تبدیل شده‌اند
-        
-        Args:
-            num: عدد ورودی
-            
-        Returns:
-            رشته فرمت شده
-        """
-        if pd.isna(num):
-            return "0"
-        
-        # اگه عدد بزرگ‌تر از 1000 میلیارد
-        if abs(num) >= 1000:
-            return f"{num:.1f} هزار میلیارد"
-        # اگه عدد به میلیارد
-        elif abs(num) >= 1:
-            return f"{num:.2f} میلیارد"
-        # اگه عدد خیلی کوچیک (کمتر از 1 میلیارد)
-        elif abs(num) >= 0.001:
-            return f"{num*1000:.1f} میلیون"
-        else:
-            return f"{num:.3f}"
