@@ -19,7 +19,7 @@ class BourseDataProcessor:
     # ========================================
     # پردازش داده‌های خام
     # ========================================
-    
+
     def process_all_data(self, df_api1_raw: pd.DataFrame, df_api2_raw: pd.DataFrame) -> tuple:
         """
         پردازش داده‌های خام از هر دو API
@@ -32,7 +32,7 @@ class BourseDataProcessor:
             tuple: (df_api1_processed, df_api2_processed)
         """
         logger.info("شروع پردازش داده‌های خام...")
-        
+
         # پردازش API اول
         if df_api1_raw is not None and not df_api1_raw.empty:
             df_api1 = self._clean_and_prepare_api1(df_api1_raw)
@@ -40,7 +40,7 @@ class BourseDataProcessor:
         else:
             df_api1 = pd.DataFrame()
             logger.warning("⚠️ API اول خالی است")
-        
+
         # پردازش API دوم
         if df_api2_raw is not None and not df_api2_raw.empty:
             df_api2 = self._clean_and_prepare_api2(df_api2_raw)
@@ -48,30 +48,66 @@ class BourseDataProcessor:
         else:
             df_api2 = pd.DataFrame()
             logger.warning("⚠️ API دوم خالی است")
-        
+
         return df_api1, df_api2
-    
+
     def _clean_and_prepare_api1(self, df: pd.DataFrame) -> pd.DataFrame:
         """پاکسازی و آماده‌سازی داده‌های API اول"""
         # حذف ردیف‌های نال
         if 'symbol' in df.columns:
             df = df.dropna(subset=['symbol'])
-        
-        # TODO: اینجا منطق پردازش و محاسبات اضافی API اول رو اضافه کنید
-        # مثلاً تبدیل واحدها، محاسبه نسبت‌ها و ...
-        
+
         return df
-    
+
     def _clean_and_prepare_api2(self, df: pd.DataFrame) -> pd.DataFrame:
-        """پاکسازی و آماده‌سازی داده‌های API دوم"""
+        """
+        پاکسازی و آماده‌سازی داده‌های API دوم
+        محاسبه buy_order و buy_queue_value برای فیلتر 10
+        """
         # تبدیل نام ستون l18 به symbol
         if 'l18' in df.columns:
             df = df.rename(columns={'l18': 'symbol'})
-        
+
         # حذف ردیف‌های نال
         if 'symbol' in df.columns:
             df = df.dropna(subset=['symbol'])
-        
+
+        # محاسبه buy_order (میلیون تومان) برای فیلتر
+        # buy_order = (qd1 * pd1 / zd1) / 10,000,000
+        if all(col in df.columns for col in ['qd1', 'pd1', 'zd1']):
+            df['buy_order'] = df.apply(
+                lambda row: (row['qd1'] * row['pd1'] / row['zd1']) / 10_000_000 
+                if row['zd1'] != 0 and pd.notna(row['zd1']) 
+                else 0, 
+                axis=1
+            )
+            logger.info("✅ محاسبه buy_order (میلیون تومان) انجام شد")
+        else:
+            logger.warning("⚠️ ستون‌های qd1, pd1, zd1 برای محاسبه buy_order یافت نشد")
+            df['buy_order'] = 0
+
+        # محاسبه buy_queue_value (میلیارد تومان) برای نمایش
+        # buy_queue_value = (qd1 * pd1) / 10,000,000,000
+        if all(col in df.columns for col in ['qd1', 'pd1']):
+            df['buy_queue_value'] = (df['qd1'] * df['pd1']) / 10_000_000_000
+            logger.info("✅ محاسبه buy_queue_value (میلیارد تومان) انجام شد")
+        else:
+            logger.warning("⚠️ ستون‌های qd1, pd1 برای محاسبه buy_queue_value یافت نشد")
+            df['buy_queue_value'] = 0
+
+        # تبدیل نام ستون‌های اضافی برای سازگاری
+        column_mapping = {
+            'pl': 'last_price',
+            'plp': 'last_price_change_percent',
+            'tval': 'value',
+            'tvol': 'volume',
+            'tmax': 'ceiling_price',  # آستانه مجاز بالا
+        }
+
+        for old_col, new_col in column_mapping.items():
+            if old_col in df.columns:
+                df[new_col] = df[old_col]
+
         return df
 
     # ========================================
@@ -502,7 +538,8 @@ class BourseDataProcessor:
         استفاده از API دوم (BrsApi)
         
         شرایط:
-        - ارزش صف خرید >= 70 میلیون تومان
+        - آخرین قیمت = آستانه مجاز بالا (سقف)
+        - buy_order >= 70 میلیون تومان
         
         Args:
             df: DataFrame کل نمادها از API دوم
@@ -518,24 +555,32 @@ class BourseDataProcessor:
             from config import HEAVY_BUY_QUEUE_CONFIG
             config = HEAVY_BUY_QUEUE_CONFIG
 
-        min_buy_order = config.get('min_buy_order_per_code', 70)
+        min_buy_order = config.get('min_buy_order', 70)
 
-        logger.info(f"اعمال فیلتر 10: صف خرید میلیاردی (حداقل: {min_buy_order} میلیون تومان)")
+        logger.info(f"اعمال فیلتر 10: صف خرید میلیاردی")
+        logger.info(f"  • شرط 1: آخرین قیمت = سقف")
+        logger.info(f"  • شرط 2: buy_order >= {min_buy_order} میلیون تومان")
 
-        if 'buy_order_value' not in df.columns:
-            logger.error("❌ ستون buy_order_value در API دوم یافت نشد")
+        # بررسی وجود ستون‌های لازم
+        required_cols = ['last_price', 'ceiling_price', 'buy_order']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        
+        if missing_cols:
+            logger.error(f"❌ ستون‌های گمشده در API دوم: {missing_cols}")
             return pd.DataFrame()
 
+        # اعمال فیلتر
         filtered = df[
-            df['buy_order_value'] >= min_buy_order
+            (df['last_price'] == df['ceiling_price']) &
+            (df['buy_order'] >= min_buy_order)
         ].copy()
 
         if filtered.empty:
             logger.info("فیلتر 10: هیچ نمادی یافت نشد")
             return pd.DataFrame()
 
-        filtered = filtered.sort_values('buy_order_value', ascending=False)
-        logger.info(f"✅ فیلتر 10: {len(filtered)} نماد با صف خرید میلیاردی")
+        filtered = filtered.sort_values('buy_queue_value', ascending=False)
+        logger.info(f"✅ فیلتر 10: {len(filtered)} نماد با صف خرید میلیاردی در سقف")
 
         return filtered
 
@@ -577,7 +622,7 @@ class BourseDataProcessor:
                 'filter_8_swing_trade': self.filter_8_swing_trade(df_api1),
                 'filter_9_first_hour': self.filter_9_first_hour(df_api1),
             }
-        
+
         # فیلتر 10 روی API دوم
         if not df_api2.empty:
             results['api2'] = {
@@ -587,7 +632,7 @@ class BourseDataProcessor:
         # خلاصه نتایج
         total_api1 = sum(len(v) for v in results['api1'].values())
         total_api2 = sum(len(v) for v in results['api2'].values())
-        
+
         logger.info(f"✅ جمع نتایج فیلترها:")
         logger.info(f"  • API اول (فیلتر 1-9): {total_api1} سهم")
         logger.info(f"  • API دوم (فیلتر 10): {total_api2} نماد")
