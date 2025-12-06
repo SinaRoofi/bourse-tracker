@@ -140,7 +140,9 @@ SWING_TRADE_CONFIG = {
 FIRST_HOUR_CONFIG = {
     'min_value_to_avg_ratio': 1.0,
     'start_hour': 9,
-    'end_hour': 10,
+    'start_minute': 0,   # ساعت 9:00
+    'end_hour': 9,
+    'end_minute': 30,    # ساعت 9:30
 }
 
 # فیلتر 10: صف خرید میلیاردی
