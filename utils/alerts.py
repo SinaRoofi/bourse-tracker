@@ -1,5 +1,6 @@
 import asyncio
 from telegram import Bot
+from telegram.error import RetryAfter, TimedOut
 import pandas as pd
 import logging
 import jdatetime
@@ -11,25 +12,56 @@ logger = logging.getLogger(__name__)
 
 
 class TelegramAlert:
-    """کلاس ارسال هشدارها به تلگرام"""
+    """کلاس ارسال هشدارها به تلگرام - نسخه Async & Parallel"""
 
     def __init__(self, channel_name: str = "@tehran_stock_alerts"):
         self.bot_token = TELEGRAM_BOT_TOKEN
         self.chat_id = TELEGRAM_CHAT_ID
         self.channel_name = channel_name
         self.bot = Bot(token=self.bot_token)
+        # Semaphore برای محدود کردن تعداد درخواست‌های همزمان
+        self.semaphore = asyncio.Semaphore(5)  # حداکثر 5 پیام همزمان
 
     async def send_message(self, message: str, parse_mode: str = 'HTML') -> bool:
-        try:
-            await self.bot.send_message(chat_id=self.chat_id, text=message, parse_mode=parse_mode)
-            logger.info("✅ پیام با موفقیت ارسال شد")
-            return True
-        except Exception as e:
-            logger.error(f"❌ خطا در ارسال پیام: {e}")
-            return False
-
-    def send_message_sync(self, message: str, parse_mode: str = 'HTML') -> bool:
-        return asyncio.run(self.send_message(message, parse_mode))
+        """ارسال پیام با مدیریت Semaphore"""
+        async with self.semaphore:
+            try:
+                await self.bot.send_message(
+                    chat_id=self.chat_id, 
+                    text=message, 
+                    parse_mode=parse_mode
+                )
+                return True
+            except RetryAfter as e:
+                logger.warning(f"⚠️ Flood control: انتظار {e.retry_after} ثانیه")
+                await asyncio.sleep(e.retry_after)
+                # تلاش مجدد
+                try:
+                    await self.bot.send_message(
+                        chat_id=self.chat_id, 
+                        text=message, 
+                        parse_mode=parse_mode
+                    )
+                    return True
+                except Exception as retry_error:
+                    logger.error(f"❌ خطا در تلاش مجدد: {retry_error}")
+                    return False
+            except TimedOut:
+                logger.warning("⚠️ Timeout - تلاش مجدد")
+                await asyncio.sleep(2)
+                try:
+                    await self.bot.send_message(
+                        chat_id=self.chat_id, 
+                        text=message, 
+                        parse_mode=parse_mode
+                    )
+                    return True
+                except Exception as retry_error:
+                    logger.error(f"❌ خطا در تلاش مجدد: {retry_error}")
+                    return False
+            except Exception as e:
+                logger.error(f"❌ خطا در ارسال پیام: {e}")
+                return False
 
     def _current_tehran_jdatetime(self):
         """زمان فعلی به وقت تهران، خروجی: (تاریخ شمسی، ساعت)"""
@@ -39,15 +71,9 @@ class TelegramAlert:
         time_str = now.strftime("%H:%M")
         return date_str, time_str
 
-    # ================================
-    # تابع کمکی فرمت اعداد میلیارد
-    # ================================
     @staticmethod
     def _format_billion(value: float) -> str:
-        """
-        فرمت اعداد به میلیارد تومان
-        توجه: مقدار از data_processor قبلاً به میلیارد تبدیل شده
-        """
+        """فرمت اعداد به میلیارد تومان"""
         if pd.isna(value) or value == 0:
             return "0"
         elif value >= 1:
@@ -55,25 +81,17 @@ class TelegramAlert:
         else:
             return f"{value:.3f}"
 
-    # ================================
-    # متد پیش‌فرض فرمت پیام‌ها
-    # ================================
     def _format_default_alert(self, df: pd.DataFrame, alert_title: str) -> str:
         if df.empty:
             return ""
         date_str, time_str = self._current_tehran_jdatetime()
         message = f"🔔 <b>{alert_title}</b>\n\n"
         for _, row in df.iterrows():
-            # نماد
             message += f"📌 <b>{row['symbol']}</b>\n"
-            
-            # قیمت آخرین و تغییر
             if 'last_price' in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
                 change_pct = row.get('last_price_change_percent', 0)
                 message += f"💰 قیمت آخرین: {row['last_price']} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
-            
-            # بقیه فیلدها
             if 'value' in row and pd.notna(row['value']):
                 message += f"💵 ارزش معاملات: {self._format_billion(row['value'])} میلیارد تومان\n"
             if 'value_to_avg_monthly_value' in row and pd.notna(row['value_to_avg_monthly_value']):
@@ -87,30 +105,21 @@ class TelegramAlert:
                 message += f"{emoji} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
             if 'pol_hagigi_to_avg_monthly_value' in row and pd.notna(row['pol_hagigi_to_avg_monthly_value']):
                 message += f"💎 پول حقیقی / میانگین ماهانه: {row['pol_hagigi_to_avg_monthly_value']:.2f}\n"
-            
             message += "\n"
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
         return message
 
-    # ================================
-    # متدهای فرمت فیلترها
-    # ================================
     def format_filter_2_sarane_cross(self, df: pd.DataFrame) -> str:
         if df.empty:
             return ""
         message = f"🔔 <b>هشدار کراس سرانه خرید</b>\n\n"
         for _, row in df.iterrows():
-            # نماد
             message += f"📌 <b>{row['symbol']}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
-            
-            # قیمت آخرین و تغییر
             if 'last_price' in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
                 change_pct = row.get('last_price_change_percent', 0)
                 message += f"💰 قیمت آخرین: {row['last_price']} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
-            
-            # بقیه فیلدها
             if "value" in row and pd.notna(row['value']):
                 message += f"💵 ارزش معاملات: {self._format_billion(row['value'])} میلیارد تومان\n"
             if "value_to_avg_monthly_value" in row and pd.notna(row['value_to_avg_monthly_value']):
@@ -122,7 +131,6 @@ class TelegramAlert:
             if "pol_hagigi" in row and pd.notna(row['pol_hagigi']):
                 emoji = "🟢" if row['pol_hagigi'] > 0 else "🔴"
                 message += f"{emoji} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
-            
             message += "\n"
         date_str, time_str = self._current_tehran_jdatetime()
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
@@ -135,17 +143,11 @@ class TelegramAlert:
         for _, row in df.iterrows():
             percent = row.get("last_price_change_percent", 0)
             emoji = "🚀" if percent > 5 else "📈" if percent > 3 else "✅"
-            
-            # نماد
             message += f"{emoji} <b>{row['symbol']}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
-            
-            # قیمت آخرین و تغییر
             if "last_price" in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if percent > 0 else "🔴"
                 message += f"💰 قیمت آخرین: {row['last_price']} ({emoji_price}<b>{percent:+.2f}%</b>)\n"
-            
-            # بقیه فیلدها
             if "threshold" in row:
                 message += f"🔺 عبور از آستانه: +{percent - row['threshold']:.2f}%\n"
             if "final_price" in row and pd.notna(row['final_price']):
@@ -157,7 +159,6 @@ class TelegramAlert:
             if "pol_hagigi" in row and pd.notna(row['pol_hagigi']):
                 emoji_pol = "🟢" if row['pol_hagigi'] > 0 else "🔴"
                 message += f"{emoji_pol} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
-            
             message += "\n"
         date_str, time_str = self._current_tehran_jdatetime()
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
@@ -168,18 +169,13 @@ class TelegramAlert:
             return ""
         message = f"🔥 <b>صف‌های خرید سنگین</b>\n\n"
         for _, row in df.iterrows():
-            # نماد
             message += f"🎯 <b>{row['symbol']}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
-            
-            # قیمت و تغییر
             if "last_price_change_percent" in row and pd.notna(row['last_price_change_percent']):
                 emoji_price = "🟢" if row['last_price_change_percent'] > 0 else "🔴"
                 message += f"💰 تغییر قیمت: ({emoji_price}<b>+{row['last_price_change_percent']:.2f}%</b>)\n"
             if "final_price" in row and pd.notna(row['final_price']):
                 message += f"💵 قیمت پایانی: {row['final_price']}\n"
-            
-            # بقیه فیلدها
             if "buy_order_value" in row and pd.notna(row['buy_order_value']):
                 message += f"🟢 <b>ارزش صف خرید: {self._format_billion(row['buy_order_value'])} میلیارد تومان</b>\n"
             if "sell_order_value" in row and pd.notna(row['sell_order_value']):
@@ -193,7 +189,6 @@ class TelegramAlert:
             if "pol_hagigi" in row and pd.notna(row['pol_hagigi']):
                 emoji = "🟢" if row['pol_hagigi'] > 0 else "🔴"
                 message += f"{emoji} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
-            
             message += "\n"
         date_str, time_str = self._current_tehran_jdatetime()
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
@@ -206,18 +201,12 @@ class TelegramAlert:
         for _, row in df.iterrows():
             ratio = row.get("pol_hagigi_to_avg_monthly_value", 0)
             emoji = "🔥" if ratio > 2 else "⭐" if ratio > 1 else "✅"
-            
-            # نماد
             message += f"{emoji} <b>{row['symbol']}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
-            
-            # قیمت آخرین و تغییر
             if "last_price" in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
                 change_pct = row.get('last_price_change_percent', 0)
                 message += f"💰 قیمت آخرین: {row['last_price']} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
-            
-            # بقیه فیلدها
             if pd.notna(ratio):
                 message += f"📊 نسبت پول حقیقی به میانگین ماهانه: <b>{ratio:.2f}</b>\n"
             if "pol_hagigi" in row and pd.notna(row['pol_hagigi']):
@@ -229,7 +218,6 @@ class TelegramAlert:
                 message += f"📈 سرانه خرید: {row['sarane_kharid']:.0f} میلیون تومان\n"
             if "godrat_kharid" in row and pd.notna(row['godrat_kharid']):
                 message += f"💪 قدرت خریدار: {row['godrat_kharid']:.2f}\n"
-            
             message += "\n"
         date_str, time_str = self._current_tehran_jdatetime()
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
@@ -240,17 +228,12 @@ class TelegramAlert:
             return ""
         message = f"⏰ <b>تیک و ساعت</b>\n\n"
         for _, row in df.iterrows():
-            # نماد
             message += f"📌 <b>{row['symbol']}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
-            
-            # قیمت آخرین و تغییر
             if "last_price" in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
                 change_pct = row.get('last_price_change_percent', 0)
                 message += f"💰 قیمت آخرین: {row['last_price']} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
-            
-            # بقیه فیلدها
             if "tick_diff" in row and pd.notna(row['tick_diff']):
                 message += f"📈 <b>تیک: +{row['tick_diff']:.2f}%</b>\n"
                 if "final_price_change_percent" in row:
@@ -264,7 +247,6 @@ class TelegramAlert:
             if "pol_hagigi" in row and pd.notna(row['pol_hagigi']):
                 emoji = "🟢" if row['pol_hagigi'] > 0 else "🔴"
                 message += f"{emoji} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
-            
             message += "\n"
         date_str, time_str = self._current_tehran_jdatetime()
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
@@ -284,60 +266,36 @@ class TelegramAlert:
             return ""
         message = f"💰 <b>صف خرید با اردر سنگین</b>\n\n"
         for _, row in df.iterrows():
-            # نماد
             message += f"📌 <b>{row['symbol']}</b>\n"
-            
-            # قیمت و تغییر
             if "last_price" in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
                 change_pct = row.get('last_price_change_percent', 0)
                 message += f"💰 قیمت آخرین: {row['last_price']} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
-            
-            # ارزش صف خرید (از API دوم - همیشه موجود)
             if "buy_queue_value" in row and pd.notna(row['buy_queue_value']):
                 message += f"🟢 <b>صف خرید: {self._format_billion(row['buy_queue_value'])} میلیارد تومان</b>\n"
-            
-            # سفارش هر کد (از API دوم)
             if "buy_order" in row and pd.notna(row['buy_order']):
                 message += f"📋 سفارش هر کد: {row['buy_order']:.0f} میلیون تومان\n"
-            
-            # ارزش معاملات (از API اول)
             if "value" in row and pd.notna(row['value']):
                 message += f"💵 ارزش معاملات: {self._format_billion(row['value'])} میلیارد تومان\n"
-            
-            # ارزش معاملات به میانگین ماهانه (از API اول)
             if "value_to_avg_monthly_value" in row and pd.notna(row['value_to_avg_monthly_value']):
                 message += f"📊 ارزش / میانگین ماهانه: <b>{row['value_to_avg_monthly_value']:.2f}x</b>\n"
-            
-            # سرانه خرید (از API اول)
             if "sarane_kharid" in row and pd.notna(row['sarane_kharid']):
                 message += f"📈 سرانه خرید: {row['sarane_kharid']:.0f} میلیون تومان\n"
-            
-            # قدرت خرید (از API اول)
             if "godrat_kharid" in row and pd.notna(row['godrat_kharid']):
                 message += f"💪 قدرت خرید: {row['godrat_kharid']:.2f}\n"
-            
-            # پول حقیقی (از API اول)
             if "pol_hagigi" in row and pd.notna(row['pol_hagigi']):
                 emoji = "🟢" if row["pol_hagigi"] > 0 else "🔴"
                 message += f"{emoji} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
-            
-            # نسبت پول حقیقی به ارزش معاملات (از API اول)
             if "pol_hagigi_to_value" in row and pd.notna(row['pol_hagigi_to_value']):
                 message += f"💎 پول حقیقی / ارزش معاملات: {row['pol_hagigi_to_value']:.2f}\n"
-            
             message += "\n"
-        
         date_str, time_str = self._current_tehran_jdatetime()
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
         return message
 
-    # ================================
-    # ارسال امن پیام فیلتر
-    # ================================
     async def send_filter_alert(self, df: pd.DataFrame, filter_name: str) -> bool:
+        """ارسال پیام یک chunk - نسخه async"""
         if df.empty:
-            logger.info(f"فیلتر {filter_name}: سهمی یافت نشد")
             return False
 
         format_map = {
@@ -360,66 +318,6 @@ class TelegramAlert:
             return False
 
         if not message.strip():
-            logger.info(f"فیلتر {filter_name}: پیام خالی، ارسال نمی‌شود")
             return False
 
-        try:
-            success = await self.send_message(message)
-            if success:
-                logger.info(f"✅ فیلتر {filter_name}: پیام با موفقیت ارسال شد")
-            else:
-                logger.warning(f"⚠️ فیلتر {filter_name}: ارسال پیام موفق نبود")
-            return success
-        except Exception as e:
-            logger.error(f"❌ خطا در ارسال پیام فیلتر {filter_name}: {e}")
-            return False
-
-    async def send_filter_alert_safe(self, df: pd.DataFrame, filter_name: str) -> bool:
-        """
-        ارسال امن پیام فیلتر با مدیریت Flood Control
-        
-        Args:
-            df: DataFrame سهام برای ارسال
-            filter_name: نام فیلتر
-            
-        Returns:
-            bool: True در صورت موفقیت
-        """
-        max_retries = 3
-        base_delay = 3
-        
-        for attempt in range(max_retries):
-            try:
-                success = await self.send_filter_alert(df, filter_name)
-                if success:
-                    return True
-                
-                # اگر ارسال ناموفق بود، تأخیر قبل از تلاش مجدد
-                if attempt < max_retries - 1:
-                    delay = base_delay * (attempt + 1)
-                    logger.warning(f"⚠️ تلاش مجدد {attempt + 1}/{max_retries} بعد از {delay} ثانیه...")
-                    await asyncio.sleep(delay)
-                    
-            except Exception as e:
-                error_msg = str(e).lower()
-                
-                # مدیریت خطای Flood Control
-                if 'flood' in error_msg or 'too many requests' in error_msg or '429' in error_msg:
-                    if attempt < max_retries - 1:
-                        delay = 30 * (attempt + 1)  # تأخیر بیشتر برای flood control
-                        logger.warning(f"⚠️ Flood Control: انتظار {delay} ثانیه...")
-                        await asyncio.sleep(delay)
-                    else:
-                        logger.error(f"❌ Flood Control: ناموفق بعد از {max_retries} تلاش")
-                        return False
-                else:
-                    logger.error(f"❌ خطا در ارسال فیلتر {filter_name}: {e}")
-                    if attempt < max_retries - 1:
-                        await asyncio.sleep(base_delay)
-                    else:
-                        return False
-        
-        return False
-
-    def send_filter_alert_sync(self, df: pd.DataFrame, filter_name: str) -> bool:
-        return asyncio.run(self.send_filter_alert(df, filter_name))
+        return await self.send_message(message)
