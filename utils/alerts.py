@@ -95,7 +95,7 @@ class TelegramAlert:
             if 'last_price' in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
                 change_pct = row.get('last_price_change_percent', 0)
-                message += f"💰 قیمت آخرین: {row['last_price']} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
+                message += f"💰 قیمت آخرین: {row['last_price']:,.0f} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
             if 'value' in row and pd.notna(row['value']):
                 message += f"💵 ارزش معاملات: {self._format_billion(row['value'])} میلیارد تومان\n"
             if 'value_to_avg_monthly_value' in row and pd.notna(row['value_to_avg_monthly_value']):
@@ -123,7 +123,7 @@ class TelegramAlert:
             if 'last_price' in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
                 change_pct = row.get('last_price_change_percent', 0)
-                message += f"💰 قیمت آخرین: {row['last_price']} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
+                message += f"💰 قیمت آخرین: {row['last_price']:,.0f} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
             if "value" in row and pd.notna(row['value']):
                 message += f"💵 ارزش معاملات: {self._format_billion(row['value'])} میلیارد تومان\n"
             if "value_to_avg_monthly_value" in row and pd.notna(row['value_to_avg_monthly_value']):
@@ -151,7 +151,7 @@ class TelegramAlert:
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
             if "last_price" in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if percent > 0 else "🔴"
-                message += f"💰 قیمت آخرین: {row['last_price']} ({emoji_price}<b>{percent:+.2f}%</b>)\n"
+                message += f"💰 قیمت آخرین: {row['last_price']:,.0f} ({emoji_price}<b>{percent:+.2f}%</b>)\n"
             if "threshold" in row:
                 message += f"🔺 عبور از آستانه: +{percent - row['threshold']:.2f}%\n"
             if "final_price" in row and pd.notna(row['final_price']):
@@ -179,7 +179,7 @@ class TelegramAlert:
                 emoji_price = "🟢" if row['last_price_change_percent'] > 0 else "🔴"
                 message += f"💰 تغییر قیمت: ({emoji_price}<b>+{row['last_price_change_percent']:.2f}%</b>)\n"
             if "final_price" in row and pd.notna(row['final_price']):
-                message += f"💵 قیمت پایانی: {row['final_price']}\n"
+                message += f"💵 قیمت پایانی: {row['final_price']:,.0f}\n"
             if "buy_order_value" in row and pd.notna(row['buy_order_value']):
                 message += f"🟢 <b>ارزش صف خرید: {self._format_billion(row['buy_order_value'])} میلیارد تومان</b>\n"
             if "sell_order_value" in row and pd.notna(row['sell_order_value']):
@@ -210,7 +210,7 @@ class TelegramAlert:
             if "last_price" in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
                 change_pct = row.get('last_price_change_percent', 0)
-                message += f"💰 قیمت آخرین: {row['last_price']} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
+                message += f"💰 قیمت آخرین: {row['last_price']:,.0f} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
             if pd.notna(ratio):
                 message += f"📊 نسبت پول حقیقی به میانگین ماهانه: <b>{ratio:.2f}</b>\n"
             if "pol_hagigi" in row and pd.notna(row['pol_hagigi']):
@@ -237,7 +237,7 @@ class TelegramAlert:
             if "last_price" in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
                 change_pct = row.get('last_price_change_percent', 0)
-                message += f"💰 قیمت آخرین: {row['last_price']} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
+                message += f"💰 قیمت آخرین: {row['last_price']:,.0f} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
             if "tick_diff" in row and pd.notna(row['tick_diff']):
                 message += f"📈 <b>تیک: +{row['tick_diff']:.2f}%</b>\n"
                 if "final_price_change_percent" in row:
@@ -274,7 +274,7 @@ class TelegramAlert:
             if "last_price" in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
                 change_pct = row.get('last_price_change_percent', 0)
-                message += f"💰 قیمت آخرین: {row['last_price']} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
+                message += f"💰 قیمت آخرین: {row['last_price']:,.0f}} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
             if "buy_queue_value" in row and pd.notna(row['buy_queue_value']):
                 message += f"🟢 <b>صف خرید: {self._format_billion(row['buy_queue_value'])} میلیارد تومان</b>\n"
             if "buy_order" in row and pd.notna(row['buy_order']):
