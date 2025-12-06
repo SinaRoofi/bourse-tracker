@@ -94,7 +94,8 @@ STRONG_BUYING_CONFIG = {
 # فیلتر 2: کراس سرانه خرید
 SARANE_CROSS_CONFIG = {
     'sarane_kharid_greater_than_forosh': True,
-    'min_value_to_avg_monthly': 0.5,  # شرط جدید
+    'min_value_to_avg_monthly': 0.5,
+    'min_sarane_kharid': 70,
 }
 
 # فیلتر 3: نمادهای خاص
