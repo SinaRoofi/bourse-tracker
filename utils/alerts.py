@@ -44,12 +44,16 @@ class TelegramAlert:
     # ================================
     @staticmethod
     def _format_billion(value: float) -> str:
-        if value >= 1_000_000_000:
-            return f"{value:,.0f}"
-        elif value > 0:
-            return f"{value/1_000_000_000:.2f}"
-        else:
+        """
+        فرمت اعداد به میلیارد تومان
+        توجه: مقدار از data_processor قبلاً به میلیارد تبدیل شده
+        """
+        if pd.isna(value) or value == 0:
             return "0"
+        elif value >= 1:
+            return f"{value:.2f}"
+        else:
+            return f"{value:.3f}"
 
     # ================================
     # متد پیش‌فرض فرمت پیام‌ها
@@ -60,22 +64,30 @@ class TelegramAlert:
         date_str, time_str = self._current_tehran_jdatetime()
         message = f"🔔 <b>{alert_title}</b>\n\n"
         for _, row in df.iterrows():
+            # نماد
             message += f"📌 <b>{row['symbol']}</b>\n"
-            emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
-            message += f"💰 قیمت آخرین: {row.get('last_price', 0)} ({emoji_price}<b>{row.get('last_price_change_percent', 0):+.2f}%</b>)\n"
-            if 'value_to_avg_monthly_value' in row:
-                message += f"📊 ارزش معاملات / میانگین ماهانه: <b>{row['value_to_avg_monthly_value']:.2f}x</b>\n"
-            if 'pol_hagigi_to_avg_monthly_value' in row:
-                message += f"💵 پول حقیقی / میانگین ماهانه: {row['pol_hagigi_to_avg_monthly_value']:.2f}\n"
-            if 'sarane_kharid' in row:
-                message += f"📈 سرانه خرید: {row['sarane_kharid']:,.0f} میلیون تومان\n"
-            if 'godrat_kharid' in row:
-                message += f"💪 قدرت خرید: {row['godrat_kharid']:.2f}\n"
-            if 'value' in row:
+            
+            # قیمت آخرین و تغییر
+            if 'last_price' in row and pd.notna(row['last_price']):
+                emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
+                change_pct = row.get('last_price_change_percent', 0)
+                message += f"💰 قیمت آخرین: {row['last_price']} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
+            
+            # بقیه فیلدها
+            if 'value' in row and pd.notna(row['value']):
                 message += f"💵 ارزش معاملات: {self._format_billion(row['value'])} میلیارد تومان\n"
-            if 'pol_hagigi' in row:
+            if 'value_to_avg_monthly_value' in row and pd.notna(row['value_to_avg_monthly_value']):
+                message += f"📊 ارزش / میانگین ماهانه: <b>{row['value_to_avg_monthly_value']:.2f}x</b>\n"
+            if 'sarane_kharid' in row and pd.notna(row['sarane_kharid']):
+                message += f"📈 سرانه خرید: {row['sarane_kharid']:.0f} میلیون تومان\n"
+            if 'godrat_kharid' in row and pd.notna(row['godrat_kharid']):
+                message += f"💪 قدرت خرید: {row['godrat_kharid']:.2f}\n"
+            if 'pol_hagigi' in row and pd.notna(row['pol_hagigi']):
                 emoji = "🟢" if row["pol_hagigi"] > 0 else "🔴"
                 message += f"{emoji} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
+            if 'pol_hagigi_to_avg_monthly_value' in row and pd.notna(row['pol_hagigi_to_avg_monthly_value']):
+                message += f"💎 پول حقیقی / میانگین ماهانه: {row['pol_hagigi_to_avg_monthly_value']:.2f}\n"
+            
             message += "\n"
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
         return message
@@ -88,18 +100,29 @@ class TelegramAlert:
             return ""
         message = f"🔔 <b>هشدار کراس سرانه خرید</b>\n\n"
         for _, row in df.iterrows():
+            # نماد
             message += f"📌 <b>{row['symbol']}</b>"
-            message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n\n"
-            if "value" in row:
+            message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
+            
+            # قیمت آخرین و تغییر
+            if 'last_price' in row and pd.notna(row['last_price']):
+                emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
+                change_pct = row.get('last_price_change_percent', 0)
+                message += f"💰 قیمت آخرین: {row['last_price']} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
+            
+            # بقیه فیلدها
+            if "value" in row and pd.notna(row['value']):
                 message += f"💵 ارزش معاملات: {self._format_billion(row['value'])} میلیارد تومان\n"
-            if "value_to_avg_monthly_value" in row:
+            if "value_to_avg_monthly_value" in row and pd.notna(row['value_to_avg_monthly_value']):
                 message += f"📊 نسبت به میانگین ماهانه: {row['value_to_avg_monthly_value']:.2f}x\n"
-            if "godrat_kharid" in row:
+            if "sarane_kharid" in row and pd.notna(row['sarane_kharid']):
+                message += f"📈 سرانه خرید: {row['sarane_kharid']:.0f} میلیون تومان\n"
+            if "godrat_kharid" in row and pd.notna(row['godrat_kharid']):
                 message += f"💪 قدرت خریدار: {row['godrat_kharid']:.2f}\n"
-            if "sarane_kharid" in row:
-                message += f"📈 سرانه خرید: {row['sarane_kharid']:,.0f} میلیون تومان\n"
-            if "pol_hagigi" in row:
-                message += f"{'🟢' if row['pol_hagigi'] > 0 else '🔴'} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
+            if "pol_hagigi" in row and pd.notna(row['pol_hagigi']):
+                emoji = "🟢" if row['pol_hagigi'] > 0 else "🔴"
+                message += f"{emoji} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
+            
             message += "\n"
         date_str, time_str = self._current_tehran_jdatetime()
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
@@ -112,17 +135,29 @@ class TelegramAlert:
         for _, row in df.iterrows():
             percent = row.get("last_price_change_percent", 0)
             emoji = "🚀" if percent > 5 else "📈" if percent > 3 else "✅"
+            
+            # نماد
             message += f"{emoji} <b>{row['symbol']}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
-            message += f"📊 درصد تغییر آخرین: <b>{percent:.2f}%</b>\n"
+            
+            # قیمت آخرین و تغییر
+            if "last_price" in row and pd.notna(row['last_price']):
+                emoji_price = "🟢" if percent > 0 else "🔴"
+                message += f"💰 قیمت آخرین: {row['last_price']} ({emoji_price}<b>{percent:+.2f}%</b>)\n"
+            
+            # بقیه فیلدها
             if "threshold" in row:
-                message += f"🔺 عبور: +{percent - row['threshold']:.2f}%\n"
-            message += f"💰 قیمت آخرین: {row.get('last_price', 0)}\n" if "last_price" in row else ""
-            message += f"💵 قیمت پایانی: {row.get('final_price', 0)}\n" if "final_price" in row else ""
-            message += f"💵 ارزش معاملات: {self._format_billion(row['value'])} میلیارد تومان\n" if "value" in row else ""
-            message += f"📈 سرانه خرید: {row['sarane_kharid']:,.0f} میلیون تومان\n" if "sarane_kharid" in row else ""
-            if "pol_hagigi" in row:
-                message += f"{'🟢' if row['pol_hagigi'] > 0 else '🔴'} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
+                message += f"🔺 عبور از آستانه: +{percent - row['threshold']:.2f}%\n"
+            if "final_price" in row and pd.notna(row['final_price']):
+                message += f"💵 قیمت پایانی: {row['final_price']}\n"
+            if "value" in row and pd.notna(row['value']):
+                message += f"💵 ارزش معاملات: {self._format_billion(row['value'])} میلیارد تومان\n"
+            if "sarane_kharid" in row and pd.notna(row['sarane_kharid']):
+                message += f"📈 سرانه خرید: {row['sarane_kharid']:.0f} میلیون تومان\n"
+            if "pol_hagigi" in row and pd.notna(row['pol_hagigi']):
+                emoji_pol = "🟢" if row['pol_hagigi'] > 0 else "🔴"
+                message += f"{emoji_pol} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
+            
             message += "\n"
         date_str, time_str = self._current_tehran_jdatetime()
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
@@ -133,25 +168,32 @@ class TelegramAlert:
             return ""
         message = f"🔥 <b>صف‌های خرید سنگین</b>\n\n"
         for _, row in df.iterrows():
+            # نماد
             message += f"🎯 <b>{row['symbol']}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
-            if "last_price_change_percent" in row:
-                message += f"📊 تغییر قیمت: <b>+{row['last_price_change_percent']}</b>\n"
-            if "final_price" in row:
+            
+            # قیمت و تغییر
+            if "last_price_change_percent" in row and pd.notna(row['last_price_change_percent']):
+                emoji_price = "🟢" if row['last_price_change_percent'] > 0 else "🔴"
+                message += f"💰 تغییر قیمت: ({emoji_price}<b>+{row['last_price_change_percent']:.2f}%</b>)\n"
+            if "final_price" in row and pd.notna(row['final_price']):
                 message += f"💵 قیمت پایانی: {row['final_price']}\n"
-            if "buy_order_value" in row:
+            
+            # بقیه فیلدها
+            if "buy_order_value" in row and pd.notna(row['buy_order_value']):
                 message += f"🟢 <b>ارزش صف خرید: {self._format_billion(row['buy_order_value'])} میلیارد تومان</b>\n"
-            if "sell_order_value" in row:
-                sell_val = row["sell_order_value"]
-                message += f"🔴 ارزش صف فروش: {self._format_billion(sell_val)} میلیارد تومان\n"
-            if "value" in row:
+            if "sell_order_value" in row and pd.notna(row['sell_order_value']):
+                message += f"🔴 ارزش صف فروش: {self._format_billion(row['sell_order_value'])} میلیارد تومان\n"
+            if "value" in row and pd.notna(row['value']):
                 message += f"💵 ارزش معاملات: {self._format_billion(row['value'])} میلیارد تومان\n"
-            if "volume" in row:
+            if "volume" in row and pd.notna(row['volume']):
                 message += f"📦 حجم معاملات: {row['volume']:,.0f}\n"
-            if "sarane_kharid" in row:
-                message += f"📈 سرانه خرید: {row['sarane_kharid']:,.0f} میلیون تومان\n"
-            if "pol_hagigi" in row:
-                message += f"{'🟢' if row['pol_hagigi'] > 0 else '🔴'} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
+            if "sarane_kharid" in row and pd.notna(row['sarane_kharid']):
+                message += f"📈 سرانه خرید: {row['sarane_kharid']:.0f} میلیون تومان\n"
+            if "pol_hagigi" in row and pd.notna(row['pol_hagigi']):
+                emoji = "🟢" if row['pol_hagigi'] > 0 else "🔴"
+                message += f"{emoji} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
+            
             message += "\n"
         date_str, time_str = self._current_tehran_jdatetime()
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
@@ -164,22 +206,30 @@ class TelegramAlert:
         for _, row in df.iterrows():
             ratio = row.get("pol_hagigi_to_avg_monthly_value", 0)
             emoji = "🔥" if ratio > 2 else "⭐" if ratio > 1 else "✅"
+            
+            # نماد
             message += f"{emoji} <b>{row['symbol']}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
-            message += f"📊 نسبت پول حقیقی به ارزش معاملات: {ratio:.2f}\n"
-            if "pol_hagigi" in row:
-                message += f"{'🟢' if row['pol_hagigi'] > 0 else '🔴'} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
-            if "value" in row:
+            
+            # قیمت آخرین و تغییر
+            if "last_price" in row and pd.notna(row['last_price']):
+                emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
+                change_pct = row.get('last_price_change_percent', 0)
+                message += f"💰 قیمت آخرین: {row['last_price']} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
+            
+            # بقیه فیلدها
+            if pd.notna(ratio):
+                message += f"📊 نسبت پول حقیقی به میانگین ماهانه: <b>{ratio:.2f}</b>\n"
+            if "pol_hagigi" in row and pd.notna(row['pol_hagigi']):
+                emoji_pol = "🟢" if row['pol_hagigi'] > 0 else "🔴"
+                message += f"{emoji_pol} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
+            if "value" in row and pd.notna(row['value']):
                 message += f"💵 ارزش معاملات: {self._format_billion(row['value'])} میلیارد تومان\n"
-            if "godrat_kharid" in row:
+            if "sarane_kharid" in row and pd.notna(row['sarane_kharid']):
+                message += f"📈 سرانه خرید: {row['sarane_kharid']:.0f} میلیون تومان\n"
+            if "godrat_kharid" in row and pd.notna(row['godrat_kharid']):
                 message += f"💪 قدرت خریدار: {row['godrat_kharid']:.2f}\n"
-            if "sarane_kharid" in row:
-                message += f"📈 سرانه خرید: {row['sarane_kharid']:,.0f} میلیون تومان\n"
-            if "last_price_change_percent" in row:
-                emoji_price = "🟢" if row["last_price_change_percent"] > 0 else "🔴"
-                message += f"{emoji_price} تغییر قیمت: {row['last_price_change_percent']:+.2f}%\n"
-            if "last_price" in row:
-                message += f"💵 آخرین قیمت: {row['last_price']}\n"
+            
             message += "\n"
         date_str, time_str = self._current_tehran_jdatetime()
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
@@ -190,24 +240,31 @@ class TelegramAlert:
             return ""
         message = f"⏰ <b>تیک و ساعت</b>\n\n"
         for _, row in df.iterrows():
+            # نماد
             message += f"📌 <b>{row['symbol']}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
-            if "last_price" in row:
-                message += f"💰 قیمت آخرین: {row['last_price']} "
-            if "last_price_change_percent" in row:
-                message += f"(<b>{row['last_price_change_percent']:+.2f}%</b>)\n"
-            if "tick_diff" in row:
+            
+            # قیمت آخرین و تغییر
+            if "last_price" in row and pd.notna(row['last_price']):
+                emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
+                change_pct = row.get('last_price_change_percent', 0)
+                message += f"💰 قیمت آخرین: {row['last_price']} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
+            
+            # بقیه فیلدها
+            if "tick_diff" in row and pd.notna(row['tick_diff']):
                 message += f"📈 <b>تیک: +{row['tick_diff']:.2f}%</b>\n"
                 if "final_price_change_percent" in row:
                     message += f"   (آخرین: {row.get('last_price_change_percent',0):.2f}% | پایانی: {row['final_price_change_percent']:.2f}%)\n"
-            if "value" in row:
+            if "value" in row and pd.notna(row['value']):
                 message += f"💵 ارزش معاملات: {self._format_billion(row['value'])} میلیارد تومان\n"
-            if "pol_hagigi" in row:
-                message += f"{'🟢' if row['pol_hagigi'] > 0 else '🔴'} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
-            if "sarane_kharid" in row:
-                message += f"📈 سرانه خرید: {row['sarane_kharid']:,.0f} میلیون تومان\n"
-            if "godrat_kharid" in row:
+            if "sarane_kharid" in row and pd.notna(row['sarane_kharid']):
+                message += f"📈 سرانه خرید: {row['sarane_kharid']:.0f} میلیون تومان\n"
+            if "godrat_kharid" in row and pd.notna(row['godrat_kharid']):
                 message += f"💪 قدرت خرید: {row['godrat_kharid']:.2f}\n"
+            if "pol_hagigi" in row and pd.notna(row['pol_hagigi']):
+                emoji = "🟢" if row['pol_hagigi'] > 0 else "🔴"
+                message += f"{emoji} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
+            
             message += "\n"
         date_str, time_str = self._current_tehran_jdatetime()
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
@@ -227,24 +284,24 @@ class TelegramAlert:
             return ""
         message = f"💰 <b>صف خرید با اردر سنگین</b>\n\n"
         for _, row in df.iterrows():
+            # نماد
             message += f"📌 <b>{row['symbol']}</b>\n"
+            
+            # قیمت و تغییر
+            if "last_price" in row and pd.notna(row['last_price']):
+                emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
+                change_pct = row.get('last_price_change_percent', 0)
+                message += f"💰 قیمت آخرین: {row['last_price']} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
             
             # ارزش صف خرید (از API دوم - همیشه موجود)
             if "buy_queue_value" in row and pd.notna(row['buy_queue_value']):
                 message += f"🟢 <b>صف خرید: {self._format_billion(row['buy_queue_value'])} میلیارد تومان</b>\n"
             
-            # سفارش هر کد (از API دوم - همیشه موجود)
+            # سفارش هر کد (از API دوم)
             if "buy_order" in row and pd.notna(row['buy_order']):
-                message += f"📋 سفارش هر کد: {row['buy_order']:,.0f} میلیون تومان\n"
+                message += f"📋 سفارش هر کد: {row['buy_order']:.0f} میلیون تومان\n"
             
-            # قیمت و تغییر (از API دوم)
-            if "last_price" in row and pd.notna(row['last_price']):
-                message += f"💰 قیمت آخرین: {row['last_price']}\n"
-            if "last_price_change_percent" in row and pd.notna(row['last_price_change_percent']):
-                emoji = "🟢" if row["last_price_change_percent"] > 0 else "🔴"
-                message += f"{emoji} تغییر: {row['last_price_change_percent']:+.2f}%\n"
-            
-            # ارزش معاملات (اگر از API اول غنی شده باشه)
+            # ارزش معاملات (از API اول)
             if "value" in row and pd.notna(row['value']):
                 message += f"💵 ارزش معاملات: {self._format_billion(row['value'])} میلیارد تومان\n"
             
@@ -254,20 +311,20 @@ class TelegramAlert:
             
             # سرانه خرید (از API اول)
             if "sarane_kharid" in row and pd.notna(row['sarane_kharid']):
-                message += f"📈 سرانه خرید: {row['sarane_kharid']:,.0f} میلیون تومان\n"
+                message += f"📈 سرانه خرید: {row['sarane_kharid']:.0f} میلیون تومان\n"
+            
+            # قدرت خرید (از API اول)
+            if "godrat_kharid" in row and pd.notna(row['godrat_kharid']):
+                message += f"💪 قدرت خرید: {row['godrat_kharid']:.2f}\n"
             
             # پول حقیقی (از API اول)
             if "pol_hagigi" in row and pd.notna(row['pol_hagigi']):
                 emoji = "🟢" if row["pol_hagigi"] > 0 else "🔴"
                 message += f"{emoji} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
             
-            # نسبت پول حقیقی به ارزش معاملات (از API اول - محاسبه شده)
+            # نسبت پول حقیقی به ارزش معاملات (از API اول)
             if "pol_hagigi_to_value" in row and pd.notna(row['pol_hagigi_to_value']):
                 message += f"💎 پول حقیقی / ارزش معاملات: {row['pol_hagigi_to_value']:.2f}\n"
-            
-            # قدرت خرید (از API اول)
-            if "godrat_kharid" in row and pd.notna(row['godrat_kharid']):
-                message += f"💪 قدرت خرید: {row['godrat_kharid']:.2f}\n"
             
             message += "\n"
         
