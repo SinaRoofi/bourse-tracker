@@ -63,7 +63,7 @@ STOCKS_PER_MESSAGE_MAP = {
     'filter_2_sarane_cross': 5,
     'filter_3_watchlist': 5,
     'filter_4_ceiling_queue': 4,
-    'filter_5_pol_hagigi_ratio': 3,
+    'filter_5_pol_hagigi_ratio': 5,
     'filter_6_tick_time': 5,
     'filter_7_suspicious_volume': 5,
     'filter_8_swing_trade': 5,
