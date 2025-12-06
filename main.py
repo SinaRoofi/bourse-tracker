@@ -107,12 +107,12 @@ def chunk_dataframe(df, filter_name):
         yield df.iloc[i:i + chunk_size]
 
 # ===========================
-# ارسال هشدارها
+# ارسال هشدارها - نسخه Parallel
 # ===========================
 async def send_alerts_for_filters_async(alert: TelegramAlert, alert_manager: GistAlertManager, 
                                         filters_results: dict, api_name: str) -> tuple:
     """
-    ارسال هشدارها برای فیلترهای یک API
+    ارسال هشدارها برای فیلترهای یک API به صورت کاملاً موازی
     
     Args:
         alert: شیء TelegramAlert
@@ -129,6 +129,10 @@ async def send_alerts_for_filters_async(alert: TelegramAlert, alert_manager: Gis
     logger.info(f"\n{'='*60}")
     logger.info(f"📤 ارسال هشدارهای {api_name}")
     logger.info(f"{'='*60}")
+
+    # لیست تمام Taskهای ارسال
+    all_tasks = []
+    all_symbols_to_mark = []
 
     for filter_name, filtered_df in filters_results.items():
         if filtered_df.empty:
@@ -154,22 +158,44 @@ async def send_alerts_for_filters_async(alert: TelegramAlert, alert_manager: Gis
                 # فقط سهام جدید رو ارسال می‌کنیم
                 chunk_to_send = chunk_df[chunk_df['symbol'].isin(symbols_to_send)]
 
-                # ارسال با مدیریت Flood Control
-                success = await alert.send_filter_alert_safe(chunk_to_send, filter_name)
+                # ایجاد Task برای ارسال (بدون await)
+                task = alert.send_filter_alert(chunk_to_send, filter_name)
+                all_tasks.append((task, symbols_to_send, filter_name, chunk_idx))
                 
-                if success:
-                    # علامت‌گذاری به عنوان ارسال شده
-                    alert_manager.mark_multiple_as_sent([(s, filter_name) for s in symbols_to_send])
-                    sent_count += len(symbols_to_send)
-                    logger.info(f"✅ گروه {chunk_idx} از {filter_name}: {len(symbols_to_send)} سهم ارسال شد")
-                else:
-                    logger.error(f"❌ گروه {chunk_idx} از {filter_name}: خطا در ارسال")
-
-                # تأخیر بین گروه‌ها برای کاهش Flood Control
-                await asyncio.sleep(5)
+                logger.info(f"📋 Task ایجاد شد برای {filter_name} گروه {chunk_idx}: {len(symbols_to_send)} سهم")
             else:
-                logger.info(f"⏭️  گروه {chunk_idx}: همه قبلاً ارسال شده‌اند")
+                logger.info(f"⏭️  {filter_name} گروه {chunk_idx}: همه قبلاً ارسال شده‌اند")
 
+    # اجرای همزمان تمام Taskها
+    if all_tasks:
+        logger.info(f"\n🚀 شروع ارسال موازی {len(all_tasks)} پیام...")
+        
+        # جمع‌آوری فقط taskها
+        tasks_only = [task for task, _, _, _ in all_tasks]
+        
+        # اجرای همزمان
+        results = await asyncio.gather(*tasks_only, return_exceptions=True)
+        
+        # جمع‌آوری موفقیت‌ها برای mark کردن
+        successful_marks = []
+        
+        # پردازش نتایج
+        for idx, (result, (_, symbols, filter_name, chunk_idx)) in enumerate(zip(results, all_tasks)):
+            if isinstance(result, Exception):
+                logger.error(f"❌ خطا در ارسال {filter_name} گروه {chunk_idx}: {result}")
+            elif result:
+                # موفق - آماده برای mark
+                successful_marks.extend([(s, filter_name) for s in symbols])
+                sent_count += len(symbols)
+                logger.info(f"✅ {filter_name} گروه {chunk_idx}: {len(symbols)} سهم ارسال شد")
+            else:
+                logger.error(f"❌ {filter_name} گروه {chunk_idx}: خطا در ارسال")
+        
+        # Mark کردن تمام موفقیت‌ها یکجا (async)
+        if successful_marks:
+            logger.info(f"📝 علامت‌گذاری {len(successful_marks)} هشدار در Gist...")
+            await alert_manager.mark_multiple_as_sent(successful_marks)
+    
     return sent_count, skipped_count
 
 # ===========================
@@ -229,7 +255,7 @@ async def main_async():
             total_skipped += skipped
 
         # گزارش نهایی
-        stats = alert_manager.get_today_stats()
+        stats = await alert_manager.get_today_stats()
         logger.info("\n" + "=" * 80)
         logger.info("📊 گزارش نهایی:")
         logger.info(f"  • تاریخ: {stats['date']}")
