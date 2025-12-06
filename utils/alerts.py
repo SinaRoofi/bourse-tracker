@@ -274,7 +274,7 @@ class TelegramAlert:
             if "last_price" in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
                 change_pct = row.get('last_price_change_percent', 0)
-                message += f"💰 قیمت آخرین: {row['last_price']:,.0f}} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
+                message += f"💰 قیمت آخرین: {row['last_price']:,.0f} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
             if "buy_queue_value" in row and pd.notna(row['buy_queue_value']):
                 message += f"🟢 <b>صف خرید: {self._format_billion(row['buy_queue_value'])} میلیارد تومان</b>\n"
             if "buy_order" in row and pd.notna(row['buy_order']):
