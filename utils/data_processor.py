@@ -200,7 +200,7 @@ class BourseDataProcessor:
 
         filtered = df[
             (df["sarane_kharid"] > df["sarane_forosh"])
-            & (df["value_to_avg_monthly_value"] >= config["min_value_to_avg_monthly"])
+            & (df["value_to_avg_monthly_value"] >= config["min_value_to_avg_monthly"]) & (df["sarane_kharid"] >= config["min_sarane_kharid"])
         ].copy()
 
         filtered = filtered.sort_values("sarane_kharid", ascending=False)
