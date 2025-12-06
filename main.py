@@ -60,7 +60,7 @@ logger = logging.getLogger(__name__)
 # ===========================
 STOCKS_PER_MESSAGE_MAP = {
     'filter_1_strong_buying': 5,
-    'filter_2_sarane_cross': 3,
+    'filter_2_sarane_cross': 5,
     'filter_3_watchlist': 5,
     'filter_4_ceiling_queue': 4,
     'filter_5_pol_hagigi_ratio': 3,
@@ -68,7 +68,7 @@ STOCKS_PER_MESSAGE_MAP = {
     'filter_7_suspicious_volume': 5,
     'filter_8_swing_trade': 5,
     'filter_9_first_hour': 5,
-    'filter_10_heavy_buy_queue': 2
+    'filter_10_heavy_buy_queue': 5
 }
 
 # ===========================
