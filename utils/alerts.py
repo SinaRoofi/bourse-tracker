@@ -20,10 +20,12 @@ class TelegramAlert:
         self.channel_name = channel_name
         self.bot = Bot(token=self.bot_token)
         # Semaphore برای محدود کردن تعداد درخواست‌های همزمان
-        self.semaphore = asyncio.Semaphore(5)  # حداکثر 5 پیام همزمان
+        # تلگرام: حدود 20 پیام/دقیقه = 1 پیام هر 3 ثانیه
+        # پس Semaphore=3 با delay کوچک بهترین حالته
+        self.semaphore = asyncio.Semaphore(3)  # حداکثر 3 پیام همزمان
 
     async def send_message(self, message: str, parse_mode: str = 'HTML') -> bool:
-        """ارسال پیام با مدیریت Semaphore"""
+        """ارسال پیام با مدیریت Semaphore و rate limiting"""
         async with self.semaphore:
             try:
                 await self.bot.send_message(
@@ -31,6 +33,8 @@ class TelegramAlert:
                     text=message, 
                     parse_mode=parse_mode
                 )
+                # تأخیر کوچک برای رعایت rate limit تلگرام (20 msg/min)
+                await asyncio.sleep(3.5)  # ~17 پیام در دقیقه
                 return True
             except RetryAfter as e:
                 logger.warning(f"⚠️ Flood control: انتظار {e.retry_after} ثانیه")
