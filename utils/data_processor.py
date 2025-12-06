@@ -407,9 +407,28 @@ class BourseDataProcessor:
         return filtered
 
     # ========================================
-    # فیلتر 10: صف خرید میلیاردی + غنی‌سازی
+    # فیلتر 10: صف خرید میلیاردی (API دوم + غنی‌سازی با API اول)
     # ========================================
-    def filter_10_heavy_buy_queue(self, df_api2: pd.DataFrame, df_api1: pd.DataFrame = None, config: dict = None) -> pd.DataFrame:
+    def filter_10_heavy_buy_queue(
+        self, df_api2: pd.DataFrame, df_api1: pd.DataFrame = None, config: dict = None
+    ) -> pd.DataFrame:
+        """
+        فیلتر 10: صف خرید میلیاردی
+        استفاده از API دوم برای فیلتر و سپس غنی‌سازی با API اول
+
+        شرایط (از config):
+        - آخرین قیمت = آستانه مجاز بالا (سقف)
+        - buy_order >= min_buy_order (میلیون تومان)
+        - buy_queue_value >= min_buy_queue_value (میلیارد تومان)
+
+        Args:
+            df_api2: DataFrame کل نمادها از API دوم
+            df_api1: DataFrame کل سهام از API اول (برای غنی‌سازی)
+            config: تنظیمات فیلتر
+
+        Returns:
+            DataFrame نمادهای فیلتر شده با اطلاعات غنی شده
+        """
         if df_api2.empty:
             return df_api2
 
@@ -420,9 +439,11 @@ class BourseDataProcessor:
         logger.info(f"اعمال فیلتر 10: صف خرید میلیاردی")
         logger.info(f"  • شرط 1: آخرین قیمت = سقف")
         logger.info(f"  • شرط 2: buy_order >= {config['min_buy_order']} میلیون تومان")
-        logger.info(f"  • شرط 3: buy_queue_value >= {config['min_buy_queue_value']} میلیارد تومان")
+        logger.info(
+            f"  • شرط 3: buy_queue_value >= {config['min_buy_queue_value']} میلیارد تومان"
+        )
 
-        # بررسی وجود ستون‌های لازم
+        # بررسی وجود ستون‌های لازم در API دوم
         required_cols = ["last_price", "ceiling_price", "buy_order", "buy_queue_value"]
         missing_cols = [col for col in required_cols if col not in df_api2.columns]
 
@@ -459,6 +480,10 @@ class BourseDataProcessor:
             if 'symbol' in available_columns:
                 api1_subset = df_api1[available_columns].copy()
                 
+                # پاکسازی symbol (حذف فضای خالی و یکسان‌سازی)
+                filtered_api2['symbol_clean'] = filtered_api2['symbol'].str.strip().str.upper()
+                api1_subset['symbol_clean'] = api1_subset['symbol'].str.strip().str.upper()
+                
                 # محاسبه pol_hagigi_to_value
                 if all(col in api1_subset.columns for col in ['pol_hagigi', 'value']):
                     api1_subset['pol_hagigi_to_value'] = api1_subset.apply(
@@ -470,15 +495,35 @@ class BourseDataProcessor:
                         axis=1,
                     )
                 
-                # Merge با API دوم
-                enriched = filtered_api2.merge(api1_subset, on='symbol', how='left', suffixes=('_api2', '_api1'))
+                # Merge با استفاده از symbol_clean
+                enriched = filtered_api2.merge(
+                    api1_subset, 
+                    on='symbol_clean', 
+                    how='left', 
+                    suffixes=('_api2', '_api1')
+                )
+                
+                # حذف ستون‌های اضافی و کپی
+                enriched = enriched.drop(columns=['symbol_clean'], errors='ignore')
+                
+                # اولویت دادن به symbol از API دوم
+                if 'symbol_api1' in enriched.columns:
+                    enriched = enriched.drop(columns=['symbol_api1'], errors='ignore')
+                if 'symbol_api2' in enriched.columns:
+                    enriched['symbol'] = enriched['symbol_api2']
+                    enriched = enriched.drop(columns=['symbol_api2'], errors='ignore')
                 
                 # اولویت دادن به value از API اول
                 if 'value_api1' in enriched.columns:
                     enriched['value'] = enriched['value_api1'].fillna(enriched.get('value_api2', 0))
                     enriched = enriched.drop(columns=['value_api1', 'value_api2'], errors='ignore')
                 
-                logger.info(f"✅ {len(enriched)} نماد با موفقیت غنی شد")
+                # لاگ نمادهایی که غنی نشدن
+                not_enriched = enriched[enriched['value_to_avg_monthly_value'].isna()]
+                if len(not_enriched) > 0:
+                    logger.warning(f"⚠️ {len(not_enriched)} نماد از API اول پیدا نشد: {list(not_enriched['symbol'])}")
+                
+                logger.info(f"✅ {len(enriched)} نماد پردازش شد، {len(enriched) - len(not_enriched)} نماد غنی شد")
                 enriched = enriched.sort_values("buy_queue_value", ascending=False)
                 return enriched
             else:
