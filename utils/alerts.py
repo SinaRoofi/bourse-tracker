@@ -34,7 +34,7 @@ class TelegramAlert:
                     parse_mode=parse_mode
                 )
                 # تأخیر کوچک برای رعایت rate limit تلگرام (20 msg/min)
-                await asyncio.sleep(3.5)  # ~17 پیام در دقیقه
+                await asyncio.sleep(4)  # ~17 پیام در دقیقه
                 return True
             except RetryAfter as e:
                 logger.warning(f"⚠️ Flood control: انتظار {e.retry_after} ثانیه")
