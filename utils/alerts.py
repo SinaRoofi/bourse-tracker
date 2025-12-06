@@ -277,7 +277,7 @@ class TelegramAlert:
         return self._format_default_alert(df, "نوسان‌گیری")
 
     def format_filter_9_first_hour(self, df: pd.DataFrame) -> str:
-        return self._format_default_alert(df, "۱ ساعت اول")
+        return self._format_default_alert(df, "نیم ساعت اول (9:00-9:30)")
 
     def format_filter_10_heavy_buy_queue(self, df: pd.DataFrame) -> str:
         if df.empty:
