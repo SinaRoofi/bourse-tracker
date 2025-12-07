@@ -297,8 +297,8 @@ class TelegramAlert:
             if "pol_hagigi" in row and pd.notna(row['pol_hagigi']):
                 emoji = "🟢" if row["pol_hagigi"] > 0 else "🔴"
                 message += f"{emoji} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
-            if "pol_hagigi_to_value" in row and pd.notna(row['pol_hagigi_to_value']):
-                message += f"💎 قدرت پول: {row['pol_hagigi_to_value'] * 100:.2f}\n"
+            if "pol_hagigi_to_avg_monthly_value" in row and pd.notna(row['pol_hagigi_to_avg_monthly_value']):
+                message += f"💎 قدرت پول: {row['pol_hagigi_to_avg_monthly_value'] * 100:.2f}\n"
             message += "\n"
         date_str, time_str = self._current_tehran_jdatetime()
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
