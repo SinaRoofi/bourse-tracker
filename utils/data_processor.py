@@ -189,7 +189,7 @@ class BourseDataProcessor:
             & (df["godrat_kharid"] > 2 * df["5_day_godrat_kharid"])
         ].copy()
 
-        filtered = filtered.sort_values("godrat_kharid", ascending=False)
+        filtered = filtered.sort_values("sarane_kharid", ascending=False)
         logger.info(f"✅ فیلتر 1: {len(filtered)} سهم یافت شد")
         return filtered
 
