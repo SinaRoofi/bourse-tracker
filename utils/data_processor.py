@@ -186,7 +186,7 @@ class BourseDataProcessor:
             (df["value_to_avg_monthly_value"] > config["min_value_to_avg_monthly"])
             & (df["sarane_kharid"] > config["min_sarane_kharid"])
             & (df["godrat_kharid"] > config["min_godrat_kharid"])
-            & (df["godrat_kharid"] > df["5_day_godrat_kharid"])
+            & (df["godrat_kharid"] > 2 * df["5_day_godrat_kharid"])
         ].copy()
 
         filtered = filtered.sort_values("godrat_kharid", ascending=False)
