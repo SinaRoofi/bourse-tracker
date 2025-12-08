@@ -162,7 +162,10 @@ class BourseDataProcessor:
         for old_col, new_col in column_mapping.items():
             if old_col in df.columns:
                 df[new_col] = df[old_col]
-
+        if "value" in df.columns:
+    df["value"] = pd.to_numeric(df["value"], errors="coerce")
+    df["value"] = df["value"] / 10_000_000_000
+    logger.info("✅ تقسیم value به 10 میلیارد انجام شد")
         return df
 
     # ========================================
