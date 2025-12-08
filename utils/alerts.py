@@ -84,7 +84,7 @@ class TelegramAlert:
             return f"{value:.2f}"
         else:
             return f"{value:.3f}"
-    
+
     @staticmethod
     def _format_price(value: float) -> str:
         """فرمت قیمت با جداکننده ۳ رقمی"""
@@ -212,8 +212,8 @@ class TelegramAlert:
             return ""
         message = f"💎 <b>هشدار ورود پول حقیقی قوی</b>\n\n"
         for _, row in df.iterrows():
-            ratio = row.get("pol_hagigi_to_avg_monthly_value", 0)
-            emoji = "🔥" if ratio > 2 else "⭐" if ratio > 1 else "✅"
+            pol_ratio = row.get("pol_hagigi_to_avg_monthly_value", 0)
+            emoji = "🔥" if pol_ratio > 2 else "⭐" if pol_ratio > 1 else "✅"
             message += f"{emoji} <b>#{row['symbol']}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
             if "last_price" in row and pd.notna(row['last_price']):
@@ -222,8 +222,9 @@ class TelegramAlert:
                 message += f"💰 قیمت آخرین: {self._format_price(row['last_price'])} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
             if "value" in row and pd.notna(row['value']):
                 message += f"💵 ارزش معاملات: {self._format_billion(row['value'])} میلیارد تومان\n"
-            if pd.notna(ratio):
-                message += f"📊 حجم نسبی: <b>{ratio * 100:.0f}%</b>\n"
+            # حجم نسبی = value_to_avg_monthly_value
+            if "value_to_avg_monthly_value" in row and pd.notna(row['value_to_avg_monthly_value']):
+                message += f"📊 حجم نسبی: <b>{row['value_to_avg_monthly_value'] * 100:.0f}%</b>\n"
             if "sarane_kharid" in row and pd.notna(row['sarane_kharid']):
                 message += f"📈 سرانه خرید: {row['sarane_kharid']:.0f} میلیون تومان\n"
             if "godrat_kharid" in row and pd.notna(row['godrat_kharid']):
@@ -231,8 +232,9 @@ class TelegramAlert:
             if "pol_hagigi" in row and pd.notna(row['pol_hagigi']):
                 emoji_pol = "🟢" if row['pol_hagigi'] > 0 else "🔴"
                 message += f"{emoji_pol} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
-            if pd.notna(ratio):
-                message += f"💎 قدرت پول: {ratio * 100:.0f}%\n"
+            # قدرت پول = pol_hagigi_to_avg_monthly_value
+            if pd.notna(pol_ratio):
+                message += f"💎 قدرت پول: {pol_ratio * 100:.0f}%\n"
             message += "\n"
         date_str, time_str = self._current_tehran_jdatetime()
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
