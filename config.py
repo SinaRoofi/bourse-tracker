@@ -148,8 +148,8 @@ FIRST_HOUR_CONFIG = {
 
 # فیلتر 10: صف خرید میلیاردی
 HEAVY_BUY_QUEUE_CONFIG = {
-    'min_buy_order': 70,  # میلیون تومان
-    'min_buy_queue_value': 10.0,  # میلیارد تومان 
+    'min_buy_order': 60,  # میلیون تومان
+    'min_buy_queue_value': 1,  # میلیارد تومان 
     'price_at_ceiling': True,  # آخرین قیمت = سقف
 }
 
