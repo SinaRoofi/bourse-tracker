@@ -119,11 +119,57 @@ class TelegramAlert:
             message += "\n"
         message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
         return message
+        
+    def format_filter_1_strong_buying(self, df: pd.DataFrame) -> str:
+        """فرمت پیام فیلتر 1: قدرت خرید قوی"""
+        if df.empty:
+            return ""
 
+        message = f"💪 <b> قدرت خرید قوی</b>\n\n"
+
+        for _, row in df.iterrows():
+            godrat = row.get("godrat_kharid", 0)
+            emoji = "🔥" if godrat > 3 else "⚡" if godrat > 2 else "✅"
+            message += f"{emoji} <b>#{row['symbol']}</b>"
+            message += (
+                f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
+            )
+            if "last_price" in row and pd.notna(row["last_price"]):
+                emoji_price = (
+                    "🟢" if row.get("last_price_change_percent", 0) > 0 else "🔴"
+                )
+                change_pct = row.get("last_price_change_percent", 0)
+                message += f"💰 قیمت آخرین: {self._format_price(row['last_price'])} ({emoji_price}<b>{change_pct:+.2f}%</b>)\n"
+            if "value" in row and pd.notna(row["value"]):
+                message += f"💵 ارزش معاملات: {self._format_billion(row['value'])} میلیارد تومان\n"
+            if "value_to_avg_monthly_value" in row and pd.notna(
+                row["value_to_avg_monthly_value"]
+            ):
+                message += f"📊 حجم نسبی: <b>{row['value_to_avg_monthly_value'] * 100:.0f}%</b>\n"
+            if "sarane_kharid" in row and pd.notna(row["sarane_kharid"]):
+                message += f"📈 سرانه خرید: {row['sarane_kharid']:.0f} میلیون تومان\n"
+            if "godrat_kharid" in row and pd.notna(row["godrat_kharid"]):
+                message += f"💪 <b>قدرت خرید: {row['godrat_kharid']:.2f}</b>\n"
+            if "5_day_godrat_kharid" in row and pd.notna(row["5_day_godrat_kharid"]):
+                message += f"📉 میانگین قدرت خرید 5 روز: {row['5_day_godrat_kharid']:.2f}\n"
+            if "pol_hagigi" in row and pd.notna(row["pol_hagigi"]):
+                emoji_pol = "🟢" if row["pol_hagigi"] > 0 else "🔴"
+                message += f"{emoji_pol} ورود پول حقیقی: {self._format_billion(row['pol_hagigi'])} میلیارد تومان\n"
+            if "pol_hagigi_to_avg_monthly_value" in row and pd.notna(
+                row["pol_hagigi_to_avg_monthly_value"]
+            ):
+                message += f"💎 قدرت پول: {row['pol_hagigi_to_avg_monthly_value'] * 100:.0f}%\n"
+
+            message += "\n"
+
+        date_str, time_str = self._current_tehran_jdatetime()
+        message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
+        return message
+        
     def format_filter_2_sarane_cross(self, df: pd.DataFrame) -> str:
         if df.empty:
             return ""
-        message = f"🔔 <b>هشدار کراس سرانه خرید</b>\n\n"
+        message = f"🔔 <b> کراس سرانه خرید </b>\n\n"
         for _, row in df.iterrows():
             message += f"📌 <b>#{row['symbol']}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
@@ -152,7 +198,7 @@ class TelegramAlert:
     def format_filter_3_watchlist(self, df: pd.DataFrame) -> str:
         if df.empty:
             return ""
-        message = f"⚠️ <b>هشدار عبور از آستانه</b>\n\n"
+        message = f"⚠️ <b> عبور از آستانه</b>\n\n"
         for _, row in df.iterrows():
             percent = row.get("last_price_change_percent", 0)
             emoji = "🚀" if percent > 5 else "📈" if percent > 3 else "✅"
@@ -205,7 +251,7 @@ class TelegramAlert:
     def format_filter_5_pol_hagigi_ratio(self, df: pd.DataFrame) -> str:
         if df.empty:
             return ""
-        message = f"💎 <b>هشدار ورود پول حقیقی قوی</b>\n\n"
+        message = f"💎 <b> ورود پول حقیقی قوی </b>\n\n"
         for _, row in df.iterrows():
             pol_ratio = row.get("pol_hagigi_to_avg_monthly_value", 0)
             emoji = "🔥" if pol_ratio > 2 else "⭐" if pol_ratio > 1 else "✅"
@@ -236,7 +282,7 @@ class TelegramAlert:
     def format_filter_6_tick_time(self, df: pd.DataFrame) -> str:
         if df.empty:
             return ""
-        message = f"⏰ <b>تیک و ساعت</b>\n\n"
+        message = f"⏰ <b> تیک و ساعت </b>\n\n"
         for _, row in df.iterrows():
             message += f"📌 <b>#{row['symbol']}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
@@ -269,7 +315,7 @@ class TelegramAlert:
         return self._format_default_alert(df, "نوسان‌گیری")
 
     def format_filter_9_first_hour(self, df: pd.DataFrame) -> str:
-        return self._format_default_alert(df, "نیم ساعت اول (9:00-9:30)")
+        return self._format_default_alert(df, "نیم ساعت اول")
 
     def format_filter_10_heavy_buy_queue(self, df: pd.DataFrame) -> str:
         if df.empty:
@@ -309,6 +355,7 @@ class TelegramAlert:
             return False
 
         format_map = {
+            'filter_1_strong_buying': self.format_filter_1_strong_buying,
             'filter_2_sarane_cross': self.format_filter_2_sarane_cross,
             'filter_3_watchlist': self.format_filter_3_watchlist,
             'filter_4_ceiling_queue': self.format_filter_4_ceiling_queue,
