@@ -255,9 +255,28 @@ class BourseDataProcessor:
     # ========================================
     # فیلتر 4: رزرو شده
     # ========================================
-    def filter_4_heavy_buy_queue_at_ceiling(self, df: pd.DataFrame, config: dict = None) -> pd.DataFrame:
-        logger.info("فیلتر 4: غیرفعال است")
+def filter_4_heavy_buy_queue_at_ceiling(self, df: pd.DataFrame, config: dict = None) -> pd.DataFrame:
+    if df.empty:
+        return df
+
+    if config is None:
+        from config import range_mosbat 
+        config = range_mosbat 
+
+    logger.info(f"اعمال فیلتر 4: رنج مثبت")
+    
+    filtered = df[
+            (df["diff_last_final"] >= config["tick_diff_percent"])
+            & (df["value_to_avg_monthly_value"] >= config["min_value_to_avg_monthly"])
+        ].copy()
+    
+    if filtered.empty:
+        logger.info("فیلتر 4: هیچ سهمی یافت نشد")
         return pd.DataFrame()
+
+    filtered = filtered.sort_values("diff_last_final", ascending=False)
+    logger.info(f"✅ فیلتر 4: {len(filtered)} سهم با رنج مثبت ")
+    return filtered
 
     # ========================================
     # فیلتر 5: نسبت پول حقیقی
