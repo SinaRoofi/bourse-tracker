@@ -106,8 +106,8 @@ WATCHLIST_SYMBOLS = {
     'فملی': 2.5,
 }
 
-# فیلتر 4: رزرو شده
-FILTER_4_CONFIG = {
+# فیلتر 4: رنج مثبت
+range_mosbat = {
     'tick_diff_percent' = 2.0,
     'min_value_to_avg_monthly': 0.5,
 }
