@@ -2,11 +2,6 @@ name: Bourse Tracker
 
 on:
   workflow_dispatch:
-    inputs:
-      trigger_source:
-        description: "منبع تریگر"
-        required: false
-        default: "cloudflare"
 
 concurrency:
   group: bourse-tracker
