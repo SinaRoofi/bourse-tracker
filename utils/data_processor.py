@@ -253,7 +253,7 @@ class BourseDataProcessor:
         return filtered
 
     # ========================================
-    # فیلتر 4: رزرو شده
+    #  فیلتر 4:  رنج مثبت
     # ========================================
 def filter_4_heavy_buy_queue_at_ceiling(self, df: pd.DataFrame, config: dict = None) -> pd.DataFrame:
     if df.empty:
@@ -323,7 +323,7 @@ def filter_4_heavy_buy_queue_at_ceiling(self, df: pd.DataFrame, config: dict = N
         logger.info(f"اعمال فیلتر 6: تیک و ساعت")
 
         df_copy = df.copy()
-        df_copy["tick_diff"] = df_copy["last_price_change_percent"] - df_copy["final_price_change_percent"]
+        df_copy["tick_diff"] = df_copy["diff_last_final"] 
 
         filtered = df_copy[
             (first_to_low_ratio * df_copy["first_price"] > df_copy["low_price"])
