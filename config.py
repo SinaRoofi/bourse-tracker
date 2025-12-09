@@ -107,7 +107,10 @@ WATCHLIST_SYMBOLS = {
 }
 
 # فیلتر 4: رزرو شده
-FILTER_4_CONFIG = {}
+FILTER_4_CONFIG = {
+    'tick_diff_percent' = 2.0,
+    'min_value_to_avg_monthly': 0.5,
+}
 
 # فیلتر 5: نسبت پول حقیقی
 POL_HAGIGI_FILTER_CONFIG = {
