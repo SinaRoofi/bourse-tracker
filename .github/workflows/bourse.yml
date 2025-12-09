@@ -8,6 +8,10 @@ on:
         required: false
         default: "cloudflare"
 
+concurrency:
+  group: bourse-tracker
+  cancel-in-progress: false
+
 jobs:
   run-bourse-tracker:
     runs-on: ubuntu-latest
