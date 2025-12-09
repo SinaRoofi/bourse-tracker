@@ -95,7 +95,7 @@ STRONG_BUYING_CONFIG = {
 SARANE_CROSS_CONFIG = {
     'sarane_kharid_greater_than_forosh': True,
     'min_value_to_avg_monthly': 0.5,
-    'min_sarane_kharid': 70,
+    'min_sarane_kharid': 50,
 }
 
 # فیلتر 3: نمادهای خاص
@@ -149,7 +149,7 @@ FIRST_HOUR_CONFIG = {
 # فیلتر 10: صف خرید میلیاردی
 HEAVY_BUY_QUEUE_CONFIG = {
     'min_buy_order': 70,  # میلیون تومان
-    'min_buy_queue_value': 10.0,  # میلیارد تومان - شرط جدید
+    'min_buy_queue_value': 10.0,  # میلیارد تومان 
     'price_at_ceiling': True,  # آخرین قیمت = سقف
 }
 
