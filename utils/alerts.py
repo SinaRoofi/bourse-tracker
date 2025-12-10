@@ -164,7 +164,7 @@ class TelegramAlert:
     def format_filter_2_sarane_cross(self, df: pd.DataFrame) -> str:
         if df.empty:
             return ""
-        message = f"🔔 <b> #کراس_سرانه_خرید# </b>\n\n"
+        message = f"🔔  #کراس_سرانه_خرید# \n\n"
         for _, row in df.iterrows():
             message += f"📌 <b>#{row['symbol']}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
