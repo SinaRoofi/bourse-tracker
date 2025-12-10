@@ -120,7 +120,7 @@ class TelegramAlert:
         if df.empty:
             return ""
 
-        message = f"💪 <b> #قدرت_خرید_قوی#</b>\n\n"
+        message = f"💪#قدرت_خرید_قوی\n\n"
 
         for _, row in df.iterrows():
             godrat = row.get("godrat_kharid", 0)
@@ -193,7 +193,7 @@ class TelegramAlert:
     def format_filter_3_watchlist(self, df: pd.DataFrame) -> str:
         if df.empty:
             return ""
-        message = f"⚠️ <b> #عبور_از_آستانه#</b>\n\n"
+        message = f"⚠️#عبور_از_آستانه\n\n"
         for _, row in df.iterrows():
             percent = row.get("last_price_change_percent", 0)
             emoji = "🚀" if percent > 5 else "📈" if percent > 3 else "✅"
@@ -221,7 +221,7 @@ class TelegramAlert:
     def format_filter_4_ceiling_queue(self, df: pd.DataFrame) -> str:
         if df.empty:
             return ""
-        message = f"🔥 <b> #رنج_مثبت# </b>\n\n"
+        message = f"🔥رنج_مثبت#\n\n"
         for _, row in df.iterrows():
             message += f"🎯 <b>#{row['symbol']}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
@@ -246,7 +246,7 @@ class TelegramAlert:
     def format_filter_5_pol_hagigi_ratio(self, df: pd.DataFrame) -> str:
         if df.empty:
             return ""
-        message = f"💎 <b> #پول_حقیقی_قوی# </b>\n\n"
+        message = f"💎#ورود_پول_حقیقی_قوی\n\n"
         for _, row in df.iterrows():
             pol_ratio = row.get("pol_hagigi_to_avg_monthly_value", 0)
             emoji = "🔥" if pol_ratio > 2 else "⭐" if pol_ratio > 1 else "✅"
@@ -277,7 +277,7 @@ class TelegramAlert:
     def format_filter_6_tick_time(self, df: pd.DataFrame) -> str:
         if df.empty:
             return ""
-        message = f"⏰ <b> #تیک_و_ساعت# </b>\n\n"
+        message = f"⏰#تیک_و_ساعت\n\n"
         for _, row in df.iterrows():
             message += f"📌 <b>#{row['symbol']}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
@@ -315,7 +315,7 @@ class TelegramAlert:
     def format_filter_10_heavy_buy_queue(self, df: pd.DataFrame) -> str:
         if df.empty:
             return ""
-        message = f"💰 <b>#صف_خرید_با_اردر_سنگین#</b>\n\n"
+        message = f"💰#صف_خرید_با_اردر_سنگین\n\n"
         for _, row in df.iterrows():
             message += f"📌 <b>#{row['symbol']}</b>\n"
             if "last_price" in row and pd.notna(row['last_price']):
