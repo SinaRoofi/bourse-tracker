@@ -253,9 +253,9 @@ class BourseDataProcessor:
         return filtered
 
     # ========================================
-    #  فیلتر 4:  رنج مثبت
+    # فیلتر 4: رنج مثبت
     # ========================================
-def filter_4_heavy_buy_queue_at_ceiling(self, df: pd.DataFrame, config: dict = None) -> pd.DataFrame:
+    def filter_4_heavy_buy_queue_at_ceiling(self, df: pd.DataFrame, config: dict = None) -> pd.DataFrame:
         if df.empty:
             return df
 
