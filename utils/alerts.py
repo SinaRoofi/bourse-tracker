@@ -221,7 +221,7 @@ class TelegramAlert:
     def format_filter_4_ceiling_queue(self, df: pd.DataFrame) -> str:
         if df.empty:
             return ""
-        message = f"🔥رنج_مثبت#\n\n"
+        message = f"🔥#رنج_مثبت\n\n"
         for _, row in df.iterrows():
             message += f"🎯 <b>#{row['symbol']}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
@@ -304,13 +304,13 @@ class TelegramAlert:
         return message
 
     def format_filter_7_suspicious_volume(self, df: pd.DataFrame) -> str:
-        return self._format_default_alert(df, "#حجم_مشکوک#")
+        return self._format_default_alert(df, "#حجم_مشکوک")
 
     def format_filter_8_swing_trade(self, df: pd.DataFrame) -> str:
-        return self._format_default_alert(df, "#نوسان‌_گیری#")
+        return self._format_default_alert(df, "#نوسان‌_گیری")
 
     def format_filter_9_first_hour(self, df: pd.DataFrame) -> str:
-        return self._format_default_alert(df, "#نیم_ساعت_اول#")
+        return self._format_default_alert(df, "#نیم_ساعت_اول")
 
     def format_filter_10_heavy_buy_queue(self, df: pd.DataFrame) -> str:
         if df.empty:
