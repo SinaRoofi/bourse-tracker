@@ -19,7 +19,15 @@ class TelegramAlert:
         self.chat_id = TELEGRAM_CHAT_ID
         self.channel_name = channel_name
         self.bot = Bot(token=self.bot_token)
-        self.semaphore = asyncio.Semaphore(3)  
+        self.semaphore = asyncio.Semaphore(3)
+
+    @staticmethod
+    def _format_symbol_hashtag(symbol: str) -> str:
+        """فرمت نماد برای هشتگ (حذف فاصله‌ها و نیم‌فاصله)"""
+        if pd.isna(symbol):
+            return ""
+        # حذف فاصله معمولی، نیم‌فاصله و تبدیل به underscore
+        return str(symbol).replace(' ', '_').replace('\u200c', '_').strip()
 
     async def send_message(self, message: str, parse_mode: str = 'HTML') -> bool:
         """ارسال پیام با مدیریت Semaphore و rate limiting"""
@@ -93,7 +101,7 @@ class TelegramAlert:
         date_str, time_str = self._current_tehran_jdatetime()
         message = f"🔔 <b>{alert_title}</b>\n\n"
         for _, row in df.iterrows():
-            message += f"📌 <b>#{row['symbol']}</b>\n"
+            message += f"📌 <b>#{self._format_symbol_hashtag(row['symbol'])}</b>\n"
             if 'last_price' in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
                 change_pct = row.get('last_price_change_percent', 0)
@@ -125,7 +133,7 @@ class TelegramAlert:
         for _, row in df.iterrows():
             godrat = row.get("godrat_kharid", 0)
             emoji = "🔥" if godrat > 3 else "⚡" if godrat > 2 else "✅"
-            message += f"{emoji} <b>#{row['symbol']}</b>"
+            message += f"{emoji} <b>#{self._format_symbol_hashtag(row['symbol'])}</b>"
             message += (
                 f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
             )
@@ -166,7 +174,7 @@ class TelegramAlert:
             return ""
         message = f"🔔#کراس_سرانه_خرید\n\n"
         for _, row in df.iterrows():
-            message += f"📌 <b>#{row['symbol']}</b>"
+            message += f"📌 <b>#{self._format_symbol_hashtag(row['symbol'])}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
             if 'last_price' in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
@@ -197,7 +205,7 @@ class TelegramAlert:
         for _, row in df.iterrows():
             percent = row.get("last_price_change_percent", 0)
             emoji = "🚀" if percent > 5 else "📈" if percent > 3 else "✅"
-            message += f"{emoji} <b>#{row['symbol']}</b>"
+            message += f"{emoji} <b>#{self._format_symbol_hashtag(row['symbol'])}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
             if "last_price" in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if percent > 0 else "🔴"
@@ -223,7 +231,7 @@ class TelegramAlert:
             return ""
         message = f"🔥#رنج_مثبت\n\n"
         for _, row in df.iterrows():
-            message += f"🎯 <b>#{row['symbol']}</b>"
+            message += f"🎯 <b>#{self._format_symbol_hashtag(row['symbol'])}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
             if "last_price" in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
@@ -250,7 +258,7 @@ class TelegramAlert:
         for _, row in df.iterrows():
             pol_ratio = row.get("pol_hagigi_to_avg_monthly_value", 0)
             emoji = "🔥" if pol_ratio > 2 else "⭐" if pol_ratio > 1 else "✅"
-            message += f"{emoji} <b>#{row['symbol']}</b>"
+            message += f"{emoji} <b>#{self._format_symbol_hashtag(row['symbol'])}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
             if "last_price" in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
@@ -279,7 +287,7 @@ class TelegramAlert:
             return ""
         message = f"⏰#تیک_و_ساعت\n\n"
         for _, row in df.iterrows():
-            message += f"📌 <b>#{row['symbol']}</b>"
+            message += f"📌 <b>#{self._format_symbol_hashtag(row['symbol'])}</b>"
             message += f" - {row['industry_name']}\n" if "industry_name" in row else "\n"
             if "last_price" in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
@@ -317,7 +325,7 @@ class TelegramAlert:
             return ""
         message = f"💰#صف_خرید_با_اردر_سنگین\n\n"
         for _, row in df.iterrows():
-            message += f"📌 <b>#{row['symbol']}</b>\n"
+            message += f"📌 <b>#{self._format_symbol_hashtag(row['symbol'])}</b>\n"
             if "last_price" in row and pd.notna(row['last_price']):
                 emoji_price = "🟢" if row.get('last_price_change_percent', 0) > 0 else "🔴"
                 change_pct = row.get('last_price_change_percent', 0)
