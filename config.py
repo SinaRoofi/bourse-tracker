@@ -103,7 +103,7 @@ WATCHLIST_SYMBOLS = {
     'شسپا': 2.5,
     'دابور': 2.5,
     'سپید': 2.5,
-    'فملی': 2.5,
+    'سباقر': 2.5,
 }
 
 # فیلتر 4: رنج مثبت
@@ -115,7 +115,7 @@ range_mosbat = {
 # فیلتر 5: نسبت پول حقیقی
 POL_HAGIGI_FILTER_CONFIG = {
     'min_pol_to_value_ratio': 0.5,
-    'min_sarane_kharid': 60,  # میلیون تومان
+    'min_sarane_kharid': 60,  
     'min_godrat_kharid': 1.5,
 }
 
