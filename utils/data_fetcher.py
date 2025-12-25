@@ -1,9 +1,3 @@
-"""
-ماژول دریافت داده از هر دو API
-- API اول : داده‌های تاریخی و میانگین‌ها - برای فیلترهای 1 تا 9
-- API دوم (BrsApi): داده‌های لحظه‌ای و صف خرید/فروش - برای فیلتر 10
-"""
-
 import requests
 import pandas as pd
 import logging
@@ -29,7 +23,7 @@ class UnifiedDataFetcher:
         self.api2_key = api2_key
         self.api2_base_url = "https://BrsApi.ir/Api/Tsetmc"
 
-        # ستون‌های API اول
+        # ستون‌های API اول (40 ستون اصلی - مشترک بین صنایع و صندوق‌ها)
         self.api1_columns = [
             "id",
             "symbol",
@@ -86,8 +80,19 @@ class UnifiedDataFetcher:
             "Accept": "application/json, text/plain, */*"
         }
 
+        # تنظیمات صندوق‌ها (خوانده می‌شود از config)
+        try:
+            from config import INCLUDE_LEVERAGED_FUNDS, INCLUDE_SECTOR_FUNDS
+            self.include_leveraged_funds = INCLUDE_LEVERAGED_FUNDS
+            self.include_sector_funds = INCLUDE_SECTOR_FUNDS
+        except ImportError:
+            # اگر در config نبود، به صورت پیش‌فرض فعال است
+            logger.warning("⚠️ INCLUDE_LEVERAGED_FUNDS و INCLUDE_SECTOR_FUNDS در config یافت نشد - از مقادیر پیش‌فرض استفاده می‌شود")
+            self.include_leveraged_funds = True
+            self.include_sector_funds = True
+
     # ========================================
-    # API اول (TradersArena) - داده‌های تاریخی
+    # API اول - داده‌های تاریخی
     # ========================================
 
     def _fetch_industry_data(self, industry_code: str) -> List[Dict]:
@@ -118,24 +123,74 @@ class UnifiedDataFetcher:
             logger.error(f"❌ خطا در دریافت صنعت {industry_code}: {e}")
             return []
 
+    def _fetch_leveraged_funds_data(self) -> List[Dict]:
+        """
+        دریافت داده صندوق‌های اهرمی از API اول
+        
+        Returns:
+            لیست دیکشنری اطلاعات صندوق‌های اهرمی
+        """
+        url = f"{self.api1_base_url}/data/industries-stocks-csv/leveraged-funds"
+
+        try:
+            response = self.session_api1.get(url, timeout=30)
+
+            if response.status_code != 200:
+                logger.warning(f"⚠️ خطا در دریافت صندوق‌های اهرمی: {response.status_code}")
+                return []
+
+            json_data = response.json()
+            data = json_data["data"] if isinstance(json_data, dict) and "data" in json_data else json_data
+
+            return data
+
+        except Exception as e:
+            logger.error(f"❌ خطا در دریافت صندوق‌های اهرمی: {e}")
+            return []
+
+    def _fetch_sector_funds_data(self) -> List[Dict]:
+        """
+        دریافت داده صندوق‌های بخشی از API اول
+        
+        Returns:
+            لیست دیکشنری اطلاعات صندوق‌های بخشی
+        """
+        url = f"{self.api1_base_url}/data/industries-stocks-csv/sector-funds"
+
+        try:
+            response = self.session_api1.get(url, timeout=30)
+
+            if response.status_code != 200:
+                logger.warning(f"⚠️ خطا در دریافت صندوق‌های بخشی: {response.status_code}")
+                return []
+
+            json_data = response.json()
+            data = json_data["data"] if isinstance(json_data, dict) and "data" in json_data else json_data
+
+            return data
+
+        except Exception as e:
+            logger.error(f"❌ خطا در دریافت صندوق‌های بخشی: {e}")
+            return []
+
     def fetch_from_api1(self, industry_codes: List[str] = None) -> Optional[pd.DataFrame]:
         """
-        دریافت داده از API اول (TradersArena)
+        دریافت داده از API اول
         
         این API شامل:
-        - میانگین‌های تاریخی (5 روز، 20 روز، 60 روز، ماهانه، 3 ماهه)
-        - بازده‌های تاریخی
-        - اطلاعات تکمیلی (قدرت خرید، سرانه، پول حقیقی)
+        - صنایع: میانگین‌های تاریخی، بازده‌ها، قدرت خرید، سرانه، پول حقیقی
+        - صندوق‌های اهرمی (leveraged-funds)
+        - صندوق‌های بخشی (sector-funds)
         - استفاده برای فیلترهای 1 تا 9
         
         Args:
             industry_codes: لیست کدهای صنعت (اگر None باشد از config استفاده می‌شود)
             
         Returns:
-            DataFrame یا None
+            DataFrame یکپارچه شامل صنایع + صندوق‌های اهرمی + صندوق‌های بخشی
         """
         try:
-            logger.info("📥 دریافت داده از API اول (TradersArena - فیلترهای 1-9)...")
+            logger.info("📥 دریافت داده از API اول (فیلترهای 1-9)...")
 
             # اگر کدهای صنعت داده نشده، از config استفاده کن
             if industry_codes is None:
@@ -145,11 +200,16 @@ class UnifiedDataFetcher:
                 from config import INDUSTRY_NAMES
 
             all_rows = []
-            total_industries = len(industry_codes)
+            total_sources = len(industry_codes) + (1 if self.include_leveraged_funds else 0) + (1 if self.include_sector_funds else 0)
+            current_source = 0
 
-            # دریافت داده هر صنعت
+            # ========================================
+            # 1. دریافت داده صنایع
+            # ========================================
+            total_industries = len(industry_codes)
             for idx, code in enumerate(industry_codes, 1):
-                logger.info(f"  📊 دریافت صنعت {code} ({idx}/{total_industries})...")
+                current_source += 1
+                logger.info(f"  📊 [{current_source}/{total_sources}] دریافت صنعت {code} ({idx}/{total_industries})...")
 
                 data = self._fetch_industry_data(code)
 
@@ -160,26 +220,108 @@ class UnifiedDataFetcher:
                 for row in data:
                     # اگر row یک list بود → تبدیل به dict
                     if isinstance(row, list):
-                        row_dict = dict(zip(self.api1_columns, row))
+                        # فقط 40 ستون اول را بگیر
+                        row_data = row[:len(self.api1_columns)]
+                        row_dict = dict(zip(self.api1_columns, row_data))
                     else:
                         row_dict = row.copy()
 
-                    # اضافه کردن اطلاعات صنعت
+                    # اضافه کردن اطلاعات شناسایی
                     row_dict["industry_code"] = code
                     row_dict["industry_name"] = INDUSTRY_NAMES.get(code, "نامشخص")
+                    row_dict["is_fund"] = False
+                    row_dict["fund_type"] = None
+                    
                     all_rows.append(row_dict)
 
                 # تاخیر کوچک برای جلوگیری از rate limit
                 time.sleep(0.1)
 
+            # ========================================
+            # 2. دریافت صندوق‌های اهرمی
+            # ========================================
+            if self.include_leveraged_funds:
+                current_source += 1
+                logger.info(f"  📊 [{current_source}/{total_sources}] دریافت صندوق‌های اهرمی...")
+                
+                leveraged_data = self._fetch_leveraged_funds_data()
+                
+                if leveraged_data:
+                    for row in leveraged_data:
+                        # اگر row یک list بود → تبدیل به dict
+                        if isinstance(row, list):
+                            # فقط 40 ستون اول را بگیر (ستون‌های اضافی نادیده گرفته می‌شوند)
+                            row_data = row[:len(self.api1_columns)]
+                            row_dict = dict(zip(self.api1_columns, row_data))
+                        else:
+                            row_dict = row.copy()
+
+                        # اضافه کردن اطلاعات شناسایی
+                        row_dict["industry_code"] = "leveraged-funds"
+                        row_dict["industry_name"] = "صندوق‌های اهرمی"
+                        row_dict["is_fund"] = True
+                        row_dict["fund_type"] = "leveraged"
+                        
+                        all_rows.append(row_dict)
+                    
+                    logger.info(f"    ✅ {len(leveraged_data)} صندوق اهرمی دریافت شد")
+                else:
+                    logger.warning("    ⚠️ هیچ صندوق اهرمی یافت نشد")
+
+                time.sleep(0.1)
+
+            # ========================================
+            # 3. دریافت صندوق‌های بخشی
+            # ========================================
+            if self.include_sector_funds:
+                current_source += 1
+                logger.info(f"  📊 [{current_source}/{total_sources}] دریافت صندوق‌های بخشی...")
+                
+                sector_data = self._fetch_sector_funds_data()
+                
+                if sector_data:
+                    for row in sector_data:
+                        # اگر row یک list بود → تبدیل به dict
+                        if isinstance(row, list):
+                            # فقط 40 ستون اول را بگیر (ستون‌های اضافی نادیده گرفته می‌شوند)
+                            row_data = row[:len(self.api1_columns)]
+                            row_dict = dict(zip(self.api1_columns, row_data))
+                        else:
+                            row_dict = row.copy()
+
+                        # اضافه کردن اطلاعات شناسایی
+                        row_dict["industry_code"] = "sector-funds"
+                        row_dict["industry_name"] = "صندوق‌های بخشی"
+                        row_dict["is_fund"] = True
+                        row_dict["fund_type"] = "sector"
+                        
+                        all_rows.append(row_dict)
+                    
+                    logger.info(f"    ✅ {len(sector_data)} صندوق بخشی دریافت شد")
+                else:
+                    logger.warning("    ⚠️ هیچ صندوق بخشی یافت نشد")
+
+                time.sleep(0.1)
+
+            # ========================================
+            # 4. ساخت DataFrame نهایی
+            # ========================================
             if not all_rows:
                 logger.warning("⚠️ API اول: هیچ داده‌ای دریافت نشد")
                 return None
 
-            # ساخت DataFrame
+            # ساخت DataFrame یکپارچه
             df = pd.DataFrame(all_rows)
 
-            logger.info(f"✅ API اول: {len(df)} سهم از {total_industries} صنعت دریافت شد")
+            # شمارش نوع داده‌ها
+            total_stocks = len(df[df["is_fund"] == False]) if "is_fund" in df.columns else 0
+            total_leveraged = len(df[df["fund_type"] == "leveraged"]) if "fund_type" in df.columns else 0
+            total_sector = len(df[df["fund_type"] == "sector"]) if "fund_type" in df.columns else 0
+
+            logger.info(f"✅ API اول: {len(df)} رکورد دریافت شد")
+            logger.info(f"    • سهام صنایع: {total_stocks}")
+            logger.info(f"    • صندوق‌های اهرمی: {total_leveraged}")
+            logger.info(f"    • صندوق‌های بخشی: {total_sector}")
 
             return df
 
@@ -191,12 +333,12 @@ class UnifiedDataFetcher:
             return None
 
     # ========================================
-    # API دوم (BrsApi) - داده‌های لحظه‌ای
+    # API دوم - داده‌های لحظه‌ای
     # ========================================
 
     def fetch_from_api2(self) -> Optional[pd.DataFrame]:
         """
-        دریافت داده از API دوم (BrsApi)
+        دریافت داده از API دوم
         
         این API شامل:
         - اطلاعات لحظه‌ای قیمت
@@ -215,7 +357,7 @@ class UnifiedDataFetcher:
         url = f"{self.api2_base_url}/AllSymbols.php?key={self.api2_key}"
 
         try:
-            logger.info("📥 دریافت داده از API دوم (BrsApi - لحظه‌ای - فیلتر 10)...")
+            logger.info("📥 دریافت داده از API دوم (لحظه‌ای - فیلتر 10)...")
             response = requests.get(url, headers=self.headers_api2, timeout=30)
 
             if response.status_code == 200:
@@ -283,7 +425,7 @@ class UnifiedDataFetcher:
             
         Returns:
             Tuple[df_api1, df_api2]
-            - df_api1: DataFrame از API اول (داده‌های تاریخی - فیلترهای 1-9)
+            - df_api1: DataFrame از API اول (صنایع + صندوق‌ها - فیلترهای 1-9)
             - df_api2: DataFrame از API دوم (داده‌های لحظه‌ای - فیلتر 10)
         """
         logger.info("=" * 80)
@@ -299,8 +441,13 @@ class UnifiedDataFetcher:
         # گزارش نهایی
         logger.info("\n" + "=" * 80)
         logger.info("📊 خلاصه دریافت داده:")
-        logger.info(f"  • API اول (TradersArena - فیلتر 1-9): {len(df_api1) if df_api1 is not None and not df_api1.empty else 0} سهم")
-        logger.info(f"  • API دوم (BrsApi - فیلتر 10): {len(df_api2) if df_api2 is not None and not df_api2.empty else 0} نماد")
+        logger.info(f"  • API اول (فیلتر 1-9): {len(df_api1) if df_api1 is not None and not df_api1.empty else 0} رکورد")
+        if df_api1 is not None and not df_api1.empty:
+            total_stocks = len(df_api1[df_api1["is_fund"] == False])
+            total_funds = len(df_api1[df_api1["is_fund"] == True])
+            logger.info(f"    - سهام: {total_stocks}")
+            logger.info(f"    - صندوق‌ها: {total_funds}")
+        logger.info(f"  • API دوم (فیلتر 10): {len(df_api2) if df_api2 is not None and not df_api2.empty else 0} نماد")
         logger.info("=" * 80)
 
         return df_api1, df_api2
@@ -388,6 +535,16 @@ if __name__ == "__main__":
         print(df_api1.head(2))
         print(f"\n📈 تعداد ستون‌های API اول: {len(df_api1.columns)}")
         print(f"✅ اعتبارسنجی API اول: {fetcher.validate_api1_data(df_api1)}")
+        
+        # نمایش توزیع داده‌ها
+        print("\n📊 توزیع داده‌ها:")
+        print(df_api1.groupby(['is_fund', 'fund_type']).size())
+        
+        # مثال فیلتر کردن
+        print("\n🔍 مثال‌های فیلتر:")
+        print(f"  • سهام عادی: {len(df_api1[df_api1['is_fund'] == False])}")
+        print(f"  • صندوق‌های اهرمی: {len(df_api1[df_api1['fund_type'] == 'leveraged'])}")
+        print(f"  • صندوق‌های بخشی: {len(df_api1[df_api1['fund_type'] == 'sector'])}")
 
     # نمایش نمونه API دوم
     if df_api2 is not None and not df_api2.empty:
