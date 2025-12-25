@@ -1,7 +1,8 @@
 name: Bourse Tracker
-
 on:
   workflow_dispatch:
+  repository_dispatch:
+    types: [run-tracker]
 
 concurrency:
   group: bourse-tracker
@@ -10,24 +11,25 @@ concurrency:
 jobs:
   run-bourse-tracker:
     runs-on: ubuntu-latest
-
     steps:
       # 1. Checkout (سریع‌ترین حالت)
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-
+      
       # 2. Setup Python (با cache)
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
-
+      
       # 3. نصب dependencies (موازی و بدون توصیه)
-      - run: pip install --no-cache-dir --disable-pip-version-check -q -r requirements.txt
-
-      # 4. اجرا
-      - run: python main.py
+      - name: Install Dependencies
+        run: pip install --no-cache-dir --disable-pip-version-check -q -r requirements.txt
+      
+      # 4. اجرای فیلترها
+      - name: Run Filters
+        run: python main.py
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -35,12 +37,23 @@ jobs:
           BRSAPI_KEY: ${{ secrets.BRSAPI_KEY }}
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
-
-      # 5. لاگ فقط در صورت خطا
+      
+      # 5. ارسال خلاصه روزانه (فقط بعد از 12:30)
+      - name: Send Daily Summary
+        run: python daily_summary_main.py
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+      
+      # 6. لاگ فقط در صورت خطا
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: error-logs-${{ github.run_number }}
-          path: bourse_tracker.log
+          path: |
+            bourse_tracker.log
+            daily_summary.log
           retention-days: 2
           compression-level: 9
