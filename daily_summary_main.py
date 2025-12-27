@@ -12,7 +12,7 @@ import logging
 from utils.daily_summary_generator import DailySummaryGenerator
 from utils.alerts import TelegramAlert
 from utils.gist_alert_manager import GistAlertManager
-from config import GIST_TOKEN, GIST_ID, validate_config
+from config import GIST_TOKEN, GIST_ID
 
 # ===========================
 # تنظیم timezone تهران
@@ -72,8 +72,11 @@ async def main_async():
 
         logger.info(f"✅ ساعت {current_time} - شروع تولید خلاصه روزانه")
 
-        # اعتبارسنجی تنظیمات
-        validate_config()
+        # بررسی تنظیمات ضروری برای daily summary
+        if not all([GIST_TOKEN, GIST_ID]):
+            logger.error("❌ GIST_TOKEN و GIST_ID باید تنظیم شوند")
+            sys.exit(1)
+        
         logger.info("✅ تنظیمات معتبر است")
 
         # ایجاد شیء‌ها
