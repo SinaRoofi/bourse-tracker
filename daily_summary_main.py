@@ -87,7 +87,7 @@ async def main_async():
         # تولید و ارسال گزارش
         success = await summary_generator.generate_and_send(
             min_count=2,  # حداقل 2 بار تکرار
-            top_n=10      # 10 نماد برتر
+            top_n=None    # همه نمادهای پرتکرار (بدون محدودیت)
         )
 
         if success:
