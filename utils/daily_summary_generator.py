@@ -29,12 +29,12 @@ class DailySummaryGenerator:
         self.telegram = telegram_alert
         self.today_jalali = jdatetime.date.today().strftime("%Y-%m-%d")
 
-    async def get_frequent_symbols(self, min_count: int = 2, top_n: int = None) -> Dict[str, int]:
+    async def get_frequent_symbols(self, min_count: int = 3, top_n: int = None) -> Dict[str, int]:
         """
         دریافت نمادهای پرتکرار از Gist
 
         Args:
-            min_count: حداقل تعداد تکرار (پیش‌فرض: 2)
+            min_count: حداقل تعداد تکرار (پیش‌فرض: 3)
             top_n: تعداد نمادهای برتر (None = همه نمادها)
 
         Returns:
@@ -150,7 +150,7 @@ class DailySummaryGenerator:
         time_str = now.strftime("%H:%M")
         return date_str, time_str
 
-    async def generate_and_send(self, min_count: int = 2, top_n: int = None) -> bool:
+    async def generate_and_send(self, min_count: int = 3, top_n: int = None) -> bool:
         """
         تولید و ارسال گزارش خلاصه
 
