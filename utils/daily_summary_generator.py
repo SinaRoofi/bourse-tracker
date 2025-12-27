@@ -29,13 +29,13 @@ class DailySummaryGenerator:
         self.telegram = telegram_alert
         self.today_jalali = jdatetime.date.today().strftime("%Y-%m-%d")
 
-    async def get_frequent_symbols(self, min_count: int = 2, top_n: int = 10) -> Dict[str, int]:
+    async def get_frequent_symbols(self, min_count: int = 2, top_n: int = None) -> Dict[str, int]:
         """
         دریافت نمادهای پرتکرار از Gist
 
         Args:
             min_count: حداقل تعداد تکرار (پیش‌فرض: 2)
-            top_n: تعداد نمادهای برتر (پیش‌فرض: 10)
+            top_n: تعداد نمادهای برتر (None = همه نمادها)
 
         Returns:
             dict: {symbol: count} مرتب شده براساس تعداد
@@ -70,10 +70,14 @@ class DailySummaryGenerator:
             logger.info(f"ℹ️ هیچ نمادی بیش از {min_count} بار تکرار نشده")
             return {}
 
-        # مرتب‌سازی براساس تعداد (نزولی) و گرفتن top_n
-        sorted_symbols = dict(
-            sorted(frequent_symbols.items(), key=lambda x: x[1], reverse=True)[:top_n]
-        )
+        # مرتب‌سازی براساس تعداد (نزولی)
+        sorted_symbols = sorted(frequent_symbols.items(), key=lambda x: x[1], reverse=True)
+        
+        # اگه top_n تعیین شده، محدود کن
+        if top_n is not None:
+            sorted_symbols = sorted_symbols[:top_n]
+        
+        sorted_symbols = dict(sorted_symbols)
 
         logger.info(f"🎯 {len(sorted_symbols)} نماد پرتکرار یافت شد")
         return sorted_symbols
@@ -122,7 +126,7 @@ class DailySummaryGenerator:
             message += f"{stars} {hashtags} <b>({count} بار)</b>\n"
 
         # آمار کلی
-        message += f"\n🎯 {len(frequent_symbols)} نماد برتر از {total_unique_symbols} نماد هشداردهنده\n\n"
+        message += f"\n🎯 {len(frequent_symbols)} نماد پرتکرار از {total_unique_symbols} نماد هشداردهنده\n\n"
 
         # تاریخ و ساعت
         message += f"📅 {date_str} | 🕐 {time_str}\n"
@@ -146,13 +150,13 @@ class DailySummaryGenerator:
         time_str = now.strftime("%H:%M")
         return date_str, time_str
 
-    async def generate_and_send(self, min_count: int = 2, top_n: int = 10) -> bool:
+    async def generate_and_send(self, min_count: int = 2, top_n: int = None) -> bool:
         """
         تولید و ارسال گزارش خلاصه
 
         Args:
             min_count: حداقل تعداد تکرار
-            top_n: تعداد نمادهای برتر
+            top_n: تعداد نمادهای برتر (None = همه)
 
         Returns:
             bool: موفقیت ارسال
