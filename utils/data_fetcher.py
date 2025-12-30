@@ -65,6 +65,7 @@ class UnifiedDataFetcher:
             "60_day_return",
             "marketcap",
             "value_to_marketcap",
+            "col51",
         ]
 
         # Session برای API اول
