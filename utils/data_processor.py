@@ -428,7 +428,7 @@ class BourseDataProcessor:
         logger.info(f"اعمال فیلتر 8: نوسان‌گیری")
 
         filtered = df[
-            (df["low_price_change_percent"] == config["min_allowed_price"])
+            (df["low_price_change_percent"] <= config["min_allowed_price"])
             & (df["last_price_change_percent"] > config["min_allowed_price"])
             & (df["godrat_kharid"] >= config["min_godrat_kharid"])
             & (df["sarane_kharid"] >= config["min_sarane_kharid"])
