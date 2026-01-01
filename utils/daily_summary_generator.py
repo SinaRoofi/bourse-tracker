@@ -8,7 +8,7 @@ from datetime import datetime
 import jdatetime
 import pytz
 import pandas as pd
-from typing import Dict
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -72,15 +72,17 @@ class DailySummaryGenerator:
 
         # مرتب‌سازی براساس تعداد (نزولی)
         sorted_symbols = sorted(frequent_symbols.items(), key=lambda x: x[1], reverse=True)
-        
+
         # اگه top_n تعیین شده، محدود کن
         if top_n is not None:
             sorted_symbols = sorted_symbols[:top_n]
-        
+
         sorted_symbols = dict(sorted_symbols)
 
         logger.info(f"🎯 {len(sorted_symbols)} نماد پرتکرار یافت شد")
         return sorted_symbols
+
+
 
     def format_summary_message(
         self,
@@ -99,31 +101,23 @@ class DailySummaryGenerator:
         """
         date_str, time_str = self._get_tehran_datetime()
 
-        # اگر نماد پرتکراری نبود
-        if not frequent_symbols:
-            message = f"📊 <b>خلاصه هشدارها</b>\n\n"
-            message += f"هیچ نماد پرتکراری نبود\n\n"
-            message += f"📅 {date_str} | 🕐 {time_str}\n"
-            message += f"📢 {self.telegram.channel_name}"
-            return message
-
-        # گروه‌بندی نمادها براساس تعداد تکرار
-        count_groups = {}
-        for symbol, count in frequent_symbols.items():
-            count_groups.setdefault(count, []).append(symbol)
-
         # شروع پیام
         message = f"📊 <b>خلاصه هشدارها</b>\n\n"
 
-        # نمایش نمادها گروه به گروه (از بیشترین به کمترین)
-        for count in sorted(count_groups.keys(), reverse=True):
-            symbols_list = count_groups[count]
-            stars = "⭐" * min(count, 5)  # حداکثر 5 ستاره
+        # بخش نمادها
+        if frequent_symbols:
+            # گروه‌بندی نمادها براساس تعداد تکرار
+            count_groups = {}
+            for symbol, count in frequent_symbols.items():
+                count_groups.setdefault(count, []).append(symbol)
 
-            # فرمت هشتگ‌ها
-            hashtags = " ".join([f"#{self._format_symbol_hashtag(s)}" for s in symbols_list])
-
-            message += f"{stars} {hashtags} <b>({count} بار)</b>\n"
+            # نمایش نمادها گروه به گروه (از بیشترین به کمترین)
+            for count in sorted(count_groups.keys(), reverse=True):
+                symbols_list = sorted(count_groups[count])  # مرتب‌سازی الفبایی
+                hashtags = " ".join([f"#{self._format_symbol_hashtag(s)}" for s in symbols_list])
+                message += f"<b>({count}×)</b> {hashtags}\n"
+        else:
+            message += f"هیچ نماد پرتکراری نبود\n"
 
         # آمار کلی
         message += f"\n🎯 {len(frequent_symbols)} نماد پرتکرار از {total_unique_symbols} نماد هشداردهنده\n\n"
