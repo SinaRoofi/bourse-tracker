@@ -176,7 +176,7 @@ SUSPICIOUS_VOLUME_CONFIG = {
 
 # فیلتر 8: نوسان‌گیری
 SWING_TRADE_CONFIG = {
-    "min_allowed_price": -3.0,
+    "min_allowed_price": -2.96,
     "max_last_change_percent": -2.0,
     "min_godrat_kharid": 2.0,
     "min_sarane_kharid": 60, 
