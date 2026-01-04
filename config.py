@@ -202,7 +202,8 @@ HOGHOOGHI_HAGHIGHI_STRONG_BUY_CONFIG = {
     "max_pol_hagigi_to_value": -0.3,  
     "min_last_price_change_percent": 0, 
     "min_sarane_kharid": 70,  
-    "sarane_kharid_greater_than_forosh": True,  
+    "sarane_kharid_greater_than_forosh": True, 
+} 
 # ========================================
 # زمان‌بندی
 # ========================================
