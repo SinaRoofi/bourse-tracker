@@ -642,7 +642,7 @@ class BourseDataProcessor:
 
         logger.info(f"اعمال فیلتر 11: خرید حقوقی و حقیقی قوی")
         logger.info(
-            f"  • شرط 1: pol_hagigi_to_value <= {config['max_pol_hagigi_to_value']} (خروج پول حقیقی)"
+            f"  • شرط 1: pol_hagigi_to_avg_monthly_value <= {config['max_pol_hagigi_to_value']} (خروج پول حقیقی)"
         )
         logger.info(
             f"  • شرط 2: last_price_change_percent > {config['min_last_price_change_percent']}% (قیمت مثبت)"
@@ -654,7 +654,7 @@ class BourseDataProcessor:
 
         # بررسی وجود ستون‌های لازم
         required_cols = [
-            "pol_hagigi_to_value",
+            "pol_hagigi_to_avg_monthly_value",
             "last_price_change_percent",
             "sarane_kharid",
             "sarane_forosh",
@@ -668,9 +668,9 @@ class BourseDataProcessor:
         # اعمال فیلترها
         filtered = df[
             (
-                df["pol_hagigi_to_value"] <= config["max_pol_hagigi_to_value"]
+                df["pol_hagigi_to_avg_monthly_value"] <= config["max_pol_hagigi_to_value"]
             )  # خروج پول حقیقی
-            & (df["pol_hagigi_to_value"] < 0)  # فقط منفی (نه مثبت)
+            & (df["pol_hagigi_to_avg_monthly_value"] < 0)  # فقط منفی (نه مثبت)
             & (
                 df["last_price_change_percent"]
                 > config["min_last_price_change_percent"]
