@@ -96,7 +96,13 @@ class GistAlertManager:
 
                 gist = await r.json()
                 content = gist["files"]["alert_cache.json"]["content"]
-                data = json.loads(content)
+
+                try:
+                    data = json.loads(content)
+                except json.JSONDecodeError as e:
+                    logger.error(f"❌ JSON خراب در Gist: {e} - ریست می‌شود")
+                    data = {"_daily_summary_sent": {}, self.today_jalali: []}
+                    await self._save_to_gist(data)
 
                 self._cache = data
                 self._cache_time = now
@@ -127,7 +133,7 @@ class GistAlertManager:
                     return False
 
     # ------------------------------------------------------------------
-    # Daily Summary Lock  (تغییر اصلی)
+    # Daily Summary Lock
     # ------------------------------------------------------------------
     async def is_today_summary_sent(self) -> bool:
         data = await self._load_gist_content(use_cache=False)
@@ -148,7 +154,10 @@ class GistAlertManager:
                 r = requests.get(url, headers=self.headers, timeout=5)
                 if r.status_code == 200:
                     content = r.json()["files"]["alert_cache.json"]["content"]
-                    self._cache = json.loads(content)
+                    try:
+                        self._cache = json.loads(content)
+                    except json.JSONDecodeError:
+                        self._cache = {}
                     self._cache_time = time.time()
                 else:
                     self._cache = {}
@@ -167,6 +176,16 @@ class GistAlertManager:
 
         data = await self._load_gist_content(use_cache=False)
         data.setdefault(self.today_jalali, [])
+
+        # پاکسازی روزهای قدیمی (نگه داشتن فقط ۷ روز اخیر)
+        cutoff = (jdatetime.date.today() - jdatetime.timedelta(days=7)).strftime("%Y-%m-%d")
+        keys_to_delete = [
+            k for k in list(data.keys())
+            if k != "_daily_summary_sent" and k < cutoff
+        ]
+        for k in keys_to_delete:
+            del data[k]
+            logger.info(f"🗑️ روز قدیمی پاک شد: {k}")
 
         existing = {(a["symbol"], a["alert_type"]) for a in data[self.today_jalali]}
         new_items = [
