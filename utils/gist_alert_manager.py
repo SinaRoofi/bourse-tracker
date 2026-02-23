@@ -178,7 +178,7 @@ class GistAlertManager:
         data.setdefault(self.today_jalali, [])
 
         # پاکسازی روزهای قدیمی (نگه داشتن فقط ۷ روز اخیر)
-        cutoff = (jdatetime.date.today() - jdatetime.timedelta(days=7)).strftime("%Y-%m-%d")
+        cutoff = (jdatetime.date.today() - jdatetime.timedelta(days=3)).strftime("%Y-%m-%d")
         keys_to_delete = [
             k for k in list(data.keys())
             if k != "_daily_summary_sent" and k < cutoff
