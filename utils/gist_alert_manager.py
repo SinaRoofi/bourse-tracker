@@ -55,7 +55,7 @@ class GistAlertManager:
             "public": False,
             "files": {
                 "alert_cache.json": {
-                    "content": json.dumps(initial_data, ensure_ascii=False, indent=2)
+                    "content": json.dumps(initial_data, ensure_ascii=False)
                 },
                 "README.md": {
                     "content": "# Bourse Tracker Gist\nAlert cache + Daily Summary lock"
@@ -116,7 +116,7 @@ class GistAlertManager:
             payload = {
                 "files": {
                     "alert_cache.json": {
-                        "content": json.dumps(data, ensure_ascii=False, indent=2)
+                        "content": json.dumps(data, ensure_ascii=False)
                     }
                 }
             }
