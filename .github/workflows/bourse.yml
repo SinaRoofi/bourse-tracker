@@ -1,8 +1,8 @@
 name: Bourse Tracker
-#on:
-  #workflow_dispatch:
-  #repository_dispatch:
-    #types: [run-tracker]
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [run-tracker]
 
 concurrency:
   group: bourse-tracker
