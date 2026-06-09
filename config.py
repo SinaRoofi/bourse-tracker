@@ -129,7 +129,7 @@ INCLUDE_SECTOR_FUNDS = True  # دریافت صندوق‌های بخشی
 # فیلتر 1: قدرت خرید قوی
 STRONG_BUYING_CONFIG = {
     "min_value_to_avg_monthly": 3,
-    "min_sarane_kharid": 60,  # میلیون تومان
+    "min_sarane_kharid": 100,  # میلیون تومان
     "min_godrat_kharid": 2,
     "godrat_greater_than_5day": True,  # قدرت خرید > میانگین 5 روز
 }
@@ -138,7 +138,7 @@ STRONG_BUYING_CONFIG = {
 SARANE_CROSS_CONFIG = {
     "sarane_kharid_greater_than_forosh": True,
     "min_value_to_avg_monthly": 0.5,
-    "min_sarane_kharid": 50,
+    "min_sarane_kharid": 100,
 }
 
 # فیلتر 3: نمادهای خاص
@@ -158,7 +158,7 @@ range_mosbat = {
 # فیلتر 5: نسبت پول حقیقی
 POL_HAGIGI_FILTER_CONFIG = {
     "min_pol_to_value_ratio": 0.5,
-    "min_sarane_kharid": 60,
+    "min_sarane_kharid": 100,
     "min_godrat_kharid": 1.5,
 }
 
@@ -179,7 +179,7 @@ SWING_TRADE_CONFIG = {
     "min_allowed_price": -2.8,
     "max_last_change_percent": -1.0,
     "min_godrat_kharid": 2.0,
-    "min_sarane_kharid": 60, 
+    "min_sarane_kharid": 80, 
     "min_value_to_avg_monthly": 1.0,
 }
 
@@ -192,8 +192,8 @@ FIRST_HOUR_CONFIG = {
 
 # فیلتر 10: صف خرید میلیاردی
 HEAVY_BUY_QUEUE_CONFIG = {
-    "min_buy_order": 60,  # میلیون تومان
-    "min_buy_queue_value": 1,  # میلیارد تومان
+    "min_buy_order": 100,  # میلیون تومان
+    "min_buy_queue_value": 2,  # میلیارد تومان
     "price_at_ceiling": True,  # آخرین قیمت = سقف
 }
 
@@ -201,7 +201,7 @@ HEAVY_BUY_QUEUE_CONFIG = {
 HOGHOOGHI_HAGHIGHI_STRONG_BUY_CONFIG = {
     "max_pol_hagigi_to_value": -0.3,  
     "min_last_price_change_percent": 0, 
-    "min_sarane_kharid": 70,  
+    "min_sarane_kharid": 100,  
     "sarane_kharid_greater_than_forosh": True, 
 } 
 # ========================================
