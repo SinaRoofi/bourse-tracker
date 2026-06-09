@@ -179,7 +179,7 @@ SWING_TRADE_CONFIG = {
     "min_allowed_price": -2.8,
     "max_last_change_percent": -1.0,
     "min_godrat_kharid": 2.0,
-    "min_sarane_kharid": 80, 
+    "min_sarane_kharid": 100, 
     "min_value_to_avg_monthly": 1.0,
 }
 
