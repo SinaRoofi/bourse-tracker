@@ -208,7 +208,7 @@ HOGHOOGHI_HAGHIGHI_STRONG_BUY_CONFIG = {
 # زمان‌بندی
 # ========================================
 MARKET_START_TIME = "09:00"
-MARKET_END_TIME = "13:30"
+MARKET_END_TIME = "12:30"
 CHECK_INTERVAL_MINUTES = 2
 
 # روزهای کاری (0=شنبه تا 6=جمعه)
