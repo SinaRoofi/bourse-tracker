@@ -27,16 +27,13 @@ class GistAlertManager:
             "Accept": "application/vnd.github.v3+json"
         }
 
-        # تاریخ امروز (جلالی) — مبنای dedup
         self.today_jalali = jdatetime.date.today().strftime("%Y-%m-%d")
 
-        # Lock برای جلوگیری از race condition
         self._lock = asyncio.Lock()
 
-        # Cache محلی
         self._cache = None
         self._cache_time = 0
-        self._cache_duration = 10  # ثانیه
+        self._cache_duration = 10
 
         if not self.gist_id:
             self._create_new_gist_sync()
@@ -171,13 +168,20 @@ class GistAlertManager:
         )
 
     async def mark_multiple_as_sent(self, alerts: list) -> bool:
+        """
+        ذخیره هشدارهای ارسال‌شده در Gist
+
+        Args:
+            alerts: لیست تاپل‌های (symbol, alert_type, value)
+                    value می‌تواند None باشد (برای فیلترهایی که value ندارند)
+        """
         if not alerts:
             return True
 
         data = await self._load_gist_content(use_cache=False)
         data.setdefault(self.today_jalali, [])
 
-        # پاکسازی روزهای قدیمی (نگه داشتن فقط ۷ روز اخیر)
+        # پاکسازی روزهای قدیمی (نگه داشتن فقط ۳ روز اخیر)
         cutoff = (jdatetime.date.today() - jdatetime.timedelta(days=3)).strftime("%Y-%m-%d")
         keys_to_delete = [
             k for k in list(data.keys())
@@ -188,11 +192,21 @@ class GistAlertManager:
             logger.info(f"🗑️ روز قدیمی پاک شد: {k}")
 
         existing = {(a["symbol"], a["alert_type"]) for a in data[self.today_jalali]}
-        new_items = [
-            {"symbol": s, "alert_type": t}
-            for s, t in alerts
-            if (s, t) not in existing
-        ]
+
+        new_items = []
+        for item in alerts:
+            # پشتیبانی از هر دو فرمت: (symbol, alert_type) و (symbol, alert_type, value)
+            if len(item) == 3:
+                s, t, val = item
+            else:
+                s, t = item
+                val = None
+
+            if (s, t) not in existing:
+                entry = {"symbol": s, "alert_type": t}
+                if val is not None:
+                    entry["value"] = val
+                new_items.append(entry)
 
         if not new_items:
             return True
