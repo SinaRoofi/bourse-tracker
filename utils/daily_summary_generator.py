@@ -134,12 +134,11 @@ class DailySummaryGenerator:
         # dedup: برای هر نماد فقط بالاترین value نگه داشته می‌شه
         result = {}
         for filter_name, items in filter_groups.items():
-            best_per_symbol = {}
+            # آخرین entry هر نماد (ترتیب Gist = ترتیب زمانی)
+            last_per_symbol = {}
             for item in items:
-                sym = item["symbol"]
-                if sym not in best_per_symbol or item["value"] > best_per_symbol[sym]["value"]:
-                    best_per_symbol[sym] = item
-            sorted_items = sorted(best_per_symbol.values(), key=lambda x: x["value"], reverse=True)
+                last_per_symbol[item["symbol"]] = item
+            sorted_items = sorted(last_per_symbol.values(), key=lambda x: x["value"], reverse=True)
             result[filter_name] = sorted_items[:top_n]
 
         logger.info(f"🏆 Top-{top_n} فیلترها: {list(result.keys())}")
