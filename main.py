@@ -65,6 +65,19 @@ STOCKS_PER_MESSAGE_MAP = {
     "filter_11_hoghooghi_haghighi_strong_buy": 5,
 }
 
+# ===========================
+# نگاشت فیلتر به ستون کلیدی برای Daily Summary
+# فقط فیلترهایی که در summary نمایش داده می‌شن
+# ===========================
+FILTER_VALUE_COLUMN = {
+    "filter_1_strong_buying":                  "godrat_kharid",
+    "filter_2_sarane_cross":                   "sarane_kharid",
+    "filter_5_pol_hagigi_ratio":               "pol_hagigi_to_avg_monthly_value",
+    "filter_7_suspicious_volume":              "value_to_avg_monthly_value",
+    "filter_10_heavy_buy_queue":               "buy_queue_value",
+    "filter_11_hoghooghi_haghighi_strong_buy": "sarane_kharid",
+}
+
 
 # ===========================
 # توابع کمکی
@@ -131,9 +144,7 @@ async def send_alerts_for_filters_async(
     logger.info(f"📤 ارسال هشدارهای {api_name}")
     logger.info(f"{'='*60}")
 
-    # لیست تمام Taskهای ارسال
     all_tasks = []
-    all_symbols_to_mark = []
 
     for filter_name, filtered_df in filters_results.items():
         if filtered_df.empty:
@@ -142,13 +153,13 @@ async def send_alerts_for_filters_async(
 
         logger.info(f"\n🔍 پردازش فیلتر {filter_name}: {len(filtered_df)} سهم")
 
-        # گروه‌بندی بر اساس فیلتر
+        value_col = FILTER_VALUE_COLUMN.get(filter_name)
+
         for chunk_idx, chunk_df in enumerate(
             chunk_dataframe(filtered_df, filter_name), 1
         ):
             symbols_to_send = []
 
-            # چک کردن اینکه کدوم سهام قبلاً ارسال نشده
             for idx, row in chunk_df.iterrows():
                 symbol = row["symbol"]
                 if not alert_manager.should_send_alert(symbol, filter_name):
@@ -158,12 +169,10 @@ async def send_alerts_for_filters_async(
                     symbols_to_send.append(symbol)
 
             if symbols_to_send:
-                # فقط سهام جدید رو ارسال می‌کنیم
                 chunk_to_send = chunk_df[chunk_df["symbol"].isin(symbols_to_send)]
 
-                # ایجاد Task برای ارسال (بدون await)
                 task = alert.send_filter_alert(chunk_to_send, filter_name)
-                all_tasks.append((task, symbols_to_send, filter_name, chunk_idx))
+                all_tasks.append((task, symbols_to_send, filter_name, chunk_idx, chunk_to_send, value_col))
 
                 logger.info(
                     f"📋 Task ایجاد شد برای {filter_name} گروه {chunk_idx}: {len(symbols_to_send)} سهم"
@@ -171,30 +180,32 @@ async def send_alerts_for_filters_async(
             else:
                 logger.info(f"⏭️  {filter_name} گروه {chunk_idx}: همه قبلاً ارسال شده‌اند")
 
-    # اجرای همزمان تمام Taskها
     if all_tasks:
         logger.info(f"\n🚀 شروع ارسال موازی {len(all_tasks)} پیام...")
 
-        # جمع‌آوری فقط taskها
-        tasks_only = [task for task, _, _, _ in all_tasks]
-
-        # اجرای همزمان
+        tasks_only = [task for task, _, _, _, _, _ in all_tasks]
         results = await asyncio.gather(*tasks_only, return_exceptions=True)
 
-        # جمع‌آوری موفقیت‌ها برای mark کردن
         successful_marks = []
 
-        # پردازش نتایج
-        for idx, (result, (_, symbols, filter_name, chunk_idx)) in enumerate(
-            zip(results, all_tasks)
-        ):
+        for result, (_, symbols, filter_name, chunk_idx, chunk_to_send, value_col) in zip(results, all_tasks):
             if isinstance(result, Exception):
                 logger.error(
                     f"❌ خطا در ارسال {filter_name} گروه {chunk_idx}: {result}"
                 )
             elif result:
-                # موفق - آماده برای mark
-                successful_marks.extend([(s, filter_name) for s in symbols])
+                # استخراج value برای هر نماد از chunk_to_send
+                for s in symbols:
+                    val = None
+                    if value_col and value_col in chunk_to_send.columns:
+                        row = chunk_to_send[chunk_to_send["symbol"] == s]
+                        if not row.empty:
+                            try:
+                                val = float(row.iloc[0][value_col])
+                            except (ValueError, TypeError):
+                                val = None
+                    successful_marks.append((s, filter_name, val))
+
                 sent_count += len(symbols)
                 logger.info(
                     f"✅ {filter_name} گروه {chunk_idx}: {len(symbols)} سهم ارسال شد"
@@ -202,7 +213,6 @@ async def send_alerts_for_filters_async(
             else:
                 logger.error(f"❌ {filter_name} گروه {chunk_idx}: خطا در ارسال")
 
-        # Mark کردن تمام موفقیت‌ها یکجا (async)
         if successful_marks:
             logger.info(f"📝 علامت‌گذاری {len(successful_marks)} هشدار در Gist...")
             await alert_manager.mark_multiple_as_sent(successful_marks)
@@ -219,30 +229,24 @@ async def main_async():
     logger.info("=" * 80)
 
     try:
-        # اعتبارسنجی تنظیمات
         validate_config()
         logger.info("✅ تنظیمات معتبر است")
 
-        # بررسی وضعیت بازار
         if not is_market_open():
             logger.info("⏸️  بازار بسته است. خروج از برنامه.")
             return
 
-        # دریافت داده از APIها
         logger.info("\n📥 شروع دریافت داده از APIها...")
         fetcher = UnifiedDataFetcher(api1_base_url=API_BASE_URL, api2_key=BRSAPI_KEY)
         df_api1_raw, df_api2_raw = fetcher.fetch_all_data()
 
-        # پردازش داده‌ها
         logger.info("\n🔄 شروع پردازش داده‌ها...")
         processor = BourseDataProcessor()
         df_api1, df_api2 = processor.process_all_data(df_api1_raw, df_api2_raw)
 
-        # اعمال فیلترها
         logger.info("\n🔍 اعمال فیلترها...")
         all_results = processor.apply_all_filters(df_api1, df_api2)
 
-        # ارسال هشدارها
         logger.info("\n📤 شروع ارسال هشدارها به تلگرام...")
         alert = TelegramAlert()
         alert_manager = GistAlertManager(GIST_TOKEN, GIST_ID)
@@ -250,7 +254,6 @@ async def main_async():
         total_sent = 0
         total_skipped = 0
 
-        # ارسال هشدارهای API اول (فیلترهای 1-9)
         if "api1" in all_results and all_results["api1"]:
             sent, skipped = await send_alerts_for_filters_async(
                 alert, alert_manager, all_results["api1"], "API اول (فیلترهای 1-9)"
@@ -258,7 +261,6 @@ async def main_async():
             total_sent += sent
             total_skipped += skipped
 
-        # ارسال هشدارهای API دوم (فیلتر 10)
         if "api2" in all_results and all_results["api2"]:
             sent, skipped = await send_alerts_for_filters_async(
                 alert, alert_manager, all_results["api2"], "API دوم (فیلتر 10)"
@@ -266,7 +268,6 @@ async def main_async():
             total_sent += sent
             total_skipped += skipped
 
-        # گزارش نهایی
         stats = await alert_manager.get_today_stats()
         logger.info("\n" + "=" * 80)
         logger.info("📊 گزارش نهایی:")
