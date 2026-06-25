@@ -1,5 +1,4 @@
 name: Bourse Tracker
-
 on:
   workflow_dispatch:
   repository_dispatch:
@@ -12,29 +11,23 @@ concurrency:
 jobs:
   run-bourse-tracker:
     runs-on: ubuntu-latest
-
     steps:
+      # 1. Checkout (سریع‌ترین حالت)
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-
+      
+      # 2. Setup Python (با cache)
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
-
+      
+      # 3. نصب dependencies (موازی و بدون توصیه)
       - name: Install Dependencies
         run: pip install --no-cache-dir --disable-pip-version-check -q -r requirements.txt
-
-      - name: Test BRS API
-        env:
-          BRSAPI_KEY: ${{ secrets.BRSAPI_KEY }}
-        run: |
-          curl -L -v \
-            --connect-timeout 10 \
-            --max-time 35 \
-            "https://Api.BrsApi.ir/Tsetmc/AllSymbols.php?key=$BRSAPI_KEY"
-
+      
+      # 4. اجرای فیلترها
       - name: Run Filters
         run: python main.py
         env:
@@ -44,7 +37,8 @@ jobs:
           BRSAPI_KEY: ${{ secrets.BRSAPI_KEY }}
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
-
+      
+      # 5. ارسال خلاصه روزانه (فقط بعد از 12:30)
       - name: Send Daily Summary
         run: python daily_summary_main.py
         env:
@@ -52,7 +46,8 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
-
+      
+      # 6. لاگ فقط در صورت خطا
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
