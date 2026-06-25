@@ -21,7 +21,7 @@ class UnifiedDataFetcher:
 
         # API دوم (BrsApi)
         self.api2_key = api2_key
-        self.api2_base_url = "https://BrsApi.ir/Api/Tsetmc"
+        self.api2_base_url = "https://Api.BrsApi.ir/Tsetmc"
 
         # ستون‌های API اول (40 ستون اصلی - مشترک بین صنایع و صندوق‌ها)
         self.api1_columns = [
