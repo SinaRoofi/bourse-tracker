@@ -25,7 +25,7 @@ jobs:
       
       # 3. نصب dependencies (موازی و بدون توصیه)
       - name: Install Dependencies
-        run: pip install --no-cache-dir --disable-pip-version-check -q -r requirements.txt
+        run: pip install --disable-pip-version-check -q -r requirements.txt
       
       # 4. اجرای فیلترها
       - name: Run Filters
