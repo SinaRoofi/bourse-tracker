@@ -9,7 +9,6 @@ import asyncio
 from config import (
     MARKET_START_TIME,
     MARKET_END_TIME,
-    WORKING_DAYS,
     API_BASE_URL,
     BRSAPI_KEY,
     TELEGRAM_BOT_TOKEN,
@@ -18,7 +17,7 @@ from config import (
     GIST_TOKEN,
     validate_config,
 )
-from utils.holidays import is_holiday, is_working_day
+from utils.holidays import is_trading_day
 from utils.data_fetcher import UnifiedDataFetcher
 from utils.data_processor import BourseDataProcessor
 from utils.alerts import TelegramAlert
@@ -87,17 +86,8 @@ def is_market_open() -> bool:
     now = datetime.now(TEHRAN_TZ)
     logger.info(f"🕐 زمان تهران: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
 
-    # روز هفته به وقت تهران
-    weekday = (now.weekday() + 2) % 7
-    if weekday not in WORKING_DAYS:
-        logger.info(f"امروز روز کاری نیست (روز هفته: {weekday})")
-        return False
-
-    # تاریخ شمسی
-    jnow = jdatetime.datetime.fromgregorian(datetime=now.replace(tzinfo=None))
-    today_str = jnow.strftime("%Y-%m-%d")
-    if is_holiday(today_str):
-        logger.info(f"امروز تعطیل رسمی است: {today_str}")
+    if not is_trading_day(now):
+        logger.info("امروز روز معاملاتی نیست (آخر هفته یا تعطیل رسمی)")
         return False
 
     current_time = now.strftime("%H:%M")
@@ -105,7 +95,8 @@ def is_market_open() -> bool:
         logger.info(f"خارج از ساعات کاری بازار (ساعت تهران: {current_time})")
         return False
 
-    logger.info(f"✅ بازار باز است - {today_str} {current_time}")
+    jnow = jdatetime.datetime.fromgregorian(datetime=now.replace(tzinfo=None))
+    logger.info(f"✅ بازار باز است - {jnow.strftime('%Y-%m-%d')} {current_time}")
     return True
 
 
