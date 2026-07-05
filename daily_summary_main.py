@@ -50,11 +50,6 @@ def should_send_summary_by_time() -> bool:
 
 
 def is_trading_day_today() -> bool:
-    """
-    بررسی می‌کند که آیا امروز روز معاملاتی بورس است یا نه.
-    از تابع مشترک utils.holidays.is_trading_day استفاده می‌کند تا با
-    main.py در یک منبع واحد بماند (بدون درخطر افتادن drift بین دو کپی).
-    """
     now = datetime.now(TEHRAN_TZ)
     if not is_trading_day(now):
         logger.info("⏭️ امروز روز معاملاتی بورس نیست (آخر هفته یا تعطیل رسمی)")
