@@ -10,23 +10,16 @@ import logging
 import requests
 import jdatetime
 
+from config import WORKING_DAYS
+
 logger = logging.getLogger(__name__)
 
 API_URL = "https://holidayapi.ir/gregorian"
 API_TIMEOUT = 5
 
 # ========================================
-# تعطیلات رسمی سال 1404 و 1405 (fallback وقتی API در دسترس نیست)
+# تعطیلات رسمی سال 1405 و 1406 (fallback وقتی API در دسترس نیست)
 # ========================================
-HOLIDAYS_1404 = [
-    "1404-01-01","1404-01-02","1404-01-03","1404-01-04",
-    "1404-01-12","1404-01-13","1404-03-14","1404-03-15",
-    "1404-04-11","1404-04-19","1404-04-20","1404-05-15",
-    "1404-06-26","1404-07-04","1404-07-18","1404-07-19",
-    "1404-08-28","1404-09-08","1404-09-10","1404-09-17",
-    "1404-11-22","1404-12-20",
-]
-
 HOLIDAYS_1405 = [
     "1405-01-01","1405-01-02","1405-01-03","1405-01-04",
     "1405-01-12","1405-01-13","1405-03-14","1405-03-15",
@@ -36,20 +29,10 @@ HOLIDAYS_1405 = [
     "1405-12-09",
 ]
 
-ALL_HOLIDAYS = HOLIDAYS_1404 + HOLIDAYS_1405
+HOLIDAYS_1406: List[str] = ["1405-01-01","1405-01-02","1405-01-03","1405-01-04",
+    "1405-01-12","1405-01-13"]
 
-HOLIDAY_DESCRIPTIONS: Dict[str, str] = {
-    "1404-01-01": "نوروز - سال نو",
-    "1404-01-02": "نوروز - روز دوم",
-    "1404-01-03": "نوروز - روز سوم",
-    "1404-01-04": "نوروز - روز چهارم",
-    "1404-01-12": "روز جمهوری اسلامی ایران",
-    "1404-01-13": "سیزده به در",
-    "1404-03-14": "رحلت حضرت امام خمینی (ره)",
-    "1404-03-15": "قیام 15 خرداد",
-    "1404-07-19": "عاشورا - شهادت امام حسین (ع)",
-    "1404-08-28": "اربعین حسینی",
-}
+ALL_HOLIDAYS = HOLIDAYS_1405 + HOLIDAYS_1406
 
 MANUAL_EMERGENCY_HOLIDAYS: Set[str] = {
     "1405-04-14", "1405-04-15", "1405-04-16"
@@ -155,9 +138,6 @@ class HolidayManager:
 
         raise ValueError("روز کاری در 30 روز آینده پیدا نشد!")
 
-    def get_holiday_description(self, date_str: str) -> str:
-        return HOLIDAY_DESCRIPTIONS.get(date_str, "توضیحی موجود نیست")
-
     def count_working_days(self, start_date: str, end_date: str) -> int:
         year1, month1, day1 = map(int, start_date.split("-"))
         year2, month2, day2 = map(int, end_date.split("-"))
@@ -186,3 +166,23 @@ def is_working_day(date_str: str = None) -> bool:
 
 def get_next_working_day(date_str: str = None) -> str:
     return holiday_manager.get_next_working_day(date_str)
+
+
+def is_trading_day(now: datetime) -> bool:
+    """
+    آیا `now` (یک datetime آگاه از تایم‌زون تهران) در یک روز معاملاتی بورس است؟
+
+    ترکیب دو شرط مستقل:
+      ۱) روز هفته باید جزو WORKING_DAYS باشد (شنبه تا چهارشنبه، پنج‌شنبه/جمعه رد می‌شود)
+      ۲) روز نباید تعطیل رسمی/اضطراری باشد (is_holiday)
+
+    این تابع single source of truth برای main.py و daily_summary_main.py است
+    تا این دو entry point در تشخیص روز معاملاتی از هم drift نکنند.
+    """
+    weekday = (now.weekday() + 2) % 7  # تبدیل به شمارش شنبه=0 ... جمعه=6
+    if weekday not in WORKING_DAYS:
+        return False
+
+    jnow = jdatetime.datetime.fromgregorian(datetime=now.replace(tzinfo=None))
+    today_str = jnow.strftime("%Y-%m-%d")
+    return not is_holiday(today_str)
