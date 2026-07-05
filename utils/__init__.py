@@ -5,7 +5,7 @@
 from .data_fetcher import UnifiedDataFetcher
 from .data_processor import BourseDataProcessor
 from .alerts import TelegramAlert
-from .holidays import is_holiday, is_working_day, get_next_working_day, HolidayManager
+from .holidays import is_holiday, is_working_day, get_next_working_day, is_trading_day, HolidayManager
 from .gist_alert_manager import GistAlertManager
 
 __all__ = [
@@ -15,6 +15,7 @@ __all__ = [
     'is_holiday',
     'is_working_day',
     'get_next_working_day',
+    'is_trading_day',
     'HolidayManager',
     'GistAlertManager'
 ]
