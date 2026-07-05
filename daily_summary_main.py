@@ -13,6 +13,7 @@ import jdatetime
 from utils.daily_summary_generator import DailySummaryGenerator
 from utils.alerts import TelegramAlert
 from utils.gist_alert_manager import GistAlertManager
+from utils.holidays import is_trading_day
 from config import GIST_TOKEN, GIST_ID
 
 # ===========================
@@ -48,13 +49,31 @@ def should_send_summary_by_time() -> bool:
     return True
 
 
+def is_trading_day_today() -> bool:
+    """
+    بررسی می‌کند که آیا امروز روز معاملاتی بورس است یا نه.
+    از تابع مشترک utils.holidays.is_trading_day استفاده می‌کند تا با
+    main.py در یک منبع واحد بماند (بدون درخطر افتادن drift بین دو کپی).
+    """
+    now = datetime.now(TEHRAN_TZ)
+    if not is_trading_day(now):
+        logger.info("⏭️ امروز روز معاملاتی بورس نیست (آخر هفته یا تعطیل رسمی)")
+        return False
+    return True
+
+
 async def main_async():
     logger.info("=" * 80)
     logger.info("📊 Daily Summary Reporter")
     logger.info("=" * 80)
 
     try:
-        # 1) چک زمان
+        # 1) چک روز معاملاتی (روز کاری + غیرتعطیل)
+        if not is_trading_day_today():
+            logger.info("⏭️ امروز روز معاملاتی بورس نیست — خروج بدون ارسال")
+            return
+
+        # 2) چک زمان
         now = datetime.now(TEHRAN_TZ)
         current_time = now.strftime("%H:%M")
 
@@ -64,17 +83,17 @@ async def main_async():
 
         logger.info(f"✅ ساعت {current_time} - عبور از شرط زمانی")
 
-        # 2) بررسی تنظیمات
+        # 3) بررسی تنظیمات
         if not all([GIST_TOKEN, GIST_ID]):
             logger.error("❌ GIST_TOKEN و GIST_ID باید تنظیم شوند")
             sys.exit(1)
 
-        # 3) init manager
+        # 4) init manager
         telegram_alert = TelegramAlert()
         alert_manager = GistAlertManager(GIST_TOKEN, GIST_ID)
         summary_generator = DailySummaryGenerator(alert_manager, telegram_alert)
 
-        # 4) چک ارسال‌شدن قبلی (قفل روزانه)
+        # 5) چک ارسال‌شدن قبلی (قفل روزانه)
         today_jalali = jdatetime.date.today().strftime("%Y-%m-%d")
 
         if await alert_manager.is_today_summary_sent():
@@ -83,13 +102,13 @@ async def main_async():
 
         logger.info("🚀 شروع تولید و ارسال خلاصه روزانه")
 
-        # 5) تولید و ارسال
+        # 6) تولید و ارسال
         success = await summary_generator.generate_and_send(
             min_count=3,
             top_n=None
         )
 
-        # 6) ثبت قفل روزانه
+        # 7) ثبت قفل روزانه
         if success:
             await alert_manager.mark_today_summary_sent()
             logger.info("=" * 80)
