@@ -237,6 +237,12 @@ def validate_config():
     if not API_BASE_URL and not BRSAPI_KEY:
         errors.append("حداقل یکی از API_BASE_URL یا BRSAPI_KEY باید تنظیم شود")
 
+    if not GIST_TOKEN:
+        errors.append("GIST_TOKEN تنظیم نشده است")
+
+    if not GIST_ID:
+        errors.append("GIST_ID تنظیم نشده است")
+
     if errors:
         raise ValueError("خطاهای تنظیمات:\n" + "\n".join(errors))
 
