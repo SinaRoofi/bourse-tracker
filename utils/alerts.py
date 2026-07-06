@@ -248,7 +248,7 @@ FILTER_DISPLAY_CONFIG = {
             line_pol_power(),
         ],
     ),
-    "filter_4_ceiling_queue": FilterDisplay(
+    "filter_4_range_mosbat": FilterDisplay(
         hashtag="🔥#رنج_مثبت",
         header_emoji=_static_emoji("🎯"),
         show_industry=True,
@@ -429,8 +429,8 @@ class TelegramAlert:
     def format_filter_3_watchlist(self, df):
         return self._render(df, "filter_3_watchlist")
 
-    def format_filter_4_ceiling_queue(self, df):
-        return self._render(df, "filter_4_ceiling_queue")
+    def format_filter_4_range_mosbat(self, df):
+        return self._render(df, "filter_4_range_mosbat")
 
     def format_filter_5_pol_hagigi_ratio(self, df):
         return self._render(df, "filter_5_pol_hagigi_ratio")
