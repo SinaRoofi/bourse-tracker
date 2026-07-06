@@ -289,7 +289,7 @@ class BourseDataProcessor:
     # ========================================
     # فیلتر 4: رنج مثبت
     # ========================================
-    def filter_4_heavy_buy_queue_at_ceiling(
+    def  filter_4_range_mosbat(
         self, df: pd.DataFrame, config: dict = None
     ) -> pd.DataFrame:
         if df.empty:
@@ -709,9 +709,7 @@ class BourseDataProcessor:
                 "filter_1_strong_buying": self.filter_1_strong_buying_power(df_api1),
                 "filter_2_sarane_cross": self.filter_2_sarane_kharid_cross(df_api1),
                 "filter_3_watchlist": self.filter_3_watchlist_symbols(df_api1),
-                "filter_4_ceiling_queue": self.filter_4_heavy_buy_queue_at_ceiling(
-                    df_api1
-                ),
+                "filter_4_range_mosbat": self.filter_4_range_mosbat(df_api1),
                 "filter_5_pol_hagigi_ratio": self.filter_5_pol_hagigi_ratio(df_api1),
                 "filter_6_tick_time": self.filter_6_tick_and_time(df_api1),
                 "filter_7_suspicious_volume": self.filter_7_suspicious_volume(df_api1),
