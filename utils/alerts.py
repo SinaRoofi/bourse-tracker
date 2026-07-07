@@ -347,11 +347,14 @@ class TelegramAlert:
         now = jdatetime.datetime.now(tehran_tz)
         return now.strftime("%Y/%m/%d"), now.strftime("%H:%M")
 
-    async def send_message(self, message: str, parse_mode: str = "HTML") -> bool:
+    async def send_message(
+        self, message: str, parse_mode: str = "HTML", chat_id: str = None
+    ) -> bool:
+        target_chat_id = chat_id or self.chat_id
         async with self.semaphore:
             try:
                 await self.bot.send_message(
-                    chat_id=self.chat_id, text=message, parse_mode=parse_mode
+                    chat_id=target_chat_id, text=message, parse_mode=parse_mode
                 )
                 await asyncio.sleep(4)
                 return True
@@ -367,7 +370,7 @@ class TelegramAlert:
 
             try:
                 await self.bot.send_message(
-                    chat_id=self.chat_id, text=message, parse_mode=parse_mode
+                    chat_id=target_chat_id, text=message, parse_mode=parse_mode
                 )
                 return True
             except Exception as retry_error:
