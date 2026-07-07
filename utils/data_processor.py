@@ -10,6 +10,7 @@ class BourseDataProcessor:
 
     def __init__(self):
         self.filters_results = {}
+        self.failed_filters: List[str] = []
 
     # ========================================
     # پردازش داده‌های خام
@@ -209,12 +210,18 @@ class BourseDataProcessor:
         config = STRONG_BUYING_CONFIG
         logger.info("اعمال فیلتر 1: قدرت خرید قوی")
 
-        filtered = df[
+        mask = (
             (df["value_to_avg_monthly_value"] > config["min_value_to_avg_monthly"])
             & (df["sarane_kharid"] > config["min_sarane_kharid"])
             & (df["godrat_kharid"] > config["min_godrat_kharid"])
-            & (df["godrat_kharid"] > 2 * df["5_day_godrat_kharid"])
-        ].copy()
+        )
+
+        if config.get("godrat_greater_than_5day", True):
+            multiplier = config.get("godrat_5day_multiplier", 2)
+            logger.info(f"  • شرط اضافه: قدرت خرید > {multiplier} × میانگین 5 روزه")
+            mask &= df["godrat_kharid"] > multiplier * df["5_day_godrat_kharid"]
+
+        filtered = df[mask].copy()
 
         filtered = filtered.sort_values("sarane_kharid", ascending=False)
         logger.info(f"✅ فیلتر 1: {len(filtered)} سهم یافت شد")
@@ -504,7 +511,8 @@ class BourseDataProcessor:
             config = HEAVY_BUY_QUEUE_CONFIG
 
         logger.info(f"اعمال فیلتر 10: صف خرید میلیاردی")
-        logger.info(f"  • شرط 1: آخرین قیمت = سقف")
+        if config.get("price_at_ceiling", True):
+            logger.info(f"  • شرط 1: آخرین قیمت = سقف")
         logger.info(f"  • شرط 2: buy_order >= {config['min_buy_order']} میلیون تومان")
         logger.info(
             f"  • شرط 3: buy_queue_value >= {config['min_buy_queue_value']} میلیارد تومان"
@@ -519,11 +527,14 @@ class BourseDataProcessor:
             return pd.DataFrame()
 
         # اعمال فیلتر روی API دوم
-        filtered_api2 = df_api2[
-            (df_api2["last_price"] == df_api2["ceiling_price"])
-            & (df_api2["buy_order"] >= config["min_buy_order"])
-            & (df_api2["buy_queue_value"] >= config["min_buy_queue_value"])
-        ].copy()
+        mask = (df_api2["buy_order"] >= config["min_buy_order"]) & (
+            df_api2["buy_queue_value"] >= config["min_buy_queue_value"]
+        )
+
+        if config.get("price_at_ceiling", True):
+            mask &= df_api2["last_price"] == df_api2["ceiling_price"]
+
+        filtered_api2 = df_api2[mask].copy()
 
         if filtered_api2.empty:
             logger.info("فیلتر 10: هیچ نمادی یافت نشد")
@@ -692,6 +703,22 @@ class BourseDataProcessor:
         return filtered
 
     # ========================================
+    # اجرای ایمن یک فیلتر — جلوگیری از سقوط کل pipeline
+    # به‌خاطر خطای یک فیلتر (مثلاً ستون گمشده بعد از تغییر schema API)
+    # ========================================
+    def _run_filter_safe(self, filter_func, *args, **kwargs) -> pd.DataFrame:
+        try:
+            return filter_func(*args, **kwargs)
+        except Exception as e:
+            logger.error(
+                f"❌ خطای غیرمنتظره در {filter_func.__name__}: {e} — "
+                f"این فیلتر رد می‌شود، بقیه فیلترها ادامه پیدا می‌کنند",
+                exc_info=True,
+            )
+            self.failed_filters.append(filter_func.__name__)
+            return pd.DataFrame()
+
+    # ========================================
     # اعمال همه فیلترها
     # ========================================
     def apply_all_filters(
@@ -701,30 +728,31 @@ class BourseDataProcessor:
         logger.info(f"  • API اول: {len(df_api1)} سهم")
         logger.info(f"  • API دوم: {len(df_api2)} نماد")
 
+        self.failed_filters = []
         results = {"api1": {}, "api2": {}}
 
         # فیلترهای 1 تا 9 و 11 روی API اول
         if not df_api1.empty:
             results["api1"] = {
-                "filter_1_strong_buying": self.filter_1_strong_buying_power(df_api1),
-                "filter_2_sarane_cross": self.filter_2_sarane_kharid_cross(df_api1),
-                "filter_3_watchlist": self.filter_3_watchlist_symbols(df_api1),
-                "filter_4_range_mosbat": self.filter_4_range_mosbat(df_api1),
-                "filter_5_pol_hagigi_ratio": self.filter_5_pol_hagigi_ratio(df_api1),
-                "filter_6_tick_time": self.filter_6_tick_and_time(df_api1),
-                "filter_7_suspicious_volume": self.filter_7_suspicious_volume(df_api1),
-                "filter_8_swing_trade": self.filter_8_swing_trade(df_api1),
-                "filter_9_first_hour": self.filter_9_first_hour(df_api1),
-                "filter_11_hoghooghi_haghighi_strong_buy": self.filter_11_hoghooghi_haghighi_strong_buy(
-                    df_api1
+                "filter_1_strong_buying": self._run_filter_safe(self.filter_1_strong_buying_power, df_api1),
+                "filter_2_sarane_cross": self._run_filter_safe(self.filter_2_sarane_kharid_cross, df_api1),
+                "filter_3_watchlist": self._run_filter_safe(self.filter_3_watchlist_symbols, df_api1),
+                "filter_4_range_mosbat": self._run_filter_safe(self.filter_4_range_mosbat, df_api1),
+                "filter_5_pol_hagigi_ratio": self._run_filter_safe(self.filter_5_pol_hagigi_ratio, df_api1),
+                "filter_6_tick_time": self._run_filter_safe(self.filter_6_tick_and_time, df_api1),
+                "filter_7_suspicious_volume": self._run_filter_safe(self.filter_7_suspicious_volume, df_api1),
+                "filter_8_swing_trade": self._run_filter_safe(self.filter_8_swing_trade, df_api1),
+                "filter_9_first_hour": self._run_filter_safe(self.filter_9_first_hour, df_api1),
+                "filter_11_hoghooghi_haghighi_strong_buy": self._run_filter_safe(
+                    self.filter_11_hoghooghi_haghighi_strong_buy, df_api1
                 ),
             }
 
         # فیلتر 10 روی API دوم با غنی‌سازی از API اول
         if not df_api2.empty:
             results["api2"] = {
-                "filter_10_heavy_buy_queue": self.filter_10_heavy_buy_queue(
-                    df_api2, df_api1
+                "filter_10_heavy_buy_queue": self._run_filter_safe(
+                    self.filter_10_heavy_buy_queue, df_api2, df_api1
                 ),
             }
 
