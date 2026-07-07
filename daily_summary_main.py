@@ -8,7 +8,6 @@ from datetime import datetime
 import pytz
 import sys
 import logging
-import jdatetime
 
 from utils.daily_summary_generator import DailySummaryGenerator
 from utils.alerts import TelegramAlert
@@ -89,8 +88,6 @@ async def main_async():
         summary_generator = DailySummaryGenerator(alert_manager, telegram_alert)
 
         # 5) چک ارسال‌شدن قبلی (قفل روزانه)
-        today_jalali = jdatetime.date.today().strftime("%Y-%m-%d")
-
         if await alert_manager.is_today_summary_sent():
             logger.info("⏭️ خلاصه امروز قبلاً ارسال شده — خروج")
             return
