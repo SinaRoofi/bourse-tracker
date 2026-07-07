@@ -131,7 +131,8 @@ STRONG_BUYING_CONFIG = {
     "min_value_to_avg_monthly": 3,
     "min_sarane_kharid": 100,  # میلیون تومان
     "min_godrat_kharid": 2,
-    "godrat_greater_than_5day": True,  # قدرت خرید > میانگین 5 روز
+    "godrat_greater_than_5day": True,
+    "godrat_5day_multiplier": 2,  # ضریب مقایسه با میانگین 5 روزه (فقط وقتی بالا True باشه اثر داره)
 }
 
 # فیلتر 2: کراس سرانه خرید
