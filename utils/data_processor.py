@@ -307,7 +307,7 @@ class BourseDataProcessor:
 
             config = range_mosbat
 
-        logger.info(f"اعمال فیلتر 4: رنج مثبت")
+        logger.info("اعمال فیلتر 4: رنج مثبت")
 
         filtered = df[
             (df["diff_last_final"] >= config["tick_diff_percent"])
@@ -336,7 +336,7 @@ class BourseDataProcessor:
 
             config = POL_HAGIGI_FILTER_CONFIG
 
-        logger.info(f"اعمال فیلتر 5: نسبت پول حقیقی")
+        logger.info("اعمال فیلتر 5: نسبت پول حقیقی")
 
         filtered = df[
             (df["pol_hagigi_to_avg_monthly_value"] >= config["min_pol_to_value_ratio"])
@@ -372,7 +372,7 @@ class BourseDataProcessor:
         last_to_first_ratio = config.get("last_to_first_ratio", 0.98)
         tick_diff_percent = config.get("tick_diff_percent", 2.0)
 
-        logger.info(f"اعمال فیلتر 6: تیک و ساعت")
+        logger.info("اعمال فیلتر 6: تیک و ساعت")
 
         df_copy = df.copy()
         df_copy["tick_diff"] = df_copy["diff_last_final"]
@@ -432,7 +432,7 @@ class BourseDataProcessor:
 
             config = SWING_TRADE_CONFIG
 
-        logger.info(f"اعمال فیلتر 8: نوسان‌گیری")
+        logger.info("اعمال فیلتر 8: نوسان‌گیری")
 
         filtered = df[
             (df["low_price_change_percent"] <= config["min_allowed_price"])
@@ -510,9 +510,9 @@ class BourseDataProcessor:
 
             config = HEAVY_BUY_QUEUE_CONFIG
 
-        logger.info(f"اعمال فیلتر 10: صف خرید میلیاردی")
+        logger.info("اعمال فیلتر 10: صف خرید میلیاردی")
         if config.get("price_at_ceiling", True):
-            logger.info(f"  • شرط 1: آخرین قیمت = سقف")
+            logger.info("  • شرط 1: آخرین قیمت = سقف")
         logger.info(f"  • شرط 2: buy_order >= {config['min_buy_order']} میلیون تومان")
         logger.info(
             f"  • شرط 3: buy_queue_value >= {config['min_buy_queue_value']} میلیارد تومان"
@@ -651,7 +651,7 @@ class BourseDataProcessor:
 
             config = HOGHOOGHI_HAGHIGHI_STRONG_BUY_CONFIG
 
-        logger.info(f"اعمال فیلتر 11: خرید حقوقی و حقیقی قوی")
+        logger.info("اعمال فیلتر 11: خرید حقوقی و حقیقی قوی")
         logger.info(
             f"  • شرط 1: pol_hagigi_to_avg_monthly_value <= {config['max_pol_hagigi_to_value']} (خروج پول حقیقی)"
         )
@@ -661,7 +661,7 @@ class BourseDataProcessor:
         logger.info(
             f"  • شرط 3: sarane_kharid > {config['min_sarane_kharid']} میلیون تومان"
         )
-        logger.info(f"  • شرط 4: sarane_kharid > sarane_forosh")
+        logger.info("  • شرط 4: sarane_kharid > sarane_forosh")
 
         # بررسی وجود ستون‌های لازم
         required_cols = [
@@ -724,7 +724,7 @@ class BourseDataProcessor:
     def apply_all_filters(
         self, df_api1: pd.DataFrame, df_api2: pd.DataFrame
     ) -> Dict[str, Dict[str, pd.DataFrame]]:
-        logger.info(f"شروع اعمال فیلترها")
+        logger.info("شروع اعمال فیلترها")
         logger.info(f"  • API اول: {len(df_api1)} سهم")
         logger.info(f"  • API دوم: {len(df_api2)} نماد")
 
@@ -760,7 +760,7 @@ class BourseDataProcessor:
         total_api1 = sum(len(v) for v in results["api1"].values())
         total_api2 = sum(len(v) for v in results["api2"].values())
 
-        logger.info(f"✅ جمع نتایج فیلترها:")
+        logger.info("✅ جمع نتایج فیلترها:")
         logger.info(f"  • API اول (فیلتر 1-9, 11): {total_api1} سهم")
         logger.info(f"  • API دوم (فیلتر 10): {total_api2} نماد")
 
