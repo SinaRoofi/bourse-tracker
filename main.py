@@ -13,6 +13,7 @@ from config import (
     BRSAPI_KEY,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
+    ERROR_CHAT_ID,
     GIST_ID,
     GIST_TOKEN,
     validate_config,
@@ -242,16 +243,22 @@ async def main_async():
         alert = TelegramAlert()
         alert_manager = GistAlertManager(GIST_TOKEN, GIST_ID)
 
-        # هشدار فوری اگه یکی از فیلترها امروز خطا داده باشه
+        # هشدار فوری اگه یکی از فیلترها امروز خطا داده باشه (کانال جدا، نه کانال اصلی)
         if processor.failed_filters:
             failed_list = "، ".join(processor.failed_filters)
             logger.error(f"⚠️ فیلترهای خطادار این اجرا: {failed_list}")
-            await alert.send_message(
-                f"⚠️ <b>خطا در اجرای فیلتر</b>\n\n"
-                f"فیلترهای زیر امروز اجرا نشدن (احتمالاً به‌خاطر تغییر schema API):\n"
-                f"<code>{failed_list}</code>\n\n"
-                f"لاگ کامل رو تو GitHub Actions چک کن."
-            )
+            if ERROR_CHAT_ID:
+                await alert.send_message(
+                    f"⚠️ <b>خطا در اجرای فیلتر</b>\n\n"
+                    f"فیلترهای زیر امروز اجرا نشدن (احتمالاً به‌خاطر تغییر schema API):\n"
+                    f"<code>{failed_list}</code>\n\n"
+                    f"لاگ کامل رو تو GitHub Actions چک کن.",
+                    chat_id=ERROR_CHAT_ID,
+                )
+            else:
+                logger.warning(
+                    "⚠️ ERROR_CHAT_ID تنظیم نشده — هشدار خطای فیلتر فقط در لاگ ثبت شد"
+                )
 
         total_sent = 0
         total_skipped = 0
