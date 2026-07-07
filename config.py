@@ -13,6 +13,7 @@ load_dotenv()
 # ========================================
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+ERROR_CHAT_ID = os.getenv("ERROR_CHAT_ID", "")  # اختیاری: کانال جدا برای خطاهای فنی (فیلتر خراب)
 
 # ========================================
 # تنظیمات API
@@ -131,7 +132,7 @@ STRONG_BUYING_CONFIG = {
     "min_value_to_avg_monthly": 3,
     "min_sarane_kharid": 100,  # میلیون تومان
     "min_godrat_kharid": 2,
-    "godrat_greater_than_5day": True,
+    "godrat_greater_than_5day": True,  # قدرت خرید > میانگین 5 روز
     "godrat_5day_multiplier": 2,  # ضریب مقایسه با میانگین 5 روزه (فقط وقتی بالا True باشه اثر داره)
 }
 
@@ -242,6 +243,13 @@ def validate_config():
 
     if not GIST_ID:
         errors.append("GIST_ID تنظیم نشده است")
+
+    multiplier = STRONG_BUYING_CONFIG.get("godrat_5day_multiplier")
+    if not isinstance(multiplier, (int, float)) or isinstance(multiplier, bool) or multiplier <= 0:
+        errors.append(
+            f"STRONG_BUYING_CONFIG['godrat_5day_multiplier'] باید عدد مثبت باشد "
+            f"(مقدار فعلی: {multiplier!r})"
+        )
 
     if errors:
         raise ValueError("خطاهای تنظیمات:\n" + "\n".join(errors))
