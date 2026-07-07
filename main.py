@@ -3,7 +3,6 @@ import logging
 from datetime import datetime
 import jdatetime
 import pytz
-import os
 import asyncio
 
 from config import (
@@ -11,8 +10,6 @@ from config import (
     MARKET_END_TIME,
     API_BASE_URL,
     BRSAPI_KEY,
-    TELEGRAM_BOT_TOKEN,
-    TELEGRAM_CHAT_ID,
     ERROR_CHAT_ID,
     GIST_ID,
     GIST_TOKEN,
@@ -284,7 +281,7 @@ async def main_async():
         logger.info(f"  • هشدارهای ارسال شده (این اجرا): {total_sent}")
         logger.info(f"  • هشدارهای رد شده (اسپم): {total_skipped}")
         logger.info(f"  • مجموع هشدارهای امروز: {stats['total_alerts']}")
-        logger.info(f"  • آمار بر اساس نوع هشدار:")
+        logger.info("  • آمار بر اساس نوع هشدار:")
         for alert_type, count in stats["alerts_by_type"].items():
             logger.info(f"    - {alert_type}: {count}")
         logger.info(f"  • Gist: {alert_manager.get_gist_url()}")
