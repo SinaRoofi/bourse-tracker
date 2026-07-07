@@ -153,7 +153,7 @@ async def send_alerts_for_filters_async(
 
             for idx, row in chunk_df.iterrows():
                 symbol = row["symbol"]
-                if not alert_manager.should_send_alert(symbol, filter_name):
+                if not await alert_manager.should_send_alert(symbol, filter_name):
                     logger.info(f"⏭️  {symbol}: قبلاً امروز ارسال شده")
                     skipped_count += 1
                 else:
