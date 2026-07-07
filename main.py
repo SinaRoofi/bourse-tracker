@@ -242,6 +242,17 @@ async def main_async():
         alert = TelegramAlert()
         alert_manager = GistAlertManager(GIST_TOKEN, GIST_ID)
 
+        # هشدار فوری اگه یکی از فیلترها امروز خطا داده باشه
+        if processor.failed_filters:
+            failed_list = "، ".join(processor.failed_filters)
+            logger.error(f"⚠️ فیلترهای خطادار این اجرا: {failed_list}")
+            await alert.send_message(
+                f"⚠️ <b>خطا در اجرای فیلتر</b>\n\n"
+                f"فیلترهای زیر امروز اجرا نشدن (احتمالاً به‌خاطر تغییر schema API):\n"
+                f"<code>{failed_list}</code>\n\n"
+                f"لاگ کامل رو تو GitHub Actions چک کن."
+            )
+
         total_sent = 0
         total_skipped = 0
 
