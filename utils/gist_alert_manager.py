@@ -144,24 +144,9 @@ class GistAlertManager:
     # ------------------------------------------------------------------
     # Alert Dedup
     # ------------------------------------------------------------------
-    def should_send_alert(self, symbol: str, alert_type: str) -> bool:
-        if self._cache is None:
-            try:
-                url = f"{self.api_url}/{self.gist_id}"
-                r = requests.get(url, headers=self.headers, timeout=5)
-                if r.status_code == 200:
-                    content = r.json()["files"]["alert_cache.json"]["content"]
-                    try:
-                        self._cache = json.loads(content)
-                    except json.JSONDecodeError:
-                        self._cache = {}
-                    self._cache_time = time.time()
-                else:
-                    self._cache = {}
-            except Exception:
-                self._cache = {}
-
-        today_alerts = self._cache.get(self.today_jalali, [])
+    async def should_send_alert(self, symbol: str, alert_type: str) -> bool:
+        data = await self._load_gist_content()
+        today_alerts = data.get(self.today_jalali, [])
         return not any(
             a["symbol"] == symbol and a["alert_type"] == alert_type
             for a in today_alerts
