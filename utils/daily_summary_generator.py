@@ -8,8 +8,7 @@ import logging
 from datetime import datetime
 import jdatetime
 import pytz
-import pandas as pd
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +153,7 @@ class DailySummaryGenerator:
     ) -> str:
         date_str, time_str = self._get_tehran_datetime()
 
-        message = f"📊 <b>خلاصه هشدارها</b>\n\n"
+        message = "📊 <b>خلاصه هشدارها</b>\n\n"
 
         if frequent_symbols:
             count_groups = {}
@@ -166,7 +165,7 @@ class DailySummaryGenerator:
                 hashtags = " ".join([f"#{self._format_symbol_hashtag(s)}" for s in symbols_list])
                 message += f"<b>({count}×)</b> {hashtags}\n"
         else:
-            message += f"هیچ نماد پرتکراری نبود\n"
+            message += "هیچ نماد پرتکراری نبود\n"
 
         message += f"\n🎯 {len(frequent_symbols)} نماد پرتکرار از {total_unique_symbols} نماد هشداردهنده\n\n"
         message += f"📅 {date_str} | 🕐 {time_str}\n"
@@ -189,7 +188,7 @@ class DailySummaryGenerator:
 
         date_str, time_str = self._get_tehran_datetime()
 
-        message = f"🏆 <b>برترین نمادها — امروز</b>\n\n"
+        message = "🏆 <b>برترین نمادها — امروز</b>\n\n"
 
         for filter_name, items in top_per_filter.items():
             meta = FILTER_META.get(filter_name, {})
