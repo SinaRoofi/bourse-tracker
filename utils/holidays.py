@@ -3,22 +3,18 @@
 
 """
 from datetime import datetime
-from typing import List, Dict, Set, Optional
+from typing import List, Dict, Set
 from functools import lru_cache
 import logging
 
-import requests
 import jdatetime
 
 from config import WORKING_DAYS
 
 logger = logging.getLogger(__name__)
 
-API_URL = "https://holidayapi.ir/gregorian"
-API_TIMEOUT = 5
-
 # ========================================
-# تعطیلات رسمی سال 1405 و 1406 (fallback وقتی API در دسترس نیست)
+# تعطیلات رسمی سال 1405 و 1406 (منبع اصلی و تنها - بدون API)
 # ========================================
 HOLIDAYS_1405 = [
     "1405-01-01","1405-01-02","1405-01-03","1405-01-04",
@@ -39,12 +35,6 @@ MANUAL_EMERGENCY_HOLIDAYS: Set[str] = {
 }
 
 
-def _to_gregorian(date_str: str):
-    """تبدیل رشته‌ی شمسی 'YYYY-MM-DD' به jdatetime.date میلادی (توگرگوریان)."""
-    year, month, day = map(int, date_str.split("-"))
-    return jdatetime.date(year, month, day).togregorian()
-
-
 class HolidayManager:
     """مدیریت تعطیلات بورس"""
 
@@ -60,7 +50,7 @@ class HolidayManager:
         بررسی تعطیل بودن یک تاریخ شمسی 'YYYY-MM-DD' (پیش‌فرض: امروز).
         فقط تعطیلات رسمی تقویم را چک می‌کند — weekday مسئولیت caller است.
 
-        اولویت: اضطراری دستی -> API زنده -> لیست هاردکد -> fail-safe (True)
+        اولویت: اضطراری دستی -> لیست هاردکد -> fail-safe (True)
         """
         if date_str is None:
             date_str = jdatetime.date.today().strftime("%Y-%m-%d")
@@ -77,44 +67,17 @@ class HolidayManager:
             logger.info(f"🚨 {date_str} در MANUAL_EMERGENCY_HOLIDAYS است — تعطیل اضطراری")
             return True
 
-        # 1) API زنده
-        api_result = self._check_holiday_api(date_str)
-        if api_result is not None:
-            return api_result
-
-        # 2) fallback: لیست هاردکد
+        # 1) لیست هاردکد
         jalali_year = int(date_str.split("-")[0])
         if jalali_year in self.holidays_by_year:
             return date_str in self.holidays_by_year[jalali_year]
 
-        # 3) هیچ منبعی در دسترس نیست -> fail-safe: فرض کن تعطیله
+        # 2) سالی که در لیست هاردکد نیست -> fail-safe: فرض کن تعطیله
         logger.error(
-            f"🚨 نه API نه لیست هاردکد برای سال {jalali_year} در دسترس بود — "
+            f"🚨 لیست هاردکد تعطیلات برای سال {jalali_year} موجود نیست — "
             f"fail-safe فعال شد، {date_str} به‌عنوان تعطیل در نظر گرفته می‌شود"
         )
         return True
-
-    @staticmethod
-    def _check_holiday_api(date_str: str) -> Optional[bool]:
-        """
-        Returns:
-            bool: نتیجه‌ی معتبر از holidayapi.ir
-            None: API در دسترس نبود/پاسخ نامعتبر بود (سیگنال fallback)
-        """
-        try:
-            g = _to_gregorian(date_str)
-            response = requests.get(
-                f"{API_URL}/{g.year}/{g.month:02d}/{g.day:02d}", timeout=API_TIMEOUT
-            )
-            response.raise_for_status()
-            return bool(response.json().get("is_holiday", False))
-
-        except requests.RequestException as e:
-            logger.warning(f"⚠️ holidayapi.ir در دسترس نیست ({e}) — fallback به لیست هاردکد")
-            return None
-        except (ValueError, KeyError) as e:
-            logger.warning(f"⚠️ پاسخ نامعتبر از holidayapi.ir ({e}) — fallback به لیست هاردکد")
-            return None
 
     def get_holidays_in_range(self, start_date: str, end_date: str) -> List[str]:
         holidays_in_range = []
