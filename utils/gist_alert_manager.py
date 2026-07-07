@@ -36,6 +36,12 @@ class GistAlertManager:
         self._cache_duration = 10
 
         if not self.gist_id:
+            # ⚠️ این متد یک requests.post سینک (بلاکینگ) اجرا می‌کنه.
+            # این شاخه امروز unreachable هست چون main.py/daily_summary_main.py
+            # قبل از ساخت این کلاس، validate_config() رو صدا می‌زنن که بدون
+            # GIST_ID با exception متوقف می‌شه. اگه یه‌روز GIST_ID رو اختیاری
+            # کردی، این خط دوباره می‌تونه event loop رو بلاک کنه — اون‌موقع
+            # باید __init__ رو به یک async factory (classmethod create) تبدیل کنی.
             self._create_new_gist_sync()
 
     # ------------------------------------------------------------------
