@@ -50,7 +50,7 @@ class HolidayManager:
         بررسی تعطیل بودن یک تاریخ شمسی 'YYYY-MM-DD' (پیش‌فرض: امروز).
         فقط تعطیلات رسمی تقویم را چک می‌کند — weekday مسئولیت caller است.
 
-        اولویت: اضطراری دستی -> لیست هاردکد -> fail-safe (True)
+        اولویت: اضطراری دستی -> لیست هاردکد -> سال ناشناخته = روز کاری (fail-open)
         """
         if date_str is None:
             date_str = jdatetime.date.today().strftime("%Y-%m-%d")
@@ -72,12 +72,12 @@ class HolidayManager:
         if jalali_year in self.holidays_by_year:
             return date_str in self.holidays_by_year[jalali_year]
 
-        # 2) سالی که در لیست هاردکد نیست -> fail-safe: فرض کن تعطیله
-        logger.error(
-            f"🚨 لیست هاردکد تعطیلات برای سال {jalali_year} موجود نیست — "
-            f"fail-safe فعال شد، {date_str} به‌عنوان تعطیل در نظر گرفته می‌شود"
+        # 2) سالی که در لیست هاردکد نیست -> اجرای عادی (تعطیل در نظر گرفته نمی‌شود)
+        logger.warning(
+            f"⚠️ لیست هاردکد تعطیلات برای سال {jalali_year} موجود نیست — "
+            f"{date_str} به‌عنوان روز کاری در نظر گرفته می‌شود (fail-open)"
         )
-        return True
+        return False
 
     def get_holidays_in_range(self, start_date: str, end_date: str) -> List[str]:
         holidays_in_range = []
