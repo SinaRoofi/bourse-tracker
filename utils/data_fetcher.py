@@ -1,3 +1,4 @@
+import copy
 import requests
 import pandas as pd
 import logging
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 FETCH_TIMEOUT = 10          # ثانیه (به جای 30)
 FETCH_RETRIES = 1           # یک‌بار retry
 FETCH_RETRY_DELAY = 1       # ثانیه بین retry‌ها
-FETCH_MAX_WORKERS = 8       # تعداد thread‌های موازی برای صنایع
+FETCH_MAX_WORKERS = 12      # تعداد thread‌های موازی (صنایع + صندوق‌ها با هم، ~48 درخواست)
 
 
 class UnifiedDataFetcher:
@@ -57,13 +58,23 @@ class UnifiedDataFetcher:
         }
 
         try:
-            from config import INCLUDE_LEVERAGED_FUNDS, INCLUDE_SECTOR_FUNDS
-            self.include_leveraged_funds = INCLUDE_LEVERAGED_FUNDS
-            self.include_sector_funds = INCLUDE_SECTOR_FUNDS
+            from config import FUND_TYPES
+            # deepcopy تا هر instance نسخه‌ی مستقل خودش رو داشته باشه؛
+            # وگرنه mutate کردن fund_types روی یک instance (مثلا غیرفعال کردن یک صندوق)
+            # روی dict مشترک ماژول config و در نتیجه روی همه‌ی instance‌های دیگه هم اثر می‌ذاشت.
+            self.fund_types: Dict[str, Dict] = copy.deepcopy(FUND_TYPES)
         except ImportError:
-            logger.warning("⚠️ INCLUDE_LEVERAGED_FUNDS/INCLUDE_SECTOR_FUNDS یافت نشد - پیش‌فرض: True")
-            self.include_leveraged_funds = True
-            self.include_sector_funds = True
+            logger.warning("⚠️ FUND_TYPES در config یافت نشد - از لیست پیش‌فرض صندوق‌ها استفاده می‌شود")
+            self.fund_types = {
+                "index": {"slug": "index-funds", "name": "صندوق‌های شاخصی", "enabled": True},
+                "real_state": {"slug": "real-state-funds", "name": "صندوق‌های املاک", "enabled": True},
+                "fund_in_fund": {"slug": "fund-in-funds", "name": "صندوق‌های فراصندوق", "enabled": True},
+                "classic_stock": {"slug": "classic-stock-funds", "name": "صندوق‌های سهامی کلاسیک", "enabled": True},
+                "mixed": {"slug": "mixed-funds", "name": "صندوق‌های مختلط", "enabled": True},
+                "energy": {"slug": "energy-funds", "name": "صندوق‌های انرژی", "enabled": True},
+                "leveraged": {"slug": "leveraged-funds", "name": "صندوق‌های اهرمی", "enabled": True},
+                "sector": {"slug": "sector-funds", "name": "صندوق‌های بخشی", "enabled": True},
+            }
 
     # ========================================
     # هلپر: GET با retry
@@ -137,23 +148,13 @@ class UnifiedDataFetcher:
     # fetch یک صنعت (thread-safe)
     # ========================================
 
-    def _fetch_industry_data(self, industry_code: str) -> List[Dict]:
-        url = f"{self.api1_base_url}/data/industries-stocks-csv/{industry_code}"
-        response = self._get_with_retry(url, label=f"صنعت {industry_code}")
-        if response is None:
-            return []
-        return self._parse_response(response)
-
-    def _fetch_leveraged_funds_data(self) -> List[Dict]:
-        url = f"{self.api1_base_url}/data/industries-stocks-csv/leveraged-funds"
-        response = self._get_with_retry(url, label="صندوق‌های اهرمی")
-        if response is None:
-            return []
-        return self._parse_response(response)
-
-    def _fetch_sector_funds_data(self) -> List[Dict]:
-        url = f"{self.api1_base_url}/data/industries-stocks-csv/sector-funds"
-        response = self._get_with_retry(url, label="صندوق‌های بخشی")
+    def _fetch_slug_data(self, slug: str, label: str) -> List[Dict]:
+        """
+        fetch عمومی برای هر endpoint زیر industries-stocks-csv/{slug}.
+        هم برای کد صنعت (مثلا '01') و هم برای slug صندوق (مثلا 'index-funds') کار می‌کنه.
+        """
+        url = f"{self.api1_base_url}/data/industries-stocks-csv/{slug}"
+        response = self._get_with_retry(url, label=label)
         if response is None:
             return []
         return self._parse_response(response)
@@ -165,7 +166,8 @@ class UnifiedDataFetcher:
     def fetch_from_api1(self, industry_codes: List[str] = None) -> Optional[pd.DataFrame]:
         """
         دریافت موازی داده از API اول.
-        همه صنایع با ThreadPoolExecutor همزمان fetch می‌شن.
+        صنایع و همه‌ی انواع صندوق (FUND_TYPES) در یک batch واحد،
+        با همون ThreadPoolExecutor و همزمان با هم fetch می‌شن.
         """
         try:
             if industry_codes is None:
@@ -174,9 +176,15 @@ class UnifiedDataFetcher:
             else:
                 from config import INDUSTRY_NAMES
 
+            enabled_funds = {
+                key: cfg for key, cfg in self.fund_types.items()
+                if cfg.get("enabled", True)
+            }
+
             logger.info(
-                f"📥 دریافت موازی API اول"
-                f" ({len(industry_codes)} صنعت، max_workers={FETCH_MAX_WORKERS})..."
+                f"📥 دریافت موازی API اول "
+                f"({len(industry_codes)} صنعت + {len(enabled_funds)} نوع صندوق، "
+                f"max_workers={FETCH_MAX_WORKERS})..."
             )
 
             all_rows: List[Dict] = []
@@ -184,20 +192,27 @@ class UnifiedDataFetcher:
             fail_count = 0
 
             # ----------------------------------------
-            # 1. fetch موازی همه صنایع
+            # fetch موازی صنایع + صندوق‌ها در یک batch
             # ----------------------------------------
             with ThreadPoolExecutor(max_workers=FETCH_MAX_WORKERS) as executor:
-                future_to_code = {
-                    executor.submit(self._fetch_industry_data, code): code
-                    for code in industry_codes
-                }
+                future_to_task: Dict = {}
 
-                for future in as_completed(future_to_code):
-                    code = future_to_code[future]
+                for code in industry_codes:
+                    future = executor.submit(self._fetch_slug_data, code, f"صنعت {code}")
+                    future_to_task[future] = ("industry", code)
+
+                for key, cfg in enabled_funds.items():
+                    future = executor.submit(self._fetch_slug_data, cfg["slug"], cfg["name"])
+                    future_to_task[future] = ("fund", key)
+
+                for future in as_completed(future_to_task):
+                    task_type, key = future_to_task[future]
+                    label = f"صنعت {key}" if task_type == "industry" else self.fund_types[key]["name"]
+
                     try:
                         data = future.result()
                     except Exception as e:
-                        logger.error(f"❌ صنعت {code}: خطای غیرمنتظره: {e}")
+                        logger.error(f"❌ {label}: خطای غیرمنتظره: {e}")
                         fail_count += 1
                         continue
 
@@ -206,51 +221,30 @@ class UnifiedDataFetcher:
                         continue
 
                     rows = self._rows_to_dicts(data)
-                    for row_dict in rows:
-                        row_dict["industry_code"] = code
-                        row_dict["industry_name"] = INDUSTRY_NAMES.get(code, "نامشخص")
-                        row_dict["is_fund"] = False
-                        row_dict["fund_type"] = None
+                    if task_type == "industry":
+                        for row_dict in rows:
+                            row_dict["industry_code"] = key
+                            row_dict["industry_name"] = INDUSTRY_NAMES.get(key, "نامشخص")
+                            row_dict["is_fund"] = False
+                            row_dict["fund_type"] = None
+                    else:
+                        cfg = self.fund_types[key]
+                        for row_dict in rows:
+                            row_dict["industry_code"] = cfg["slug"]
+                            row_dict["industry_name"] = cfg["name"]
+                            row_dict["is_fund"] = True
+                            row_dict["fund_type"] = key
+
                     all_rows.extend(rows)
                     success_count += 1
 
             logger.info(
-                f"  ✅ صنایع: {success_count} موفق، {fail_count} ناموفق"
-                f" ({len(all_rows)} سهم)"
+                f"  ✅ {success_count} موفق، {fail_count} ناموفق "
+                f"(از {len(future_to_task)} درخواست، {len(all_rows)} رکورد)"
             )
 
             # ----------------------------------------
-            # 2. صندوق‌های اهرمی
-            # ----------------------------------------
-            if self.include_leveraged_funds:
-                logger.info("  📊 دریافت صندوق‌های اهرمی...")
-                leveraged_data = self._fetch_leveraged_funds_data()
-                rows = self._rows_to_dicts(leveraged_data)
-                for row_dict in rows:
-                    row_dict["industry_code"] = "leveraged-funds"
-                    row_dict["industry_name"] = "صندوق‌های اهرمی"
-                    row_dict["is_fund"] = True
-                    row_dict["fund_type"] = "leveraged"
-                all_rows.extend(rows)
-                logger.info(f"    ✅ {len(rows)} صندوق اهرمی")
-
-            # ----------------------------------------
-            # 3. صندوق‌های بخشی
-            # ----------------------------------------
-            if self.include_sector_funds:
-                logger.info("  📊 دریافت صندوق‌های بخشی...")
-                sector_data = self._fetch_sector_funds_data()
-                rows = self._rows_to_dicts(sector_data)
-                for row_dict in rows:
-                    row_dict["industry_code"] = "sector-funds"
-                    row_dict["industry_name"] = "صندوق‌های بخشی"
-                    row_dict["is_fund"] = True
-                    row_dict["fund_type"] = "sector"
-                all_rows.extend(rows)
-                logger.info(f"    ✅ {len(rows)} صندوق بخشی")
-
-            # ----------------------------------------
-            # 4. DataFrame نهایی
+            # DataFrame نهایی
             # ----------------------------------------
             if not all_rows:
                 logger.warning("⚠️ API اول: هیچ داده‌ای دریافت نشد")
@@ -258,14 +252,12 @@ class UnifiedDataFetcher:
 
             df = pd.DataFrame(all_rows)
 
-            total_stocks   = len(df[df["is_fund"] == False])
-            total_lev      = len(df[df["fund_type"] == "leveraged"])
-            total_sec      = len(df[df["fund_type"] == "sector"])
-
+            total_stocks = len(df[df["is_fund"] == False])
             logger.info(f"✅ API اول: {len(df)} رکورد")
             logger.info(f"    • سهام صنایع: {total_stocks}")
-            logger.info(f"    • صندوق‌های اهرمی: {total_lev}")
-            logger.info(f"    • صندوق‌های بخشی: {total_sec}")
+            for key, cfg in enabled_funds.items():
+                count = len(df[df["fund_type"] == key])
+                logger.info(f"    • {cfg['name']}: {count}")
 
             return df
 
