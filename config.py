@@ -120,8 +120,48 @@ INDUSTRY_NAMES = {
 # ========================================
 # تنظیمات صندوق‌ها
 # ========================================
-INCLUDE_LEVERAGED_FUNDS = True  # دریافت صندوق‌های اهرمی
-INCLUDE_SECTOR_FUNDS = True  # دریافت صندوق‌های بخشی
+FUND_TYPES = {
+    "index": {
+        "slug": "index-funds",
+        "name": "صندوق‌های شاخصی",
+        "enabled": True,
+    },
+    "real_state": {
+        "slug": "real-state-funds",
+        "name": "صندوق‌های املاک",
+        "enabled": True,
+    },
+    "fund_in_fund": {
+        "slug": "fund-in-funds",
+        "name": "صندوق‌های فراصندوق",
+        "enabled": True,
+    },
+    "classic_stock": {
+        "slug": "classic-stock-funds",
+        "name": "صندوق‌های سهامی کلاسیک",
+        "enabled": True,
+    },
+    "mixed": {
+        "slug": "mixed-funds",
+        "name": "صندوق‌های مختلط",
+        "enabled": True,
+    },
+    "energy": {
+        "slug": "energy-funds",
+        "name": "صندوق‌های انرژی",
+        "enabled": True,
+    },
+    "leveraged": {
+        "slug": "leveraged-funds",
+        "name": "صندوق‌های اهرمی",
+        "enabled": True,
+    },
+    "sector": {
+        "slug": "sector-funds",
+        "name": "صندوق‌های بخشی",
+        "enabled": True,
+    },
+}
 
 # ========================================
 # تنظیمات فیلترها
