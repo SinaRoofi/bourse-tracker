@@ -555,6 +555,8 @@ class BourseDataProcessor:
                 "godrat_kharid",
                 "value",
                 "sarane_forosh",
+                "marketcap",
+                "5_day_return",
             ]
 
             # فقط ستون‌های موجود را انتخاب کنیم
