@@ -37,6 +37,13 @@ def _format_price(value: float) -> str:
     return f"{value:,.0f}"
 
 
+def _format_marketcap_trillion(value: float) -> str:
+    """کمتر از 1 (هزار میلیارد) -> 2 رقم اعشار (مثلاً 0.75)؛ در غیر این صورت بدون اعشار."""
+    if pd.isna(value) or value == 0:
+        return "0"
+    return f"{value:.2f}" if value < 1 else f"{value:.0f}"
+
+
 # ============================================================
 # Line builders مشترک — پارامتری، برای پوشش تفاوت‌های واقعی
 # (بولد/غیربولد، لیبل، نام ستون) بدون کپی کد
@@ -71,6 +78,21 @@ def line_value_ratio(bold: bool = True) -> LineBuilder:
         return f"📊 حجم نسبی: {text}\n"
 
     return _builder
+
+
+def line_marketcap(row: pd.Series) -> Optional[str]:
+    if "marketcap" not in row or pd.isna(row["marketcap"]):
+        return None
+    value_in_trillion = row["marketcap"] / 1000  # میلیارد -> هزار میلیارد تومان
+    return f"🏦 ارزش بازار: {_format_marketcap_trillion(value_in_trillion)} هزار میلیارد تومان\n"
+
+
+def line_5_day_return(row: pd.Series) -> Optional[str]:
+    if "5_day_return" not in row or pd.isna(row["5_day_return"]):
+        return None
+    value = row["5_day_return"]
+    emoji = "🟢" if value > 0 else "🔴" if value < 0 else "⚪"
+    return f"{emoji} بازدهی 5 روز اخیر: <b>{value:+.2f}%</b>\n"
 
 
 def line_sarane_kharid(label: str = "سرانه خرید", bold: bool = False) -> LineBuilder:
@@ -217,6 +239,7 @@ FILTER_DISPLAY_CONFIG = {
             line_godrat_5day_avg,
             line_pol_hagigi(),
             line_pol_power(),
+            line_5_day_return, line_marketcap,
         ],
     ),
     "filter_2_sarane_cross": FilterDisplay(
@@ -230,6 +253,7 @@ FILTER_DISPLAY_CONFIG = {
             line_godrat_kharid(label="قدرت خرید"),  # FIX: قبلاً "قدرت خریدار" بود
             line_pol_hagigi(),
             line_pol_power(),
+            line_5_day_return, line_marketcap,
         ],
     ),
     "filter_3_watchlist": FilterDisplay(
@@ -246,6 +270,7 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_kharid(),
             line_pol_hagigi(),
             line_pol_power(),
+            line_5_day_return, line_marketcap,
         ],
     ),
     "filter_4_range_mosbat": FilterDisplay(
@@ -257,6 +282,7 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_kharid(),
             line_pol_hagigi(),
             line_pol_power(),
+            line_5_day_return, line_marketcap,
         ],
     ),
     "filter_5_pol_hagigi_ratio": FilterDisplay(
@@ -273,6 +299,7 @@ FILTER_DISPLAY_CONFIG = {
             line_godrat_kharid(),  # FIX: قبلاً "قدرت خریدار" بود
             line_pol_hagigi(),
             line_pol_power(),
+            line_5_day_return, line_marketcap,
         ],
     ),
     "filter_6_tick_time": FilterDisplay(
@@ -285,6 +312,7 @@ FILTER_DISPLAY_CONFIG = {
             line_godrat_kharid(),
             line_pol_hagigi(),
             line_pol_power(),
+            line_5_day_return, line_marketcap,
         ],
     ),
     "filter_7_suspicious_volume": None,   # از default_alert استفاده می‌کنه
@@ -301,6 +329,7 @@ FILTER_DISPLAY_CONFIG = {
             line_godrat_kharid(),
             line_pol_hagigi(),
             line_pol_power(),
+            line_5_day_return, line_marketcap,
         ],
     ),
     "filter_11_hoghooghi_haghighi_strong_buy": FilterDisplay(
@@ -317,6 +346,7 @@ FILTER_DISPLAY_CONFIG = {
             line_godrat_kharid(),
             line_pol_hagigi(always_negative_abs=True),
             line_pol_power_negative(),
+            line_5_day_return, line_marketcap,
         ],
     ),
 }
@@ -329,6 +359,7 @@ DEFAULT_ALERT_TITLES = {
 DEFAULT_ALERT_LINES = [
     line_price, line_value, line_value_ratio(bold=True),
     line_sarane_kharid(), line_godrat_kharid(), line_pol_hagigi(), line_pol_power(),
+    line_5_day_return, line_marketcap,
 ]
 
 
