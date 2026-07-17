@@ -107,6 +107,16 @@ def line_sarane_kharid(label: str = "سرانه خرید", bold: bool = False) -
     return _builder
 
 
+def line_sarane_diff(row: pd.Series) -> Optional[str]:
+    if "sarane_kharid" not in row or "sarane_forosh" not in row:
+        return None
+    if pd.isna(row["sarane_kharid"]) or pd.isna(row["sarane_forosh"]):
+        return None
+    diff = row["sarane_kharid"] - row["sarane_forosh"]
+    emoji = "🟢" if diff > 0 else "🔴" if diff < 0 else "⚪"
+    return f"{emoji} اختلاف سرانه: {diff:+.0f} میلیون تومان\n"
+
+
 def line_godrat_kharid(label: str = "قدرت خرید", bold: bool = False) -> LineBuilder:
     def _builder(row: pd.Series) -> Optional[str]:
         if "godrat_kharid" not in row or pd.isna(row["godrat_kharid"]):
@@ -235,6 +245,7 @@ FILTER_DISPLAY_CONFIG = {
         lines=[
             line_price, line_value, line_value_ratio(bold=True),
             line_sarane_kharid(bold=False),
+            line_sarane_diff,
             line_godrat_kharid(bold=True),
             line_godrat_5day_avg,
             line_pol_hagigi(),
@@ -250,6 +261,7 @@ FILTER_DISPLAY_CONFIG = {
             line_price, line_value,
             line_value_ratio(bold=True),  # FIX: قبلاً بولد نبود، حالا یکسان با بقیه
             line_sarane_kharid(label="سرانه خرید"),
+            line_sarane_diff,
             line_godrat_kharid(label="قدرت خرید"),  # FIX: قبلاً "قدرت خریدار" بود
             line_pol_hagigi(),
             line_pol_power(),
@@ -268,6 +280,7 @@ FILTER_DISPLAY_CONFIG = {
             line_price, line_threshold, line_final_price, line_value,
             line_value_ratio(bold=True),
             line_sarane_kharid(),
+            line_sarane_diff,
             line_pol_hagigi(),
             line_pol_power(),
             line_5_day_return, line_marketcap,
@@ -280,6 +293,8 @@ FILTER_DISPLAY_CONFIG = {
         lines=[
             line_price, line_value, line_value_ratio(bold=True),
             line_sarane_kharid(),
+            line_sarane_diff,
+            line_godrat_kharid(),  # FIX: خط قدرت خرید جا افتاده بود
             line_pol_hagigi(),
             line_pol_power(),
             line_5_day_return, line_marketcap,
@@ -296,6 +311,7 @@ FILTER_DISPLAY_CONFIG = {
         lines=[
             line_price, line_value, line_value_ratio(bold=True),
             line_sarane_kharid(),
+            line_sarane_diff,
             line_godrat_kharid(),  # FIX: قبلاً "قدرت خریدار" بود
             line_pol_hagigi(),
             line_pol_power(),
@@ -309,6 +325,7 @@ FILTER_DISPLAY_CONFIG = {
         lines=[
             line_price, line_tick_diff, line_value, line_value_ratio(bold=True),
             line_sarane_kharid(),
+            line_sarane_diff,
             line_godrat_kharid(),
             line_pol_hagigi(),
             line_pol_power(),
@@ -326,6 +343,7 @@ FILTER_DISPLAY_CONFIG = {
             line_price, line_buy_queue_value, line_buy_order,
             line_value, line_value_ratio(bold=True),
             line_sarane_kharid(),
+            line_sarane_diff,
             line_godrat_kharid(),
             line_pol_hagigi(),
             line_pol_power(),
@@ -343,6 +361,7 @@ FILTER_DISPLAY_CONFIG = {
         lines=[
             line_price, line_value, line_value_ratio(bold=True),
             line_sarane_kharid(),  # FIX: قبلاً بولد بود، حالا یکسان با بقیه
+            line_sarane_diff,
             line_godrat_kharid(),
             line_pol_hagigi(always_negative_abs=True),
             line_pol_power_negative(),
@@ -358,7 +377,7 @@ DEFAULT_ALERT_TITLES = {
 }
 DEFAULT_ALERT_LINES = [
     line_price, line_value, line_value_ratio(bold=True),
-    line_sarane_kharid(), line_godrat_kharid(), line_pol_hagigi(), line_pol_power(),
+    line_sarane_kharid(), line_sarane_diff, line_godrat_kharid(), line_pol_hagigi(), line_pol_power(),
     line_5_day_return, line_marketcap,
 ]
 
