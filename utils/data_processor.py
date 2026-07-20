@@ -552,6 +552,7 @@ class BourseDataProcessor:
                 "sarane_kharid",
                 "pol_hagigi",
                 "value_to_avg_monthly_value",
+                "pol_hagigi_to_avg_monthly_value",  # FIX: بدون این ستون، line_pol_power() در فیلتر 10 همیشه None برمی‌گردوند و "قدرت پول" اصلاً چاپ نمی‌شد
                 "godrat_kharid",
                 "value",
                 "sarane_forosh",
