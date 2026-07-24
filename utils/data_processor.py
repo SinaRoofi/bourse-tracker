@@ -558,6 +558,9 @@ class BourseDataProcessor:
                 "sarane_forosh",
                 "marketcap",
                 "5_day_return",
+                "avg_5_day_pol_hagigi",
+                "avg_20_day_pol_hagigi",
+                "is_fund",
             ]
 
             # فقط ستون‌های موجود را انتخاب کنیم
