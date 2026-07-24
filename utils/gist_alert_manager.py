@@ -163,8 +163,9 @@ class GistAlertManager:
         ذخیره هشدارهای ارسال‌شده در Gist
 
         Args:
-            alerts: لیست تاپل‌های (symbol, alert_type, value)
+            alerts: لیست تاپل‌های (symbol, alert_type, value) یا (symbol, alert_type, value, is_fund)
                     value می‌تواند None باشد (برای فیلترهایی که value ندارند)
+                    is_fund می‌تواند None باشد (یعنی نامشخص)
         """
         if not alerts:
             return True
@@ -186,8 +187,12 @@ class GistAlertManager:
 
         new_items = []
         for item in alerts:
-            # پشتیبانی از هر دو فرمت: (symbol, alert_type) و (symbol, alert_type, value)
-            if len(item) == 3:
+            # پشتیبانی از سه فرمت: (symbol, alert_type)، (symbol, alert_type, value)
+            # و (symbol, alert_type, value, is_fund)
+            is_fund = None
+            if len(item) == 4:
+                s, t, val, is_fund = item
+            elif len(item) == 3:
                 s, t, val = item
             else:
                 s, t = item
@@ -197,6 +202,8 @@ class GistAlertManager:
                 entry = {"symbol": s, "alert_type": t}
                 if val is not None:
                     entry["value"] = val
+                if is_fund is not None:
+                    entry["is_fund"] = bool(is_fund)
                 new_items.append(entry)
 
         if not new_items:
