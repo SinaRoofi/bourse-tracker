@@ -28,7 +28,7 @@ def _format_symbol_hashtag(symbol: str) -> str:
 def _format_billion(value: float) -> str:
     if pd.isna(value) or value == 0:
         return "0"
-    return f"{value:.2f}" if value >= 1 else f"{value:.3f}"
+    return f"{value:.2f}" if abs(value) >= 1 else f"{value:.3f}"
 
 
 def _format_price(value: float) -> str:
