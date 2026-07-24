@@ -1,127 +1,286 @@
 """
-Entry point برای Daily Summary Reporter
-فقط یک‌بار در روز و فقط بعد از ساعت 12:30 تهران اجرا می‌شود
+ماژول تولید گزارش خلاصه روزانه
+تحلیل نمادهای پرتکرار از هشدارهای ثبت شده در Gist
++ ارسال Top-5 نمادهای برتر هر فیلتر
 """
 
-import asyncio
-from datetime import datetime
-import pytz
-import sys
 import logging
+from datetime import datetime
+import jdatetime
+import pytz
+from typing import Dict, List
 
-from utils.daily_summary_generator import DailySummaryGenerator
-from utils.alerts import TelegramAlert
-from utils.gist_alert_manager import GistAlertManager
-from utils.holidays import is_trading_day
-from config import GIST_TOKEN, GIST_ID
-
-# ===========================
-# تنظیم timezone تهران
-# ===========================
-TEHRAN_TZ = pytz.timezone("Asia/Tehran")
-
-# ===========================
-# تنظیم logging به وقت تهران
-# ===========================
-def tehran_time(*args):
-    return datetime.now(TEHRAN_TZ).timetuple()
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler("daily_summary.log", encoding="utf-8"),
-    ],
-)
-logging.Formatter.converter = tehran_time
 logger = logging.getLogger(__name__)
 
+TEHRAN_TZ = pytz.timezone("Asia/Tehran")
 
-def should_send_summary_by_time() -> bool:
-    """فقط بعد از 12:30 تهران"""
-    now = datetime.now(TEHRAN_TZ)
-    if now.hour < 12:
-        return False
-    if now.hour == 12 and now.minute < 30:
-        return False
-    return True
+# عنوان فارسی و واحد هر فیلتر برای نمایش در پیام
+FILTER_META = {
+    "filter_1_strong_buying": {
+        "title": "قدرت خرید قوی",
+        "emoji": "💪",
+        "unit": "",
+        "format": ".2f",
+    },
+    "filter_2_sarane_cross": {
+        "title": "کراس سرانه خرید",
+        "emoji": "📈",
+        "unit": "M",
+        "format": ".0f",
+    },
+    "filter_5_pol_hagigi_ratio": {
+        "title": "ورود پول حقیقی قوی",
+        "emoji": "💎",
+        "unit": "%",
+        "format": ".0f",
+        "multiplier": 100,
+    },
+    "filter_7_suspicious_volume": {
+        "title": "حجم مشکوک",
+        "emoji": "🔍",
+        "unit": "%",
+        "format": ".0f",
+        "multiplier": 100,
+    },
+    "filter_10_heavy_buy_queue": {
+        "title": "صف خرید با اردر سنگین",
+        "emoji": "💰",
+        "unit": "B",
+        "format": ".2f",
+    },
+    "filter_11_hoghooghi_haghighi_strong_buy": {
+        "title": "خرید حقوقی و حقیقی قوی",
+        "emoji": "🏦",
+        "unit": "M",
+        "format": ".0f",
+    },
+}
 
 
-def is_trading_day_today() -> bool:
-    now = datetime.now(TEHRAN_TZ)
-    if not is_trading_day(now):
-        logger.info("⏭️ امروز روز معاملاتی بورس نیست (آخر هفته یا تعطیل رسمی)")
-        return False
-    return True
+class DailySummaryGenerator:
+    """کلاس تولید و ارسال گزارش خلاصه روزانه"""
 
+    def __init__(self, alert_manager, telegram_alert):
+        self.alert_manager = alert_manager
+        self.telegram = telegram_alert
+        self.today_jalali = jdatetime.date.today().strftime("%Y-%m-%d")
 
-async def main_async():
-    logger.info("=" * 80)
-    logger.info("📊 Daily Summary Reporter")
-    logger.info("=" * 80)
+    # ------------------------------------------------------------------
+    # نمادهای پرتکرار
+    # ------------------------------------------------------------------
+    async def get_frequent_symbols(self, min_count: int = 3, top_n: int = None) -> Dict[str, int]:
+        logger.info(f"📊 شروع تحلیل هشدارهای امروز ({self.today_jalali})...")
 
-    try:
-        # 1) چک روز معاملاتی (روز کاری + غیرتعطیل)
-        if not is_trading_day_today():
-            logger.info("⏭️ امروز روز معاملاتی بورس نیست — خروج بدون ارسال")
-            return
+        data = await self.alert_manager._load_gist_content()
+        today_alerts = data.get(self.today_jalali, [])
 
-        # 2) چک زمان
-        now = datetime.now(TEHRAN_TZ)
-        current_time = now.strftime("%H:%M")
+        if not today_alerts:
+            logger.warning("⚠️ هیچ هشداری برای امروز یافت نشد")
+            return {}
 
-        if not should_send_summary_by_time():
-            logger.info(f"⏭️ هنوز زود است. ساعت فعلی: {current_time}")
-            return
+        logger.info(f"✅ {len(today_alerts)} هشدار یافت شد")
 
-        logger.info(f"✅ ساعت {current_time} - عبور از شرط زمانی")
+        symbol_count = {}
+        for alert in today_alerts:
+            symbol = alert.get("symbol")
+            if symbol:
+                symbol_count[symbol] = symbol_count.get(symbol, 0) + 1
 
-        # 3) بررسی تنظیمات
-        if not all([GIST_TOKEN, GIST_ID]):
-            logger.error("❌ GIST_TOKEN و GIST_ID باید تنظیم شوند")
-            sys.exit(1)
+        frequent_symbols = {
+            symbol: count
+            for symbol, count in symbol_count.items()
+            if count >= min_count
+        }
 
-        # 4) init manager
-        telegram_alert = TelegramAlert()
-        alert_manager = GistAlertManager(GIST_TOKEN, GIST_ID)
-        summary_generator = DailySummaryGenerator(alert_manager, telegram_alert)
+        if not frequent_symbols:
+            logger.info(f"ℹ️ هیچ نمادی بیش از {min_count} بار تکرار نشده")
+            return {}
 
-        # 5) چک ارسال‌شدن قبلی (قفل روزانه)
-        if await alert_manager.is_today_summary_sent():
-            logger.info("⏭️ خلاصه امروز قبلاً ارسال شده — خروج")
-            return
+        sorted_symbols = sorted(frequent_symbols.items(), key=lambda x: x[1], reverse=True)
 
-        logger.info("🚀 شروع تولید و ارسال خلاصه روزانه")
+        if top_n is not None:
+            sorted_symbols = sorted_symbols[:top_n]
 
-        # 6) تولید و ارسال
-        success = await summary_generator.generate_and_send(
-            min_count=3,
-            top_n=None
-        )
+        logger.info(f"🎯 {len(sorted_symbols)} نماد پرتکرار یافت شد")
+        return dict(sorted_symbols)
 
-        # 7) ثبت قفل روزانه
-        if success:
-            await alert_manager.mark_today_summary_sent()
-            logger.info("=" * 80)
-            logger.info("✅ خلاصه روزانه با موفقیت ارسال و ثبت شد")
-            logger.info("=" * 80)
+    # ------------------------------------------------------------------
+    # Top-5 هر فیلتر
+    # ------------------------------------------------------------------
+    async def get_top_symbols_per_filter(self, top_n: int = 5) -> Dict[str, List[dict]]:
+        """
+        دریافت top_n نماد برتر برای هر فیلتر بر اساس value ذخیره‌شده در Gist
+
+        Returns:
+            dict: {filter_name: [{"symbol": ..., "value": ...}, ...]}
+        """
+        data = await self.alert_manager._load_gist_content()
+        today_alerts = data.get(self.today_jalali, [])
+
+        if not today_alerts:
+            return {}
+
+        # گروه‌بندی بر اساس filter_name — فقط فیلترهایی که در FILTER_META هستن
+        filter_groups: Dict[str, List[dict]] = {}
+        for alert in today_alerts:
+            filter_name = alert.get("alert_type")
+            if filter_name not in FILTER_META:
+                continue
+            if "value" not in alert or alert["value"] is None:
+                continue
+            if alert.get("is_fund"):  # فقط سهام - صندوق‌ها حذف می‌شن
+                continue
+            filter_groups.setdefault(filter_name, []).append(alert)
+
+        # dedup: برای هر نماد فقط بالاترین value نگه داشته می‌شه
+        result = {}
+        for filter_name, items in filter_groups.items():
+            # آخرین entry هر نماد (ترتیب Gist = ترتیب زمانی)
+            last_per_symbol = {}
+            for item in items:
+                last_per_symbol[item["symbol"]] = item
+            sorted_items = sorted(last_per_symbol.values(), key=lambda x: x["value"], reverse=True)
+            result[filter_name] = sorted_items[:top_n]
+
+        logger.info(f"🏆 Top-{top_n} فیلترها: {list(result.keys())}")
+        return result
+
+    # ------------------------------------------------------------------
+    # فرمت پیام نمادهای پرتکرار
+    # ------------------------------------------------------------------
+    def format_summary_message(
+        self,
+        frequent_symbols: Dict[str, int],
+        total_unique_symbols: int
+    ) -> str:
+        date_str, time_str = self._get_tehran_datetime()
+
+        message = "📊 <b>خلاصه هشدارها</b>\n\n"
+
+        if frequent_symbols:
+            count_groups = {}
+            for symbol, count in frequent_symbols.items():
+                count_groups.setdefault(count, []).append(symbol)
+
+            for count in sorted(count_groups.keys(), reverse=True):
+                symbols_list = sorted(count_groups[count])
+                hashtags = " ".join([f"#{self._format_symbol_hashtag(s)}" for s in symbols_list])
+                message += f"<b>({count}×)</b> {hashtags}\n"
         else:
-            logger.error("❌ خطا در ارسال خلاصه روزانه")
-            sys.exit(1)
+            message += "هیچ نماد پرتکراری نبود\n"
 
-    except KeyboardInterrupt:
-        logger.info("⚠️ اجرا متوقف شد")
-        sys.exit(0)
+        message += f"\n🎯 {len(frequent_symbols)} نماد پرتکرار از {total_unique_symbols} نماد هشداردهنده\n\n"
+        message += f"📅 {date_str} | 🕐 {time_str}\n"
+        message += f"📢 {self.telegram.channel_name}"
 
-    except Exception as e:
-        logger.error(f"❌ خطای غیرمنتظره: {e}", exc_info=True)
-        sys.exit(1)
+        return message
 
+    # ------------------------------------------------------------------
+    # فرمت پیام Top-5 فیلترها
+    # ------------------------------------------------------------------
+    def format_top_filter_message(self, top_per_filter: Dict[str, List[dict]]) -> str:
+        """
+        فرمت پیام Top-5 نمادهای برتر هر فیلتر
 
-def main():
-    asyncio.run(main_async())
+        Returns:
+            str: پیام آماده برای ارسال به تلگرام
+        """
+        if not top_per_filter:
+            return ""
 
+        date_str, time_str = self._get_tehran_datetime()
 
-if __name__ == "__main__":
-    main()
+        message = "🏆 <b>برترین نمادها — امروز</b>\n\n"
+
+        for filter_name, items in top_per_filter.items():
+            meta = FILTER_META.get(filter_name, {})
+            emoji = meta.get("emoji", "📌")
+            title = meta.get("title", filter_name)
+            unit = meta.get("unit", "")
+            fmt = meta.get("format", ".2f")
+            multiplier = meta.get("multiplier", 1)
+
+            message += f"{emoji} <b>#{title.replace(' ', '_')}</b>\n"
+
+            for i, item in enumerate(items, 1):
+                symbol = self._format_symbol_hashtag(item["symbol"])
+                raw_val = item["value"] * multiplier
+                val_str = format(raw_val, fmt)
+                unit_str = f" {unit}" if unit else ""
+                message += f"  {i}. #{symbol} — {val_str}{unit_str}\n"
+
+            message += "\n"
+
+        message += f"📅 {date_str} | 🕐 {time_str}\n"
+        message += f"📢 {self.telegram.channel_name}"
+
+        return message
+
+    # ------------------------------------------------------------------
+    # Utils
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _format_symbol_hashtag(symbol: str) -> str:
+        if not symbol:
+            return ""
+        return str(symbol).replace(' ', '_').replace('\u200c', '_').strip()
+
+    @staticmethod
+    def _get_tehran_datetime() -> tuple:
+        now = datetime.now(TEHRAN_TZ)
+        jnow = jdatetime.datetime.fromgregorian(datetime=now.replace(tzinfo=None))
+        date_str = jnow.strftime("%Y/%m/%d")
+        time_str = now.strftime("%H:%M")
+        return date_str, time_str
+
+    # ------------------------------------------------------------------
+    # تولید و ارسال — هر دو پیام
+    # ------------------------------------------------------------------
+    async def generate_and_send(self, min_count: int = 3, top_n: int = None) -> bool:
+        """
+        تولید و ارسال دو پیام:
+          ۱. خلاصه نمادهای پرتکرار
+          ۲. Top-5 برترین نمادهای هر فیلتر
+
+        Returns:
+            bool: True اگر هر دو پیام موفق باشند
+        """
+        try:
+            data = await self.alert_manager._load_gist_content()
+            today_alerts = data.get(self.today_jalali, [])
+            total_unique_symbols = len(set(
+                alert["symbol"] for alert in today_alerts if alert.get("symbol")
+            ))
+
+            # پیام ۱: نمادهای پرتکرار
+            frequent_symbols = await self.get_frequent_symbols(min_count, top_n)
+            message1 = self.format_summary_message(frequent_symbols, total_unique_symbols)
+
+            logger.info("📤 ارسال پیام خلاصه نمادهای پرتکرار...")
+            success1 = await self.telegram.send_message(message1, parse_mode='HTML')
+
+            if success1:
+                logger.info("✅ پیام خلاصه ارسال شد")
+            else:
+                logger.error("❌ خطا در ارسال پیام خلاصه")
+
+            # پیام ۲: Top-5 هر فیلتر
+            top_per_filter = await self.get_top_symbols_per_filter(top_n=5)
+            message2 = self.format_top_filter_message(top_per_filter)
+
+            success2 = True
+            if message2:
+                logger.info("📤 ارسال پیام Top-5 فیلترها...")
+                success2 = await self.telegram.send_message(message2, parse_mode='HTML')
+                if success2:
+                    logger.info("✅ پیام Top-5 ارسال شد")
+                else:
+                    logger.error("❌ خطا در ارسال پیام Top-5")
+            else:
+                logger.info("ℹ️ داده‌ای برای Top-5 موجود نیست")
+
+            return success1 and success2
+
+        except Exception as e:
+            logger.error(f"❌ خطا در تولید گزارش خلاصه: {e}", exc_info=True)
+            return False
