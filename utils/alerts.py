@@ -169,7 +169,7 @@ def line_pol_hagigi_5day_avg(row: pd.Series) -> Optional[str]:
     else:
         # داده‌ی 20 روزه در دسترس نیست - بازگشت به علامت خودِ مقدار
         emoji = "🟢" if value > 0 else "🔴" if value < 0 else "⚪"
-    return f"{emoji} میانگین ورود پول حقیقی 5 روز: {_format_billion(value)} میلیارد تومان\n"
+    return f"{emoji} پول حقیقی 5 روز: {_format_billion(value)} میلیارد تومان\n"
 
 
 def line_pol_power(column: str = "pol_hagigi_to_avg_monthly_value") -> LineBuilder:
