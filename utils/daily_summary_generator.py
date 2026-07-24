@@ -128,6 +128,8 @@ class DailySummaryGenerator:
                 continue
             if "value" not in alert or alert["value"] is None:
                 continue
+            if alert.get("is_fund"):  # فقط سهام - صندوق‌ها حذف می‌شن
+                continue
             filter_groups.setdefault(filter_name, []).append(alert)
 
         # dedup: برای هر نماد فقط بالاترین value نگه داشته می‌شه
