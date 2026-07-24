@@ -183,7 +183,7 @@ SARANE_CROSS_CONFIG = {
     "min_sarane_kharid": 100,
 }
 
-# فیلتر 3: نمادهای خاص
+# فیلتر 3: عبور از آستانه
 WATCHLIST_SYMBOLS = {
     "شپنا": 2.5,
     "فملی": 2.5,
@@ -198,7 +198,7 @@ range_mosbat = {
     "min_value_to_avg_monthly": 0.5,
 }
 
-# فیلتر 5: نسبت پول حقیقی
+# فیلتر 5: ورود پول حقیقی قوی
 POL_HAGIGI_FILTER_CONFIG = {
     "min_pol_to_value_ratio": 0.5,
     "min_sarane_kharid": 100,
@@ -217,7 +217,7 @@ SUSPICIOUS_VOLUME_CONFIG = {
     "min_value_to_avg_ratio": 2.0,
 }
 
-# فیلتر 8: نوسان‌گیری
+# فیلتر 8: نوسان‌ گیری
 SWING_TRADE_CONFIG = {
     "min_allowed_price": -2.8,
     "max_last_change_percent": -1.0,
@@ -226,14 +226,14 @@ SWING_TRADE_CONFIG = {
     "min_value_to_avg_monthly": 1.0,
 }
 
-# فیلتر 9: یک ساعت اول
+# فیلتر 9: نیم ساعت اول
 FIRST_HOUR_CONFIG = {
     "min_value_to_avg_ratio": 1.0,
     "start_hour": 9,
     "end_hour": 10,
 }
 
-# فیلتر 10: صف خرید میلیاردی
+# فیلتر 10: صف خرید با اردر سنگین
 HEAVY_BUY_QUEUE_CONFIG = {
     "min_buy_order": 100,  # میلیون تومان
     "min_buy_queue_value": 2,  # میلیارد تومان
