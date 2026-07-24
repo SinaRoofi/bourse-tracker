@@ -4,6 +4,7 @@ from datetime import datetime
 import jdatetime
 import pytz
 import asyncio
+import pandas as pd
 
 from config import (
     MARKET_START_TIME,
@@ -183,17 +184,22 @@ async def send_alerts_for_filters_async(
                     f"❌ خطا در ارسال {filter_name} گروه {chunk_idx}: {result}"
                 )
             elif result:
-                # استخراج value برای هر نماد از chunk_to_send
+                # استخراج value و is_fund برای هر نماد از chunk_to_send
                 for s in symbols:
                     val = None
-                    if value_col and value_col in chunk_to_send.columns:
-                        row = chunk_to_send[chunk_to_send["symbol"] == s]
-                        if not row.empty:
+                    is_fund = None
+                    row = chunk_to_send[chunk_to_send["symbol"] == s]
+                    if not row.empty:
+                        if value_col and value_col in chunk_to_send.columns:
                             try:
                                 val = float(row.iloc[0][value_col])
                             except (ValueError, TypeError):
                                 val = None
-                    successful_marks.append((s, filter_name, val))
+                        if "is_fund" in chunk_to_send.columns:
+                            is_fund_val = row.iloc[0]["is_fund"]
+                            if pd.notna(is_fund_val):
+                                is_fund = bool(is_fund_val)
+                    successful_marks.append((s, filter_name, val, is_fund))
 
                 sent_count += len(symbols)
                 logger.info(
