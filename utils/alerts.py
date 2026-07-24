@@ -95,6 +95,14 @@ def line_5_day_return(row: pd.Series) -> Optional[str]:
     return f"{emoji} بازدهی 5 روز اخیر: <b>{value:+.2f}%</b>\n"
 
 
+def line_diff_buy_sell_order(row: pd.Series) -> Optional[str]:
+    if "diff_buy_sell_order" not in row or pd.isna(row["diff_buy_sell_order"]):
+        return None
+    value = row["diff_buy_sell_order"]
+    emoji = "🟢" if value > 0 else "🔴" if value < 0 else "⚪"
+    return f"{emoji} چربش اردر: {value:+.2f} میلیارد تومان\n"
+
+
 def line_sarane_kharid(label: str = "سرانه خرید", bold: bool = False) -> LineBuilder:
     def _builder(row: pd.Series) -> Optional[str]:
         if "sarane_kharid" not in row or pd.isna(row["sarane_kharid"]):
@@ -144,6 +152,24 @@ def line_pol_hagigi(always_negative_abs: bool = False) -> LineBuilder:
         return f"{emoji} ورود پول حقیقی: {_format_billion(row['pol_hagigi'])} میلیارد تومان\n"
 
     return _builder
+
+
+def line_pol_hagigi_5day_avg(row: pd.Series) -> Optional[str]:
+    """
+    میانگین ورود پول حقیقی 5 روز اخیر.
+    رنگ/ایموجی صرفاً بر اساس مقایسه‌ی میانگین 5 روزه با میانگین 20 روزه تعیین می‌شه
+    (روند تقویت‌شونده = سبز، روند تضعیف‌شونده = قرمز) - نه بر اساس علامت خودِ مقدار.
+    """
+    if "avg_5_day_pol_hagigi" not in row or pd.isna(row["avg_5_day_pol_hagigi"]):
+        return None
+    value = row["avg_5_day_pol_hagigi"]
+    avg_20 = row.get("avg_20_day_pol_hagigi")
+    if avg_20 is not None and pd.notna(avg_20):
+        emoji = "🟢" if value > avg_20 else "🔴"
+    else:
+        # داده‌ی 20 روزه در دسترس نیست - بازگشت به علامت خودِ مقدار
+        emoji = "🟢" if value > 0 else "🔴" if value < 0 else "⚪"
+    return f"{emoji} میانگین ورود پول حقیقی 5 روز: {_format_billion(value)} میلیارد تومان\n"
 
 
 def line_pol_power(column: str = "pol_hagigi_to_avg_monthly_value") -> LineBuilder:
@@ -249,7 +275,9 @@ FILTER_DISPLAY_CONFIG = {
             line_godrat_kharid(bold=True),
             line_godrat_5day_avg,
             line_pol_hagigi(),
+            line_pol_hagigi_5day_avg,
             line_pol_power(),
+            line_diff_buy_sell_order,
             line_5_day_return, line_marketcap,
         ],
     ),
@@ -264,7 +292,9 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_diff,
             line_godrat_kharid(label="قدرت خرید"),  # FIX: قبلاً "قدرت خریدار" بود
             line_pol_hagigi(),
+            line_pol_hagigi_5day_avg,
             line_pol_power(),
+            line_diff_buy_sell_order,
             line_5_day_return, line_marketcap,
         ],
     ),
@@ -282,7 +312,9 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_kharid(),
             line_sarane_diff,
             line_pol_hagigi(),
+            line_pol_hagigi_5day_avg,
             line_pol_power(),
+            line_diff_buy_sell_order,
             line_5_day_return, line_marketcap,
         ],
     ),
@@ -296,7 +328,9 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_diff,
             line_godrat_kharid(),  # FIX: خط قدرت خرید جا افتاده بود
             line_pol_hagigi(),
+            line_pol_hagigi_5day_avg,
             line_pol_power(),
+            line_diff_buy_sell_order,
             line_5_day_return, line_marketcap,
         ],
     ),
@@ -314,7 +348,9 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_diff,
             line_godrat_kharid(),  # FIX: قبلاً "قدرت خریدار" بود
             line_pol_hagigi(),
+            line_pol_hagigi_5day_avg,
             line_pol_power(),
+            line_diff_buy_sell_order,
             line_5_day_return, line_marketcap,
         ],
     ),
@@ -328,7 +364,9 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_diff,
             line_godrat_kharid(),
             line_pol_hagigi(),
+            line_pol_hagigi_5day_avg,
             line_pol_power(),
+            line_diff_buy_sell_order,
             line_5_day_return, line_marketcap,
         ],
     ),
@@ -346,6 +384,7 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_diff,
             line_godrat_kharid(),
             line_pol_hagigi(),
+            line_pol_hagigi_5day_avg,
             line_pol_power(),
             line_5_day_return, line_marketcap,
         ],
@@ -364,7 +403,9 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_diff,
             line_godrat_kharid(),
             line_pol_hagigi(always_negative_abs=True),
+            line_pol_hagigi_5day_avg,
             line_pol_power_negative(),
+            line_diff_buy_sell_order,
             line_5_day_return, line_marketcap,
         ],
     ),
@@ -377,7 +418,10 @@ DEFAULT_ALERT_TITLES = {
 }
 DEFAULT_ALERT_LINES = [
     line_price, line_value, line_value_ratio(bold=True),
-    line_sarane_kharid(), line_sarane_diff, line_godrat_kharid(), line_pol_hagigi(), line_pol_power(),
+    line_sarane_kharid(), line_sarane_diff, line_godrat_kharid(), line_pol_hagigi(),
+    line_pol_hagigi_5day_avg,
+    line_pol_power(),
+    line_diff_buy_sell_order,
     line_5_day_return, line_marketcap,
 ]
 
