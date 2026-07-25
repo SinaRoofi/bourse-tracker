@@ -41,7 +41,7 @@ def _format_marketcap_trillion(value: float) -> str:
     """کمتر از 1 (هزار میلیارد) -> 2 رقم اعشار (مثلاً 0.75)؛ در غیر این صورت بدون اعشار."""
     if pd.isna(value) or value == 0:
         return "0"
-    return f"{value:.2f}" if value < 1 else f"{value:.0f}"
+    return f"{value:.2f}"
 
 
 # ============================================================
