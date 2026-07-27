@@ -235,7 +235,7 @@ FIRST_HOUR_CONFIG = {
 
 # فیلتر 10: صف خرید با اردر سنگین
 HEAVY_BUY_QUEUE_CONFIG = {
-    "min_buy_order": 100,  # میلیون تومان
+    "min_buy_order": 150,  # میلیون تومان
     "min_buy_queue_value": 2,  # میلیارد تومان
     "price_at_ceiling": True,  # آخرین قیمت = سقف
 }
