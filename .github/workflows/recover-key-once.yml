@@ -1,0 +1,25 @@
+name: Recover Lost Key (TEMPORARY - DELETE AFTER USE)
+on:
+  workflow_dispatch:
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write secret to JSON
+        run: |
+          python3 -c "
+          import json, os
+          data = {'BRSAPI_KEY': os.environ.get('BRSAPI_KEY', '(secret خالیه یا ست نشده)')}
+          with open('recovered_key.json', 'w') as f:
+              json.dump(data, f, ensure_ascii=False, indent=2)
+          "
+        env:
+          BRSAPI_KEY: ${{ secrets.BRSAPI_KEY }}
+
+      - name: Upload as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: recovered-key
+          path: recovered_key.json
+          retention-days: 1
