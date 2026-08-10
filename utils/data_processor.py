@@ -455,18 +455,23 @@ class BourseDataProcessor:
     # فیلتر 9: یک ساعت اول
     # ========================================
     def filter_9_first_hour(
-        self, df: pd.DataFrame, config: dict = None, current_hour: int = None
+        self,
+        df: pd.DataFrame,
+        config: dict = None,
+        current_hour: int = None,
+        current_minute: int = None,
     ) -> pd.DataFrame:
         if df.empty:
             return df
 
-        if current_hour is None:
+        if current_hour is None or current_minute is None:
             from datetime import datetime
             import pytz
 
             tehran_tz = pytz.timezone("Asia/Tehran")
             now_tehran = datetime.now(tehran_tz)
             current_hour = now_tehran.hour
+            current_minute = now_tehran.minute
 
         if config is None:
             from config import FIRST_HOUR_CONFIG
@@ -474,16 +479,25 @@ class BourseDataProcessor:
             config = FIRST_HOUR_CONFIG
 
         start_hour = config.get("start_hour", 9)
-        end_hour = config.get("end_hour", 10)
+        start_minute = config.get("start_minute", 0)
+        end_hour = config.get("end_hour", 9)
+        end_minute = config.get("end_minute", 30)
         min_ratio = config.get("min_value_to_avg_ratio", 1.0)
 
-        if not (start_hour <= current_hour < end_hour):
+        current_total_minutes = current_hour * 60 + current_minute
+        start_total_minutes = start_hour * 60 + start_minute
+        end_total_minutes = end_hour * 60 + end_minute
+
+        if not (start_total_minutes <= current_total_minutes < end_total_minutes):
             logger.info(
-                f"فیلتر 9: خارج از بازه زمانی ({start_hour}-{end_hour}). ساعت فعلی: {current_hour}"
+                f"فیلتر 9: خارج از بازه زمانی ({start_hour:02d}:{start_minute:02d}-"
+                f"{end_hour:02d}:{end_minute:02d}). زمان فعلی: {current_hour:02d}:{current_minute:02d}"
             )
             return pd.DataFrame()
 
-        logger.info(f"اعمال فیلتر 9: یک ساعت اول (ساعت تهران: {current_hour})")
+        logger.info(
+            f"اعمال فیلتر 9: نیم ساعت اول (زمان تهران: {current_hour:02d}:{current_minute:02d})"
+        )
 
         filtered = df[df["value_to_avg_monthly_value"] >= min_ratio].copy()
 
