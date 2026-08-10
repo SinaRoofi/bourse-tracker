@@ -250,45 +250,42 @@ class BourseDataProcessor:
         return filtered
 
     # ========================================
-    # فیلتر 3: هشدار درصد تغییر نمادهای خاص
+    # فیلتر 3: واچ‌لیست شخصی - عبور از آستانه‌ی واحد
     # ========================================
     def filter_3_watchlist_symbols(
-        self, df: pd.DataFrame, watchlist: dict = None
+        self, df: pd.DataFrame, watchlist: list = None, threshold: float = None
     ) -> pd.DataFrame:
         if df.empty:
             return df
 
         if watchlist is None:
-            from config import WATCHLIST_SYMBOLS
+            from config import PERSONAL_WATCHLIST
 
-            watchlist = WATCHLIST_SYMBOLS
+            watchlist = PERSONAL_WATCHLIST
+
+        if threshold is None:
+            from config import PERSONAL_WATCHLIST_THRESHOLD
+
+            threshold = PERSONAL_WATCHLIST_THRESHOLD
 
         if not watchlist:
-            logger.warning("فیلتر 3: watchlist خالی است!")
+            logger.warning("فیلتر 3: واچ‌لیست شخصی خالی است!")
             return pd.DataFrame()
 
-        logger.info(f"اعمال فیلتر 3: بررسی {len(watchlist)} نماد")
-        filtered_list = []
+        logger.info(
+            f"اعمال فیلتر 3: بررسی {len(watchlist)} نماد واچ‌لیست (آستانه {threshold}%)"
+        )
 
-        for symbol, threshold in watchlist.items():
-            symbol_df = df[df["symbol"] == symbol]
-            if symbol_df.empty:
-                continue
+        filtered = df[
+            df["symbol"].isin(watchlist)
+            & (df["last_price_change_percent"] > threshold)
+        ].copy()
 
-            symbol_data = symbol_df.iloc[0]
-            if symbol_data["last_price_change_percent"] > threshold:
-                symbol_row = symbol_data.to_frame().T
-                symbol_row["threshold"] = threshold
-                filtered_list.append(symbol_row)
-                logger.info(
-                    f"🔔 {symbol}: {symbol_data['last_price_change_percent']:.2f}% > {threshold}%"
-                )
-
-        if not filtered_list:
+        if filtered.empty:
             logger.info("فیلتر 3: هیچ نمادی از آستانه عبور نکرد")
             return pd.DataFrame()
 
-        filtered = pd.concat(filtered_list, ignore_index=True)
+        filtered["threshold"] = threshold
         filtered = filtered.sort_values("last_price_change_percent", ascending=False)
         logger.info(f"✅ فیلتر 3: {len(filtered)} نماد از آستانه عبور کرد")
         return filtered
