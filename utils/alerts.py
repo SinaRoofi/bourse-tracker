@@ -474,7 +474,9 @@ class TelegramAlert:
     # ------------------------------------------------------------
     # موتور رندر مشترک
     # ------------------------------------------------------------
-    def _render(self, df: pd.DataFrame, filter_name: str) -> str:
+    def _render(
+        self, df: pd.DataFrame, filter_name: str, channel_label: str = None
+    ) -> str:
         if df.empty:
             return ""
 
@@ -511,7 +513,7 @@ class TelegramAlert:
                 message += "\n"
 
         date_str, time_str = self._current_tehran_jdatetime()
-        message += f"📅 {date_str} | 🕐 {time_str}\n📢 {self.channel_name}"
+        message += f"📅 {date_str} | 🕐 {time_str}\n📢 {channel_label or self.channel_name}"
         return message
 
     # ------------------------------------------------------------
@@ -550,16 +552,30 @@ class TelegramAlert:
     def format_filter_11_hoghooghi_haghighi_strong_buy(self, df):
         return self._render(df, "filter_11_hoghooghi_haghighi_strong_buy")
 
-    async def send_filter_alert(self, df: pd.DataFrame, filter_name: str) -> bool:
-        """ارسال پیام یک chunk - نسخه async"""
+    async def send_filter_alert(
+        self,
+        df: pd.DataFrame,
+        filter_name: str,
+        chat_id: str = None,
+        channel_label: str = None,
+    ) -> bool:
+        """
+        ارسال پیام یک chunk - نسخه async
+
+        chat_id: اگر داده بشه، پیام به این چت (به‌جای کانال پیش‌فرض) می‌ره
+                 (مثلاً برای کپی/روتینگ به کانال واچ‌لیست شخصی).
+        channel_label: برچسب نمایشی در فوتر پیام (📢 ...)؛ اگر ندی همون
+                       self.channel_name نمایش داده می‌شه که ممکنه با چت
+                       واقعی مقصد (وقتی chat_id override شده) یکی نباشه.
+        """
         if df.empty:
             return False
         try:
-            message = self._render(df, filter_name)
+            message = self._render(df, filter_name, channel_label=channel_label)
         except Exception as e:
             logger.error(f"❌ خطا در فرمت پیام فیلتر {filter_name}: {e}")
             return False
 
         if not message.strip():
             return False
-        return await self.send_message(message)
+        return await self.send_message(message, chat_id=chat_id)
