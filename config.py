@@ -14,6 +14,7 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 ERROR_CHAT_ID = os.getenv("ERROR_CHAT_ID", "")  # اختیاری: کانال جدا برای خطاهای فنی (فیلتر خراب)
+WATCHLIST_CHAT_ID = os.getenv("WATCHLIST_CHAT_ID", "")  # اختیاری: کانال دوم برای واچ‌لیست شخصی
 
 # ========================================
 # تنظیمات API
@@ -183,14 +184,16 @@ SARANE_CROSS_CONFIG = {
     "min_sarane_kharid": 100,
 }
 
-# فیلتر 3: عبور از آستانه
-WATCHLIST_SYMBOLS = {
-    "شپنا": 2.5,
-    "فملی": 2.5,
-    "همتا": 2.5,
-    "شفا": 2.5,
-    "دجابر": 2.5,
-}
+# فیلتر 3: واچ‌لیست شخصی — عبور از یک آستانه‌ی واحد
+# نتیجه‌ی این فیلتر همیشه فقط به WATCHLIST_CHAT_ID می‌ره (هرگز به کانال اصلی)
+PERSONAL_WATCHLIST = [
+    "شپنا",
+    "فملی",
+    "همتا",
+    "شفا",
+    "دجابر",
+]
+PERSONAL_WATCHLIST_THRESHOLD = 2.5  # درصد تغییر قیمت
 
 # فیلتر 4: رنج مثبت
 range_mosbat = {
