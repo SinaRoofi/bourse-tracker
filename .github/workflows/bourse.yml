@@ -31,6 +31,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           ERROR_CHAT_ID: ${{ secrets.ERROR_CHAT_ID }}
+          WATCHLIST_CHAT_ID: ${{ secrets.WATCHLIST_CHAT_ID }}
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
           BRSAPI_KEY: ${{ secrets.BRSAPI_KEY }}
           GIST_ID: ${{ secrets.GIST_ID }}
