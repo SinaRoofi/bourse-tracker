@@ -14,6 +14,8 @@ from config import (
     ERROR_CHAT_ID,
     GIST_ID,
     GIST_TOKEN,
+    PERSONAL_WATCHLIST,
+    WATCHLIST_CHAT_ID,
     validate_config,
 )
 from utils.holidays import is_trading_day
@@ -109,11 +111,67 @@ def chunk_dataframe(df, filter_name):
 # ===========================
 # ارسال هشدارها - نسخه Parallel
 # ===========================
+
+# پسوند dedup برای کپیِ واچ‌لیست شخصی در کانال دوم — عمداً از filter_name جدا نگه
+# داشته می‌شه تا ارسال به کانال اصلی و ارسال به کانال دوم مستقل از هم dedup بشن
+# (وگرنه چون GistAlertManager فقط بر اساس (symbol, alert_type) چک می‌کنه، ارسال
+# دوم به‌اشتباه «قبلاً ارسال شده» تشخیص داده می‌شد و رد می‌شد).
+WATCHLIST_COPY_SUFFIX = "__watchlist_copy"
+
+
+async def _queue_filter_tasks(
+    all_tasks: list,
+    alert: TelegramAlert,
+    alert_manager: GistAlertManager,
+    df: pd.DataFrame,
+    filter_name: str,
+    dedup_type: str,
+    chat_id: str,
+    channel_label: str,
+    value_col: str,
+    skipped_count: int,
+) -> int:
+    """
+    df رو chunk می‌کنه، برای هر نماد dedup چک می‌کنه، و task ارسال برای
+    chunkهایی که چیزی برای ارسال دارن به all_tasks اضافه می‌کنه.
+    مقدار جدید skipped_count رو برمی‌گردونه (چون int تو پایتون immutable هست).
+    """
+    for chunk_idx, chunk_df in enumerate(chunk_dataframe(df, filter_name), 1):
+        symbols_to_send = []
+
+        for _, row in chunk_df.iterrows():
+            symbol = row["symbol"]
+            if not await alert_manager.should_send_alert(symbol, dedup_type):
+                logger.info(f"⏭️  {symbol}: قبلاً امروز ارسال شده ({dedup_type})")
+                skipped_count += 1
+            else:
+                symbols_to_send.append(symbol)
+
+        if symbols_to_send:
+            chunk_to_send = chunk_df[chunk_df["symbol"].isin(symbols_to_send)]
+            task = alert.send_filter_alert(
+                chunk_to_send, filter_name, chat_id=chat_id, channel_label=channel_label
+            )
+            all_tasks.append(
+                (task, symbols_to_send, dedup_type, filter_name, chunk_idx, chunk_to_send, value_col)
+            )
+            logger.info(
+                f"📋 Task ایجاد شد برای {filter_name} [{dedup_type}] گروه {chunk_idx}: "
+                f"{len(symbols_to_send)} سهم"
+            )
+        else:
+            logger.info(f"⏭️  {filter_name} [{dedup_type}] گروه {chunk_idx}: همه قبلاً ارسال شده‌اند")
+
+    return skipped_count
+
+
 async def send_alerts_for_filters_async(
     alert: TelegramAlert,
     alert_manager: GistAlertManager,
     filters_results: dict,
     api_name: str,
+    personal_watchlist: set = frozenset(),
+    watchlist_chat_id: str = "",
 ) -> tuple:
     """
     ارسال هشدارها برای فیلترهای یک API به صورت کاملاً موازی
@@ -123,6 +181,13 @@ async def send_alerts_for_filters_async(
         alert_manager: شیء GistAlertManager
         filters_results: دیکشنری نتایج فیلترها
         api_name: نام API (برای لاگ)
+        personal_watchlist: مجموعه نمادهای واچ‌لیست شخصی
+        watchlist_chat_id: چت آیدی کانال دوم (واچ‌لیست شخصی)
+
+    روتینگ:
+        - filter_3_watchlist: فقط به watchlist_chat_id می‌ره (هرگز کانال اصلی)
+        - بقیه‌ی فیلترها: طبق روال به کانال اصلی + اگه symbol تو
+          personal_watchlist باشه، یک کپی هم به watchlist_chat_id
 
     Returns:
         tuple: (تعداد ارسال شده, تعداد رد شده)
@@ -142,46 +207,53 @@ async def send_alerts_for_filters_async(
             continue
 
         logger.info(f"\n🔍 پردازش فیلتر {filter_name}: {len(filtered_df)} سهم")
-
         value_col = FILTER_VALUE_COLUMN.get(filter_name)
 
-        for chunk_idx, chunk_df in enumerate(
-            chunk_dataframe(filtered_df, filter_name), 1
-        ):
-            symbols_to_send = []
-
-            for idx, row in chunk_df.iterrows():
-                symbol = row["symbol"]
-                if not await alert_manager.should_send_alert(symbol, filter_name):
-                    logger.info(f"⏭️  {symbol}: قبلاً امروز ارسال شده")
-                    skipped_count += 1
-                else:
-                    symbols_to_send.append(symbol)
-
-            if symbols_to_send:
-                chunk_to_send = chunk_df[chunk_df["symbol"].isin(symbols_to_send)]
-
-                task = alert.send_filter_alert(chunk_to_send, filter_name)
-                all_tasks.append((task, symbols_to_send, filter_name, chunk_idx, chunk_to_send, value_col))
-
-                logger.info(
-                    f"📋 Task ایجاد شد برای {filter_name} گروه {chunk_idx}: {len(symbols_to_send)} سهم"
+        if filter_name == "filter_3_watchlist":
+            # فقط کانال دوم - هرگز کانال اصلی
+            if not watchlist_chat_id:
+                logger.warning(
+                    "⚠️ WATCHLIST_CHAT_ID تنظیم نشده - نتایج فیلتر 3 نادیده گرفته شد"
                 )
-            else:
-                logger.info(f"⏭️  {filter_name} گروه {chunk_idx}: همه قبلاً ارسال شده‌اند")
+                continue
+            skipped_count = await _queue_filter_tasks(
+                all_tasks, alert, alert_manager, filtered_df, filter_name,
+                dedup_type=filter_name, chat_id=watchlist_chat_id,
+                channel_label="واچ‌لیست شخصی", value_col=value_col,
+                skipped_count=skipped_count,
+            )
+            continue
+
+        # بقیه‌ی فیلترها: کانال اصلی طبق روال
+        skipped_count = await _queue_filter_tasks(
+            all_tasks, alert, alert_manager, filtered_df, filter_name,
+            dedup_type=filter_name, chat_id=None, channel_label=None,
+            value_col=value_col, skipped_count=skipped_count,
+        )
+
+        # کپی نمادهای واچ‌لیست شخصی به کانال دوم
+        if watchlist_chat_id and personal_watchlist:
+            watchlist_rows = filtered_df[filtered_df["symbol"].isin(personal_watchlist)]
+            if not watchlist_rows.empty:
+                skipped_count = await _queue_filter_tasks(
+                    all_tasks, alert, alert_manager, watchlist_rows, filter_name,
+                    dedup_type=f"{filter_name}{WATCHLIST_COPY_SUFFIX}",
+                    chat_id=watchlist_chat_id, channel_label="واچ‌لیست شخصی",
+                    value_col=value_col, skipped_count=skipped_count,
+                )
 
     if all_tasks:
         logger.info(f"\n🚀 شروع ارسال موازی {len(all_tasks)} پیام...")
 
-        tasks_only = [task for task, _, _, _, _, _ in all_tasks]
+        tasks_only = [task for task, _, _, _, _, _, _ in all_tasks]
         results = await asyncio.gather(*tasks_only, return_exceptions=True)
 
         successful_marks = []
 
-        for result, (_, symbols, filter_name, chunk_idx, chunk_to_send, value_col) in zip(results, all_tasks):
+        for result, (_, symbols, dedup_type, filter_name, chunk_idx, chunk_to_send, value_col) in zip(results, all_tasks):
             if isinstance(result, Exception):
                 logger.error(
-                    f"❌ خطا در ارسال {filter_name} گروه {chunk_idx}: {result}"
+                    f"❌ خطا در ارسال {filter_name} [{dedup_type}] گروه {chunk_idx}: {result}"
                 )
             elif result:
                 # استخراج value و is_fund برای هر نماد از chunk_to_send
@@ -199,14 +271,14 @@ async def send_alerts_for_filters_async(
                             is_fund_val = row.iloc[0]["is_fund"]
                             if pd.notna(is_fund_val):
                                 is_fund = bool(is_fund_val)
-                    successful_marks.append((s, filter_name, val, is_fund))
+                    successful_marks.append((s, dedup_type, val, is_fund))
 
                 sent_count += len(symbols)
                 logger.info(
-                    f"✅ {filter_name} گروه {chunk_idx}: {len(symbols)} سهم ارسال شد"
+                    f"✅ {filter_name} [{dedup_type}] گروه {chunk_idx}: {len(symbols)} سهم ارسال شد"
                 )
             else:
-                logger.error(f"❌ {filter_name} گروه {chunk_idx}: خطا در ارسال")
+                logger.error(f"❌ {filter_name} [{dedup_type}] گروه {chunk_idx}: خطا در ارسال")
 
         if successful_marks:
             logger.info(f"📝 علامت‌گذاری {len(successful_marks)} هشدار در Gist...")
@@ -263,19 +335,27 @@ async def main_async():
                     "⚠️ ERROR_CHAT_ID تنظیم نشده — هشدار خطای فیلتر فقط در لاگ ثبت شد"
                 )
 
+        personal_watchlist = set(PERSONAL_WATCHLIST)
+        if not WATCHLIST_CHAT_ID:
+            logger.warning(
+                "⚠️ WATCHLIST_CHAT_ID تنظیم نشده — فیلتر 3 و کپی واچ‌لیست شخصی غیرفعال می‌مونن"
+            )
+
         total_sent = 0
         total_skipped = 0
 
         if "api1" in all_results and all_results["api1"]:
             sent, skipped = await send_alerts_for_filters_async(
-                alert, alert_manager, all_results["api1"], "API اول (فیلترهای 1-9)"
+                alert, alert_manager, all_results["api1"], "API اول (فیلترهای 1-9)",
+                personal_watchlist, WATCHLIST_CHAT_ID,
             )
             total_sent += sent
             total_skipped += skipped
 
         if "api2" in all_results and all_results["api2"]:
             sent, skipped = await send_alerts_for_filters_async(
-                alert, alert_manager, all_results["api2"], "API دوم (فیلتر 10)"
+                alert, alert_manager, all_results["api2"], "API دوم (فیلتر 10)",
+                personal_watchlist, WATCHLIST_CHAT_ID,
             )
             total_sent += sent
             total_skipped += skipped
