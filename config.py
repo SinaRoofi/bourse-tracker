@@ -226,11 +226,13 @@ SWING_TRADE_CONFIG = {
     "min_value_to_avg_monthly": 1.0,
 }
 
-# فیلتر 9: نیم ساعت اول
+# فیلتر 9: نیم ساعت اول (۹:۰۰ تا ۹:۳۰)
 FIRST_HOUR_CONFIG = {
     "min_value_to_avg_ratio": 1.0,
     "start_hour": 9,
-    "end_hour": 10,
+    "start_minute": 0,
+    "end_hour": 9,
+    "end_minute": 30,
 }
 
 # فیلتر 10: صف خرید با اردر سنگین
