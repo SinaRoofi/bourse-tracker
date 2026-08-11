@@ -1,6 +1,7 @@
 import asyncio
+import time
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import pandas as pd
 import jdatetime
@@ -429,12 +430,38 @@ DEFAULT_ALERT_LINES = [
 class TelegramAlert:
     """کلاس ارسال هشدارها به تلگرام - نسخه Async & Parallel"""
 
+    # فاصله‌ی حداقلی بین دو ارسال متوالی به یک چت مشخص (per-chat).
+    # طبق core.telegram.org/bots/faq: تو یک چت معمولی ~1 پیام/ثانیه؛ ولی طبق
+    # مستندات python-telegram-bot (AIORateLimiter)، چون API نمی‌تونه کانال
+    # رو از سوپرگروه تشخیص بده، کانال‌ها هم زیر محدودیت گروهی (۲۰ پیام/دقیقه
+    # ≈ هر ۳ ثانیه) قرار می‌گیرن نه ۱ ثانیه. تو لاگ واقعی این پروژه با sleep=4s
+    # هیچ RetryAfterای دیده نشد با نرخ ~۰.۷۵ پیام/ثانیه به یک کانال - یعنی رفتار
+    # واقعی این چت‌ها محافظه‌کارتر از سقف ۲۰/دقیقه‌ی مستندشده است. عدد زیر یه
+    # نقطه‌ی میانی معقوله؛ RetryAfter هندلر پایین safety net واقعیه.
+    SEND_DELAY_SECONDS = 1.5
+
+    # سقف کلی هم‌زمانی بین همه‌ی چت‌ها با هم (طبق حد ~30 پیام/ثانیه‌ی سراسری
+    # تلگرام برای broadcast به چت‌های مختلف). با تعداد کم چت (۲-۳ تا) عملاً
+    # هیچ‌وقت به این سقف نمی‌رسیم؛ فقط برای محافظت در صورت اضافه‌شدن چت‌های بیشتر.
+    GLOBAL_CONCURRENCY = 10
+
     def __init__(self, channel_name: str = "@tehran_stock_alerts"):
         self.bot_token = TELEGRAM_BOT_TOKEN
         self.chat_id = TELEGRAM_CHAT_ID
         self.channel_name = channel_name
         self.bot = Bot(token=self.bot_token)
-        self.semaphore = asyncio.Semaphore(3)
+
+        # هر چت قفل مستقل خودش رو داره - یعنی ارسال به کانال اصلی و کانال
+        # واچ‌لیست کاملاً موازی پیش می‌رن (چون محدودیت تلگرام per-chat هست، نه
+        # global بین کل بات)، ولی ارسال‌های متوالی به همون یک چت سریالایز می‌شن.
+        self._chat_locks: Dict[str, asyncio.Lock] = {}
+        self._chat_last_sent: Dict[str, float] = {}
+        self._global_semaphore = asyncio.Semaphore(self.GLOBAL_CONCURRENCY)
+
+    def _get_chat_lock(self, chat_id: str) -> asyncio.Lock:
+        if chat_id not in self._chat_locks:
+            self._chat_locks[chat_id] = asyncio.Lock()
+        return self._chat_locks[chat_id]
 
     def _current_tehran_jdatetime(self):
         tehran_tz = pytz.timezone("Asia/Tehran")
@@ -445,15 +472,33 @@ class TelegramAlert:
         self, message: str, parse_mode: str = "HTML", chat_id: str = None
     ) -> bool:
         target_chat_id = chat_id or self.chat_id
-        async with self.semaphore:
-            try:
-                await self.bot.send_message(
-                    chat_id=target_chat_id, text=message, parse_mode=parse_mode
-                )
-                await asyncio.sleep(4)
+        chat_lock = self._get_chat_lock(target_chat_id)
+
+        # قفل per-chat: تضمین می‌کنه دو ارسال هم‌زمان به همون چت مشخص پیش
+        # نره (که باعث flood control می‌شه)، بدون اینکه ارسال به یک چت دیگه
+        # رو بلاک کنه.
+        async with chat_lock:
+            last_sent = self._chat_last_sent.get(target_chat_id)
+            if last_sent is not None:
+                elapsed = time.monotonic() - last_sent
+                remaining = self.SEND_DELAY_SECONDS - elapsed
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
+
+            async def _attempt() -> bool:
+                async with self._global_semaphore:
+                    await self.bot.send_message(
+                        chat_id=target_chat_id, text=message, parse_mode=parse_mode
+                    )
+                self._chat_last_sent[target_chat_id] = time.monotonic()
                 return True
+
+            try:
+                return await _attempt()
             except RetryAfter as e:
-                logger.warning(f"⚠️ Flood control: انتظار {e.retry_after} ثانیه")
+                logger.warning(
+                    f"⚠️ Flood control (چت {target_chat_id}): انتظار {e.retry_after} ثانیه"
+                )
                 await asyncio.sleep(e.retry_after)
             except TimedOut:
                 logger.warning("⚠️ Timeout - تلاش مجدد")
@@ -463,10 +508,7 @@ class TelegramAlert:
                 return False
 
             try:
-                await self.bot.send_message(
-                    chat_id=target_chat_id, text=message, parse_mode=parse_mode
-                )
-                return True
+                return await _attempt()
             except Exception as retry_error:
                 logger.error(f"❌ خطا در تلاش مجدد: {retry_error}")
                 return False
