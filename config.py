@@ -191,7 +191,7 @@ PERSONAL_WATCHLIST = [
     "فملی",
     "غمایه",
     "دفارا",
-    "دجابر",
+    "فزر",
 ]
 PERSONAL_WATCHLIST_THRESHOLD = 2.5  # درصد تغییر قیمت
 
