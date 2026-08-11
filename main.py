@@ -4,6 +4,7 @@ from datetime import datetime
 import jdatetime
 import pytz
 import asyncio
+import time
 import pandas as pd
 
 from config import (
@@ -219,7 +220,7 @@ async def send_alerts_for_filters_async(
             skipped_count = await _queue_filter_tasks(
                 all_tasks, alert, alert_manager, filtered_df, filter_name,
                 dedup_type=filter_name, chat_id=watchlist_chat_id,
-                channel_label="واچ‌لیست شخصی", value_col=value_col,
+                channel_label="WatchList", value_col=value_col,
                 skipped_count=skipped_count,
             )
             continue
@@ -238,7 +239,7 @@ async def send_alerts_for_filters_async(
                 skipped_count = await _queue_filter_tasks(
                     all_tasks, alert, alert_manager, watchlist_rows, filter_name,
                     dedup_type=f"{filter_name}{WATCHLIST_COPY_SUFFIX}",
-                    chat_id=watchlist_chat_id, channel_label="واچ‌لیست شخصی",
+                    chat_id=watchlist_chat_id, channel_label="WatchList",
                     value_col=value_col, skipped_count=skipped_count,
                 )
 
@@ -296,6 +297,7 @@ async def main_async():
     logger.info("=" * 80)
 
     try:
+        t_run_start = time.time()
         validate_config()
         logger.info("✅ تنظیمات معتبر است")
 
@@ -307,12 +309,15 @@ async def main_async():
         fetcher = UnifiedDataFetcher(api1_base_url=API_BASE_URL, api2_key=BRSAPI_KEY)
         df_api1_raw, df_api2_raw = fetcher.fetch_all_data()
 
+        t_process_start = time.time()
         logger.info("\n🔄 شروع پردازش داده‌ها...")
         processor = BourseDataProcessor()
         df_api1, df_api2 = processor.process_all_data(df_api1_raw, df_api2_raw)
 
         logger.info("\n🔍 اعمال فیلترها...")
         all_results = processor.apply_all_filters(df_api1, df_api2)
+        t_process_end = time.time()
+        logger.info(f"⏱️ پردازش + فیلترها: {t_process_end - t_process_start:.1f}s")
 
         logger.info("\n📤 شروع ارسال هشدارها به تلگرام...")
         alert = TelegramAlert()
@@ -343,6 +348,7 @@ async def main_async():
 
         total_sent = 0
         total_skipped = 0
+        t_send_start = time.time()
 
         if "api1" in all_results and all_results["api1"]:
             sent, skipped = await send_alerts_for_filters_async(
@@ -360,6 +366,9 @@ async def main_async():
             total_sent += sent
             total_skipped += skipped
 
+        t_send_end = time.time()
+        logger.info(f"⏱️ فاز ارسال هشدارها: {t_send_end - t_send_start:.1f}s")
+
         stats = await alert_manager.get_today_stats()
         logger.info("\n" + "=" * 80)
         logger.info("📊 گزارش نهایی:")
@@ -371,6 +380,7 @@ async def main_async():
         for alert_type, count in stats["alerts_by_type"].items():
             logger.info(f"    - {alert_type}: {count}")
         logger.info(f"  • Gist: {alert_manager.get_gist_url()}")
+        logger.info(f"  • ⏱️ زمان کل اجرا: {time.time() - t_run_start:.1f}s")
         logger.info("=" * 80)
         logger.info("✅ اجرا با موفقیت به پایان رسید")
 
