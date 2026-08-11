@@ -189,7 +189,7 @@ SARANE_CROSS_CONFIG = {
 PERSONAL_WATCHLIST = [
     "شپنا",
     "فملی",
-    "همتا",
+    "غمایه",
     "شفا",
     "دجابر",
 ]
