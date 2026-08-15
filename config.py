@@ -19,7 +19,7 @@ WATCHLIST_CHAT_ID = os.getenv("WATCHLIST_CHAT_ID", "")  # اختیاری: کان
 # ========================================
 # تنظیمات API
 # ========================================
-API_BASE_URL = os.getenv("API_BASE_URL")  # tradersarena.ir - endpoint /data/industries/{slug}/snapshot
+API_BASE_URL = os.getenv("API_BASE_URL")
 
 # ========================================
 # GitHub Gist
