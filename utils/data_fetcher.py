@@ -1,9 +1,9 @@
 import copy
+import time
 import requests
 import pandas as pd
 import logging
 from typing import Optional, Dict, List, Tuple
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
@@ -11,51 +11,149 @@ logger = logging.getLogger(__name__)
 # ========================================
 # تنظیمات fetch
 # ========================================
-FETCH_TIMEOUT = 10          # ثانیه (به جای 30)
+FETCH_TIMEOUT = 10          # ثانیه
 FETCH_RETRIES = 1           # یک‌بار retry
 FETCH_RETRY_DELAY = 1       # ثانیه بین retry‌ها
 FETCH_MAX_WORKERS = 12      # تعداد thread‌های موازی (صنایع + صندوق‌ها با هم، ~48 درخواست)
 
+# بازه‌ی زمانی پیش‌فرض برای اندپوینت snapshot (روز معاملاتی)
+SNAPSHOT_TIMEFRAME = 12
+
+
+# ========================================
+# helper سراسری: خوندن مقدار از دیکشنری تودرتو با دات-پث
+# مثال: get_path(row, "live.market.prices.close")
+# ========================================
+def get_path(d: dict, path: str, default=None):
+    cur = d
+    for part in path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return default
+        cur = cur[part]
+    return cur
+
+
+# ========================================
+# mapping: یک ردیف از JSON جدید (endpoint /snapshot) -> همون شکل ستون‌های
+# قدیمی (api1_columns سابق) که data_processor.py انتظارشون رو داره.
+#
+# نکته‌ی مهم: همه‌ی مقادیر پولی اینجا خام (ریال) برگردونده می‌شن - دقیقاً
+# مثل رفتار CSV قدیمی. تقسیم به تومان/میلیون/میلیارد همونطور که قبلاً هم
+# بود توی data_processor._clean_and_prepare_api1 انجام می‌شه، اینجا لازم
+# نیست تکرار بشه.
+#
+# فیلدهای "buy_order" / "buy_queue_value" / "ceiling_price" جایگزین API
+# دوم (BrsApi) هستن؛ از سطح اول صف سفارش (levels[0]) و سقف قیمت مجاز
+# ساخته می‌شن (فقط برای سهام - صندوق‌ها ceiling_price ندارن).
+# ========================================
+def map_snapshot_row_to_old_schema(row: dict) -> dict:
+    kind = row.get("kind")
+    is_fund = kind != "STOCK"
+
+    if is_fund:
+        marketcap = get_path(row, "live.market.valuation.netAsset")
+        value_to_marketcap = get_path(row, "live.market.valuation.valueToNetAssetPercent")
+    else:
+        marketcap = get_path(row, "live.market.valuation.marketValue")
+        value_to_marketcap = get_path(row, "live.market.valuation.valueToMarketValuePercent")
+
+    levels = get_path(row, "live.market.orders.levels", []) or []
+    lvl1 = levels[0] if levels else {}
+    bid_price = lvl1.get("bidPrice")
+    bid_volume = lvl1.get("bidVolume")
+    bid_count = lvl1.get("bidCount")
+
+    if bid_price and bid_volume:
+        buy_queue_value = bid_price * bid_volume  # خام (ریال) - ارزش کل صف خرید سطح ۱
+    else:
+        buy_queue_value = 0
+
+    if bid_price and bid_volume and bid_count:
+        buy_order = (bid_price * bid_volume) / bid_count  # خام (ریال) - سرانه‌ی هر سفارش
+    else:
+        buy_order = 0
+
+    return {
+        "id": row.get("id"),
+        "symbol": row.get("symbol"),
+
+        "volume": get_path(row, "live.market.trading.volume"),
+        "value": get_path(row, "live.market.trading.value"),
+
+        "first_price": get_path(row, "live.market.prices.open"),
+        "first_price_change_percent": get_path(row, "live.market.changes.openPercent"),
+        "high_price": get_path(row, "live.market.prices.high"),
+        "high_price_change_percent": get_path(row, "live.market.changes.highPercent"),
+        "low_price": get_path(row, "live.market.prices.low"),
+        "low_price_change_percent": get_path(row, "live.market.changes.lowPercent"),
+        "last_price": get_path(row, "live.market.prices.close"),
+        "last_price_change_percent": get_path(row, "live.market.changes.closePercent"),
+        "final_price": get_path(row, "live.market.prices.closing"),
+        "final_price_change_percent": get_path(row, "live.market.changes.closingPercent"),
+
+        # قبلاً مستقیم توی CSV بود؛ معادلش درصد فاصله‌ی آخرین قیمت تا پایانی‌ست
+        "diff_last_final": get_path(row, "live.market.changes.closeToClosingPercent"),
+
+        "volatility": None,  # هیچ‌جای فیلترها/آلارم‌ها استفاده نمی‌شه
+
+        "sarane_kharid": get_path(row, "live.market.clientType.realBuyPerCapitaValue"),
+        "sarane_forosh": get_path(row, "live.market.clientType.realSellPerCapitaValue"),
+        "godrat_kharid": get_path(row, "live.market.clientType.buyPower"),
+        "pol_hagigi": get_path(row, "live.market.clientType.moneyFlowValue"),
+
+        "buy_order_value": get_path(row, "live.market.orders.buyValue"),
+        "sell_order_value": get_path(row, "live.market.orders.sellValue"),
+        "diff_buy_sell_order": get_path(row, "live.market.orders.netValue"),
+
+        "avg_5_day_pol_hagigi": get_path(row, "static.marketHistory.averageMoneyFlow.5"),
+        "avg_20_day_pol_hagigi": get_path(row, "static.marketHistory.averageMoneyFlow.20"),
+        "avg_60_day_pol_hagigi": get_path(row, "static.marketHistory.averageMoneyFlow.60"),
+
+        "5_day_pol_hagigi": get_path(row, "static.marketHistory.cumulativeMoneyFlow.5"),
+        "20_day_pol_hagigi": get_path(row, "static.marketHistory.cumulativeMoneyFlow.20"),
+        "60_day_pol_hagigi": get_path(row, "static.marketHistory.cumulativeMoneyFlow.60"),
+
+        "5_day_godrat_kharid": get_path(row, "static.marketHistory.buyPower.5"),
+        "20_day_godrat_kharid": get_path(row, "static.marketHistory.buyPower.20"),
+
+        "avg_monthly_value": get_path(row, "static.marketHistory.averageValue.20"),
+        "value_to_avg_monthly_value": get_path(row, "live.market.historyDerived.valueToAverage.20"),
+        "avg_3_month_value": get_path(row, "static.marketHistory.averageValue.60"),
+        "value_to_avg_3_month_value": get_path(row, "live.market.historyDerived.valueToAverage.60"),
+        "avg_5_day_value": get_path(row, "static.marketHistory.averageValue.5"),
+
+        "5_day_return": get_path(row, "live.market.historyDerived.priceReturns.5"),
+        "20_day_return": get_path(row, "live.market.historyDerived.priceReturns.20"),
+        "60_day_return": get_path(row, "live.market.historyDerived.priceReturns.60"),
+
+        "marketcap": marketcap,
+        "value_to_marketcap": value_to_marketcap,
+
+        "col51": None,  # هیچ‌جا استفاده نمی‌شه
+
+        # --- فقط صندوق‌ها: NAV / حباب ---
+        "bubble_percent": get_path(row, "live.fund.bubblePercent") if is_fund else None,
+        "avg_1_month_bubble": get_path(row, "static.fund.bubbleHistory.average.20") if is_fund else None,
+
+        # --- جایگزین API دوم (BrsApi) برای فیلتر ۱۰ ---
+        "buy_order": buy_order,              # خام (ریال) - سرانه‌ی هر سفارش صف خرید سطح ۱
+        "buy_queue_value": buy_queue_value,   # خام (ریال) - ارزش کل صف خرید سطح ۱
+        "ceiling_price": get_path(row, "static.fundamentals.highThreshold"),  # فقط سهام
+    }
+
 
 class UnifiedDataFetcher:
-    """کلاس یکپارچه برای دریافت داده از هر دو API"""
+    """کلاس دریافت داده از endpoint جدید tradersarena (data/industries/{slug}/snapshot)"""
 
-    def __init__(self, api1_base_url: str = None, api2_key: str = None):
+    def __init__(self, api1_base_url: str = None, snapshot_timeframe: int = SNAPSHOT_TIMEFRAME):
         self.api1_base_url = api1_base_url
-
-        self.api2_key = api2_key
-        self.api2_base_url = "https://Api.BrsApi.ir/Tsetmc"
-
-        self.api1_columns = [
-            "id", "symbol", "volume", "value",
-            "first_price", "first_price_change_percent",
-            "high_price", "high_price_change_percent",
-            "low_price", "low_price_change_percent",
-            "last_price", "last_price_change_percent",
-            "final_price", "final_price_change_percent",
-            "diff_last_final", "volatility",
-            "sarane_kharid", "sarane_forosh", "godrat_kharid",
-            "pol_hagigi",
-            "buy_order_value", "sell_order_value", "diff_buy_sell_order",
-            "avg_5_day_pol_hagigi", "avg_20_day_pol_hagigi", "avg_60_day_pol_hagigi",
-            "5_day_pol_hagigi", "20_day_pol_hagigi", "60_day_pol_hagigi",
-            "5_day_godrat_kharid", "20_day_godrat_kharid",
-            "avg_monthly_value", "value_to_avg_monthly_value",
-            "avg_3_month_value", "value_to_avg_3_month_value",
-            "5_day_return", "20_day_return", "60_day_return",
-            "marketcap", "value_to_marketcap", "col51",
-        ]
+        self.snapshot_timeframe = snapshot_timeframe
 
         self.session_api1 = requests.Session()
         self.session_api1.headers.update({
             "User-Agent": "Mozilla/5.0",
             "Accept": "application/json, text/plain, */*",
         })
-
-        self.headers_api2 = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json, text/plain, */*",
-        }
 
         try:
             from config import FUND_TYPES
@@ -80,14 +178,14 @@ class UnifiedDataFetcher:
     # هلپر: GET با retry
     # ========================================
 
-    def _get_with_retry(self, url: str, label: str = "") -> Optional[requests.Response]:
+    def _get_with_retry(self, url: str, label: str = "", params: dict = None) -> Optional[requests.Response]:
         """
         GET با timeout کوتاه و یک retry خودکار.
         برای 504 و Timeout سریع fail می‌کنه به جای انتظار طولانی.
         """
         for attempt in range(FETCH_RETRIES + 1):
             try:
-                response = self.session_api1.get(url, timeout=FETCH_TIMEOUT)
+                response = self.session_api1.get(url, params=params, timeout=FETCH_TIMEOUT)
 
                 if response.status_code == 200:
                     return response
@@ -110,7 +208,6 @@ class UnifiedDataFetcher:
                 logger.error(f"❌ {label}: Connection error: {e}")
                 return None
 
-            # اگر retry باقی مانده
             if attempt < FETCH_RETRIES:
                 time.sleep(FETCH_RETRY_DELAY)
 
@@ -118,43 +215,30 @@ class UnifiedDataFetcher:
         return None
 
     # ========================================
-    # پارس کردن response به list of dicts
+    # پارس کردن response جدید (dict با کلید "rows") به list of dicts خام
     # ========================================
 
     def _parse_response(self, response: requests.Response) -> List[Dict]:
         try:
             json_data = response.json()
-            data = (
-                json_data["data"]
-                if isinstance(json_data, dict) and "data" in json_data
-                else json_data
-            )
-            return data if isinstance(data, list) else []
+            rows = json_data.get("rows", []) if isinstance(json_data, dict) else []
+            return rows if isinstance(rows, list) else []
         except Exception as e:
             logger.error(f"❌ خطا در parse JSON: {e}")
             return []
 
-    def _rows_to_dicts(self, data: List) -> List[Dict]:
-        result = []
-        for row in data:
-            if isinstance(row, list):
-                row_dict = dict(zip(self.api1_columns, row[: len(self.api1_columns)]))
-            else:
-                row_dict = row.copy()
-            result.append(row_dict)
-        return result
-
     # ========================================
-    # fetch یک صنعت (thread-safe)
+    # fetch یک صنعت/صندوق از endpoint جدید (thread-safe)
     # ========================================
 
     def _fetch_slug_data(self, slug: str, label: str) -> List[Dict]:
         """
-        fetch عمومی برای هر endpoint زیر industries-stocks-csv/{slug}.
-        هم برای کد صنعت (مثلا '01') و هم برای slug صندوق (مثلا 'index-funds') کار می‌کنه.
+        fetch از /data/industries/{slug}/snapshot?timeframe=..&_=<cache-buster>
+        هم برای کد صنعت (مثلا '01') و هم برای slug صندوق (مثلا 'leveraged-funds') کار می‌کنه.
         """
-        url = f"{self.api1_base_url}/data/industries-stocks-csv/{slug}"
-        response = self._get_with_retry(url, label=label)
+        url = f"{self.api1_base_url}/data/industries/{slug}/snapshot"
+        params = {"timeframe": self.snapshot_timeframe, "_": int(time.time() * 1000)}
+        response = self._get_with_retry(url, label=label, params=params)
         if response is None:
             return []
         return self._parse_response(response)
@@ -165,7 +249,7 @@ class UnifiedDataFetcher:
 
     def fetch_from_api1(self, industry_codes: List[str] = None) -> Optional[pd.DataFrame]:
         """
-        دریافت موازی داده از API اول.
+        دریافت موازی داده از endpoint جدید.
         صنایع و همه‌ی انواع صندوق (FUND_TYPES) در یک batch واحد،
         با همون ThreadPoolExecutor و همزمان با هم fetch می‌شن.
         """
@@ -182,7 +266,7 @@ class UnifiedDataFetcher:
             }
 
             logger.info(
-                f"📥 دریافت موازی API اول "
+                f"📥 دریافت موازی از endpoint جدید "
                 f"({len(industry_codes)} صنعت + {len(enabled_funds)} نوع صندوق، "
                 f"max_workers={FETCH_MAX_WORKERS})..."
             )
@@ -210,17 +294,18 @@ class UnifiedDataFetcher:
                     label = f"صنعت {key}" if task_type == "industry" else self.fund_types[key]["name"]
 
                     try:
-                        data = future.result()
+                        raw_rows = future.result()
                     except Exception as e:
                         logger.error(f"❌ {label}: خطای غیرمنتظره: {e}")
                         fail_count += 1
                         continue
 
-                    if not data:
+                    if not raw_rows:
                         fail_count += 1
                         continue
 
-                    rows = self._rows_to_dicts(data)
+                    rows = [map_snapshot_row_to_old_schema(r) for r in raw_rows]
+
                     if task_type == "industry":
                         for row_dict in rows:
                             row_dict["industry_code"] = key
@@ -247,13 +332,13 @@ class UnifiedDataFetcher:
             # DataFrame نهایی
             # ----------------------------------------
             if not all_rows:
-                logger.warning("⚠️ API اول: هیچ داده‌ای دریافت نشد")
+                logger.warning("⚠️ هیچ داده‌ای دریافت نشد")
                 return None
 
             df = pd.DataFrame(all_rows)
 
             total_stocks = len(df[df["is_fund"] == False])
-            logger.info(f"✅ API اول: {len(df)} رکورد")
+            logger.info(f"✅ {len(df)} رکورد")
             logger.info(f"    • سهام صنایع: {total_stocks}")
             for key, cfg in enabled_funds.items():
                 count = len(df[df["fund_type"] == key])
@@ -269,94 +354,30 @@ class UnifiedDataFetcher:
             return None
 
     # ========================================
-    # API دوم - لحظه‌ای (بدون تغییر منطقی)
+    # fetch همه‌ی داده
     # ========================================
 
-    def fetch_from_api2(self) -> Optional[pd.DataFrame]:
-        if not self.api2_key:
-            logger.warning("⚠️ کلید API دوم تنظیم نشده")
-            return None
-
-        url = f"{self.api2_base_url}/AllSymbols.php?key={self.api2_key}"
-
-        try:
-            logger.info("📥 دریافت داده از API دوم (لحظه‌ای)...")
-            response = requests.get(
-                url,
-                headers=self.headers_api2,
-                timeout=FETCH_TIMEOUT * 3,   # API دوم یک request بزرگه، timeout بیشتر
-            )
-
-            if response.status_code == 200:
-                data = response.json()
-                if isinstance(data, list) and data:
-                    df = pd.DataFrame(data)
-                    logger.info(f"✅ API دوم: {len(df)} نماد")
-                    return df
-                else:
-                    logger.error("❌ API دوم: داده خالی یا فرمت نامعتبر")
-                    return None
-            else:
-                logger.error(f"❌ API دوم: HTTP {response.status_code}")
-                return None
-
-        except requests.exceptions.Timeout:
-            logger.error("❌ API دوم: Timeout")
-            return None
-        except requests.exceptions.ConnectionError:
-            logger.error("❌ API دوم: خطای اتصال")
-            return None
-        except Exception as e:
-            logger.error(f"❌ API دوم: {e}")
-            return None
-
-    def fetch_symbol_details_api2(self, symbol: str) -> Optional[Dict]:
-        if not self.api2_key:
-            return None
-        url = f"{self.api2_base_url}/SymbolDetails.php?key={self.api2_key}&symbol={symbol}"
-        try:
-            response = requests.get(url, headers=self.headers_api2, timeout=FETCH_TIMEOUT)
-            return response.json() if response.status_code == 200 else None
-        except Exception as e:
-            logger.error(f"❌ {symbol}: {e}")
-            return None
-
-    # ========================================
-    # fetch هر دو API
-    # ========================================
-
-    def fetch_all_data(
-        self, industry_codes: List[str] = None
-    ) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
+    def fetch_all_data(self, industry_codes: List[str] = None) -> Optional[pd.DataFrame]:
         logger.info("=" * 80)
-        logger.info("🚀 شروع دریافت داده از هر دو API")
+        logger.info("🚀 شروع دریافت داده")
         logger.info("=" * 80)
 
         t0 = time.time()
-        df_api1 = self.fetch_from_api1(industry_codes)
+        df = self.fetch_from_api1(industry_codes)
         t1 = time.time()
-        df_api2 = self.fetch_from_api2()
-        t2 = time.time()
 
         logger.info("\n" + "=" * 80)
         logger.info("📊 خلاصه دریافت داده:")
         logger.info(
-            f"  • API اول (فیلتر 1-9): "
-            f"{len(df_api1) if df_api1 is not None else 0} رکورد"
+            f"  • کل: {len(df) if df is not None else 0} رکورد"
             f"  ⏱️ {t1 - t0:.1f}s"
         )
-        if df_api1 is not None and not df_api1.empty:
-            logger.info(f"    - سهام: {len(df_api1[df_api1['is_fund'] == False])}")
-            logger.info(f"    - صندوق‌ها: {len(df_api1[df_api1['is_fund'] == True])}")
-        logger.info(
-            f"  • API دوم (فیلتر 10): "
-            f"{len(df_api2) if df_api2 is not None else 0} نماد"
-            f"  ⏱️ {t2 - t1:.1f}s"
-        )
-        logger.info(f"  • ⏱️ کل زمان fetch: {t2 - t0:.1f}s")
+        if df is not None and not df.empty:
+            logger.info(f"    - سهام: {len(df[df['is_fund'] == False])}")
+            logger.info(f"    - صندوق‌ها: {len(df[df['is_fund'] == True])}")
         logger.info("=" * 80)
 
-        return df_api1, df_api2
+        return df
 
     # ========================================
     # اعتبارسنجی
@@ -372,14 +393,6 @@ class UnifiedDataFetcher:
         ]
         missing = [c for c in required if c not in df.columns]
         if missing:
-            logger.warning(f"⚠️ ستون‌های گمشده API اول: {missing}")
-            return False
-        return True
-
-    def validate_api2_data(self, df: pd.DataFrame) -> bool:
-        if df is None or df.empty:
-            return False
-        if "symbol" not in df.columns and "l18" not in df.columns:
-            logger.warning("⚠️ ستون symbol/l18 در API دوم یافت نشد")
+            logger.warning(f"⚠️ ستون‌های گمشده: {missing}")
             return False
         return True
