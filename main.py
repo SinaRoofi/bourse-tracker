@@ -308,6 +308,27 @@ async def main_async():
         fetcher = UnifiedDataFetcher(api1_base_url=API_BASE_URL)
         df_raw = fetcher.fetch_all_data()
 
+        alert = TelegramAlert()
+
+        # اگه کل fetch شکست خورده باشه (مثلاً API 404/409 بده یا سایت schema رو
+        # عوض کرده باشه) نباید بی‌سروصدا "موفق" تموم بشه - چون فرقی با
+        # "بازار امروز سیگنالی نداشت" نداره و کسی متوجه نمی‌شه.
+        if df_raw is None or df_raw.empty:
+            logger.error("❌ هیچ داده‌ای از API دریافت نشد - fetch کاملاً شکست خورد")
+            if ERROR_CHAT_ID:
+                await alert.send_message(
+                    "🔴 <b>خطای بحرانی: دریافت داده کاملاً شکست خورد</b>\n\n"
+                    "هیچ رکوردی از tradersarena.ir دریافت نشد (۴۰۴/۴۰۹/تغییر schema/قطعی).\n"
+                    "این اجرا هیچ فیلتری اجرا نکرد و هیچ هشداری بررسی نشد.\n"
+                    "لاگ کامل رو تو GitHub Actions چک کن.",
+                    chat_id=ERROR_CHAT_ID,
+                )
+            else:
+                logger.warning(
+                    "⚠️ ERROR_CHAT_ID تنظیم نشده — این خطای بحرانی فقط در لاگ ثبت شد"
+                )
+            return
+
         t_process_start = time.time()
         logger.info("\n🔄 شروع پردازش داده‌ها...")
         processor = BourseDataProcessor()
@@ -319,7 +340,6 @@ async def main_async():
         logger.info(f"⏱️ پردازش + فیلترها: {t_process_end - t_process_start:.1f}s")
 
         logger.info("\n📤 شروع ارسال هشدارها به تلگرام...")
-        alert = TelegramAlert()
         alert_manager = GistAlertManager(GIST_TOKEN, GIST_ID)
 
         # هشدار فوری اگه یکی از فیلترها امروز خطا داده باشه (کانال جدا، نه کانال اصلی)
