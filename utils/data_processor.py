@@ -16,29 +16,18 @@ class BourseDataProcessor:
     # پردازش داده‌های خام
     # ========================================
 
-    def process_all_data(
-        self, df_api1_raw: pd.DataFrame, df_api2_raw: pd.DataFrame
-    ) -> tuple:
+    def process_all_data(self, df_raw: pd.DataFrame) -> pd.DataFrame:
 
         logger.info("شروع پردازش داده‌های خام...")
 
-        # پردازش API اول
-        if df_api1_raw is not None and not df_api1_raw.empty:
-            df_api1 = self._clean_and_prepare_api1(df_api1_raw)
-            logger.info(f"✅ API اول: {len(df_api1)} سهم پردازش شد")
+        if df_raw is not None and not df_raw.empty:
+            df = self._clean_and_prepare_api1(df_raw)
+            logger.info(f"✅ {len(df)} سهم/صندوق پردازش شد")
         else:
-            df_api1 = pd.DataFrame()
-            logger.warning("⚠️ API اول خالی است")
+            df = pd.DataFrame()
+            logger.warning("⚠️ داده‌ی خام خالی است")
 
-        # پردازش API دوم
-        if df_api2_raw is not None and not df_api2_raw.empty:
-            df_api2 = self._clean_and_prepare_api2(df_api2_raw)
-            logger.info(f"✅ API دوم: {len(df_api2)} نماد پردازش شد")
-        else:
-            df_api2 = pd.DataFrame()
-            logger.warning("⚠️ API دوم خالی است")
-
-        return df_api1, df_api2
+        return df
 
     def _clean_and_prepare_api1(self, df: pd.DataFrame) -> pd.DataFrame:
         """پاکسازی و آماده‌سازی داده‌های API اول"""
@@ -81,11 +70,18 @@ class BourseDataProcessor:
             "value_to_avg_monthly_value",
             "avg_3_month_value",
             "value_to_avg_3_month_value",
+            "avg_5_day_value",
             "5_day_return",
             "20_day_return",
             "60_day_return",
             "marketcap",
             "value_to_marketcap",
+            # فیلدهای جدید (endpoint snapshot)
+            "bubble_percent",
+            "avg_1_month_bubble",
+            "buy_order",
+            "buy_queue_value",
+            "ceiling_price",
         ]
 
         for col in numeric_columns:
@@ -94,15 +90,15 @@ class BourseDataProcessor:
 
         logger.info("✅ تبدیل ستون‌های عددی API اول انجام شد")
 
-        # تقسیم ستون‌ها به 10 میلیون
-        columns_to_divide = ["sarane_kharid", "sarane_forosh"]
+        # تقسیم ستون‌ها به 10 میلیون (ریال -> میلیون تومان)
+        columns_to_divide = ["sarane_kharid", "sarane_forosh", "buy_order"]
         for col in columns_to_divide:
             if col in df.columns:
                 df[col] = df[col] / 10_000_000
 
         logger.info("✅ تقسیم ستون‌ها به 10 میلیون انجام شد")
 
-        # تقسیم ستون‌ها به 10 میلیارد
+        # تقسیم ستون‌ها به 10 میلیارد (ریال -> میلیارد تومان)
         columns_to_divide = [
             "value",
             "pol_hagigi",
@@ -118,6 +114,8 @@ class BourseDataProcessor:
             "avg_monthly_value",
             "avg_3_month_value",
             "marketcap",
+            "buy_queue_value",
+            "avg_5_day_value",
         ]
         for col in columns_to_divide:
             if col in df.columns:
@@ -143,58 +141,23 @@ class BourseDataProcessor:
             )
             df["pol_hagigi_to_avg_monthly_value"] = 0
 
-        return df
-
-    def _clean_and_prepare_api2(self, df: pd.DataFrame) -> pd.DataFrame:
-        """پاکسازی و آماده‌سازی داده‌های API دوم"""
-        # تبدیل نام ستون l18 به symbol
-        if "l18" in df.columns:
-            df = df.rename(columns={"l18": "symbol"})
-
-        # حذف ردیف‌های نال
-        if "symbol" in df.columns:
-            df = df.dropna(subset=["symbol"])
-
-        # محاسبه buy_order (میلیون تومان)
-        if all(col in df.columns for col in ["qd1", "pd1", "zd1"]):
-            df["buy_order"] = df.apply(
+        # محاسبه value_5_to_20_ratio (میانگین ارزش معاملات 5 روزه نسبت به 20 روزه)
+        if all(col in df.columns for col in ["avg_5_day_value", "avg_monthly_value"]):
+            df["value_5_to_20_ratio"] = df.apply(
                 lambda row: (
-                    (row["qd1"] * row["pd1"] / row["zd1"]) / 10_000_000
-                    if row["zd1"] != 0 and pd.notna(row["zd1"])
+                    row["avg_5_day_value"] / row["avg_monthly_value"]
+                    if row["avg_monthly_value"] != 0
+                    and pd.notna(row["avg_monthly_value"])
                     else 0
                 ),
                 axis=1,
             )
-            logger.info("✅ محاسبه buy_order (میلیون تومان) انجام شد")
+            logger.info("✅ محاسبه value_5_to_20_ratio انجام شد")
         else:
-            logger.warning("⚠️ ستون‌های qd1, pd1, zd1 برای محاسبه buy_order یافت نشد")
-            df["buy_order"] = 0
-
-        # محاسبه buy_queue_value (میلیارد تومان)
-        if all(col in df.columns for col in ["qd1", "pd1"]):
-            df["buy_queue_value"] = (df["qd1"] * df["pd1"]) / 10_000_000_000
-            logger.info("✅ محاسبه buy_queue_value (میلیارد تومان) انجام شد")
-        else:
-            logger.warning("⚠️ ستون‌های qd1, pd1 برای محاسبه buy_queue_value یافت نشد")
-            df["buy_queue_value"] = 0
-
-        # تبدیل نام ستون‌های اضافی
-        column_mapping = {
-            "pl": "last_price",
-            "plp": "last_price_change_percent",
-            "tval": "value",
-            "tvol": "volume",
-            "tmax": "ceiling_price",
-        }
-        for old_col, new_col in column_mapping.items():
-            if old_col in df.columns:
-                df[new_col] = df[old_col]
-
-        # تقسیم value به 10 میلیارد
-        if "value" in df.columns:
-            df["value"] = pd.to_numeric(df["value"], errors="coerce")
-            df["value"] = df["value"] / 10_000_000_000
-            logger.info("✅ تقسیم value به 10 میلیارد انجام شد")
+            logger.warning(
+                "⚠️ ستون‌های avg_5_day_value یا avg_monthly_value برای محاسبه نسبت یافت نشد"
+            )
+            df["value_5_to_20_ratio"] = 0
 
         return df
 
@@ -510,11 +473,16 @@ class BourseDataProcessor:
     # فیلتر 10: صف خرید میلیاردی (API دوم + غنی‌سازی با API اول)
     # ========================================
     def filter_10_heavy_buy_queue(
-        self, df_api2: pd.DataFrame, df_api1: pd.DataFrame = None, config: dict = None
+        self, df: pd.DataFrame, config: dict = None
     ) -> pd.DataFrame:
-
-        if df_api2.empty:
-            return df_api2
+        """
+        صف خرید میلیاردی - قبلاً از API دوم (BrsApi) + غنی‌سازی از API اول
+        می‌اومد. الان buy_order/buy_queue_value/ceiling_price مستقیم از همون
+        endpoint یکپارچه (سطح ۱ صف سفارش + سقف قیمت) میان، پس نیازی به
+        merge بین دو منبع نیست.
+        """
+        if df.empty:
+            return df
 
         if config is None:
             from config import HEAVY_BUY_QUEUE_CONFIG
@@ -529,129 +497,31 @@ class BourseDataProcessor:
             f"  • شرط 3: buy_queue_value >= {config['min_buy_queue_value']} میلیارد تومان"
         )
 
-        # بررسی وجود ستون‌های لازم در API دوم
         required_cols = ["last_price", "ceiling_price", "buy_order", "buy_queue_value"]
-        missing_cols = [col for col in required_cols if col not in df_api2.columns]
+        missing_cols = [col for col in required_cols if col not in df.columns]
 
         if missing_cols:
-            logger.error(f"❌ ستون‌های گمشده در API دوم: {missing_cols}")
+            logger.error(f"❌ ستون‌های گمشده برای فیلتر 10: {missing_cols}")
             return pd.DataFrame()
 
-        # اعمال فیلتر روی API دوم
-        mask = (df_api2["buy_order"] >= config["min_buy_order"]) & (
-            df_api2["buy_queue_value"] >= config["min_buy_queue_value"]
+        mask = (df["buy_order"] >= config["min_buy_order"]) & (
+            df["buy_queue_value"] >= config["min_buy_queue_value"]
         )
 
         if config.get("price_at_ceiling", True):
-            mask &= df_api2["last_price"] == df_api2["ceiling_price"]
+            # ceiling_price فقط برای سهام موجوده (صندوق‌ها سقف قیمت ندارن)؛
+            # مقایسه با NaN به‌طور طبیعی False می‌شه و صندوق‌ها از این فیلتر رد می‌شن.
+            mask &= df["last_price"] == df["ceiling_price"]
 
-        filtered_api2 = df_api2[mask].copy()
+        filtered = df[mask].copy()
 
-        if filtered_api2.empty:
+        if filtered.empty:
             logger.info("فیلتر 10: هیچ نمادی یافت نشد")
             return pd.DataFrame()
 
-        logger.info(f"✅ فیلتر 10: {len(filtered_api2)} نماد در API دوم یافت شد")
-
-        # غنی‌سازی با API اول
-        if df_api1 is not None and not df_api1.empty:
-            logger.info("🔄 غنی‌سازی نمادها با اطلاعات API اول...")
-
-            # ستون‌هایی که می‌خواهیم از API اول بیاوریم
-            columns_from_api1 = [
-                "symbol",
-                "sarane_kharid",
-                "pol_hagigi",
-                "value_to_avg_monthly_value",
-                "pol_hagigi_to_avg_monthly_value",  # FIX: بدون این ستون، line_pol_power() در فیلتر 10 همیشه None برمی‌گردوند و "قدرت پول" اصلاً چاپ نمی‌شد
-                "godrat_kharid",
-                "value",
-                "sarane_forosh",
-                "marketcap",
-                "5_day_return",
-                "avg_5_day_pol_hagigi",
-                "avg_20_day_pol_hagigi",
-                "is_fund",
-            ]
-
-            # فقط ستون‌های موجود را انتخاب کنیم
-            available_columns = [
-                col for col in columns_from_api1 if col in df_api1.columns
-            ]
-
-            if "symbol" in available_columns:
-                api1_subset = df_api1[available_columns].copy()
-
-                # پاکسازی symbol (حذف فضای خالی و یکسان‌سازی)
-                filtered_api2["symbol_clean"] = (
-                    filtered_api2["symbol"].str.strip().str.upper()
-                )
-                api1_subset["symbol_clean"] = (
-                    api1_subset["symbol"].str.strip().str.upper()
-                )
-
-                # محاسبه pol_hagigi_to_value
-                if all(col in api1_subset.columns for col in ["pol_hagigi", "value"]):
-                    api1_subset["pol_hagigi_to_value"] = api1_subset.apply(
-                        lambda row: (
-                            row["pol_hagigi"] / row["value"]
-                            if row["value"] != 0 and pd.notna(row["value"])
-                            else 0
-                        ),
-                        axis=1,
-                    )
-
-                # Merge با استفاده از symbol_clean
-                enriched = filtered_api2.merge(
-                    api1_subset,
-                    on="symbol_clean",
-                    how="left",
-                    suffixes=("_api2", "_api1"),
-                )
-
-                # حذف ستون‌های اضافی و کپی
-                enriched = enriched.drop(columns=["symbol_clean"], errors="ignore")
-
-                # اولویت دادن به symbol از API دوم
-                if "symbol_api1" in enriched.columns:
-                    enriched = enriched.drop(columns=["symbol_api1"], errors="ignore")
-                if "symbol_api2" in enriched.columns:
-                    enriched["symbol"] = enriched["symbol_api2"]
-                    enriched = enriched.drop(columns=["symbol_api2"], errors="ignore")
-
-                # اولویت دادن به value از API اول
-                if "value_api1" in enriched.columns:
-                    enriched["value"] = enriched["value_api1"].fillna(
-                        enriched.get("value_api2", 0)
-                    )
-                    enriched = enriched.drop(
-                        columns=["value_api1", "value_api2"], errors="ignore"
-                    )
-
-                # لاگ نمادهایی که غنی نشدن
-                not_enriched = enriched[enriched["value_to_avg_monthly_value"].isna()]
-                if len(not_enriched) > 0:
-                    logger.warning(
-                        f"⚠️ {len(not_enriched)} نماد از API اول پیدا نشد: {list(not_enriched['symbol'])}"
-                    )
-
-                logger.info(
-                    f"✅ {len(enriched)} نماد پردازش شد، {len(enriched) - len(not_enriched)} نماد غنی شد"
-                )
-                enriched = enriched.sort_values("buy_queue_value", ascending=False)
-                return enriched
-            else:
-                logger.warning("⚠️ ستون symbol در API اول یافت نشد")
-                filtered_api2 = filtered_api2.sort_values(
-                    "buy_queue_value", ascending=False
-                )
-                return filtered_api2
-        else:
-            logger.warning("⚠️ API اول خالی است، غنی‌سازی انجام نمی‌شود")
-            filtered_api2 = filtered_api2.sort_values(
-                "buy_queue_value", ascending=False
-            )
-            return filtered_api2
+        filtered = filtered.sort_values("buy_queue_value", ascending=False)
+        logger.info(f"✅ فیلتر 10: {len(filtered)} نماد با صف خرید میلیاردی")
+        return filtered
 
     # ========================================
     # فیلتر 11: خرید حقوقی و حقیقی قوی
@@ -738,48 +608,37 @@ class BourseDataProcessor:
     # ========================================
     # اعمال همه فیلترها
     # ========================================
-    def apply_all_filters(
-        self, df_api1: pd.DataFrame, df_api2: pd.DataFrame
-    ) -> Dict[str, Dict[str, pd.DataFrame]]:
+    def apply_all_filters(self, df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+        """
+        همه‌ی ۱۱ فیلتر رو روی یک دیتافریم یکپارچه اجرا می‌کنه (دیگه تفکیک
+        api1/api2 وجود نداره - از وقتی BrsApi حذف شد، فیلتر ۱۰ هم دقیقاً
+        مثل بقیه‌ی فیلترها مستقیم روی همین df اجرا می‌شه).
+        """
         logger.info("شروع اعمال فیلترها")
-        logger.info(f"  • API اول: {len(df_api1)} سهم")
-        logger.info(f"  • API دوم: {len(df_api2)} نماد")
+        logger.info(f"  • داده: {len(df)} سهم/صندوق")
 
         self.failed_filters = []
-        results = {"api1": {}, "api2": {}}
+        results: Dict[str, pd.DataFrame] = {}
 
-        # فیلترهای 1 تا 9 و 11 روی API اول
-        if not df_api1.empty:
-            results["api1"] = {
-                "filter_1_strong_buying": self._run_filter_safe(self.filter_1_strong_buying_power, df_api1),
-                "filter_2_sarane_cross": self._run_filter_safe(self.filter_2_sarane_kharid_cross, df_api1),
-                "filter_3_watchlist": self._run_filter_safe(self.filter_3_watchlist_symbols, df_api1),
-                "filter_4_range_mosbat": self._run_filter_safe(self.filter_4_range_mosbat, df_api1),
-                "filter_5_pol_hagigi_ratio": self._run_filter_safe(self.filter_5_pol_hagigi_ratio, df_api1),
-                "filter_6_tick_time": self._run_filter_safe(self.filter_6_tick_and_time, df_api1),
-                "filter_7_suspicious_volume": self._run_filter_safe(self.filter_7_suspicious_volume, df_api1),
-                "filter_8_swing_trade": self._run_filter_safe(self.filter_8_swing_trade, df_api1),
-                "filter_9_first_hour": self._run_filter_safe(self.filter_9_first_hour, df_api1),
+        if not df.empty:
+            results = {
+                "filter_1_strong_buying": self._run_filter_safe(self.filter_1_strong_buying_power, df),
+                "filter_2_sarane_cross": self._run_filter_safe(self.filter_2_sarane_kharid_cross, df),
+                "filter_3_watchlist": self._run_filter_safe(self.filter_3_watchlist_symbols, df),
+                "filter_4_range_mosbat": self._run_filter_safe(self.filter_4_range_mosbat, df),
+                "filter_5_pol_hagigi_ratio": self._run_filter_safe(self.filter_5_pol_hagigi_ratio, df),
+                "filter_6_tick_time": self._run_filter_safe(self.filter_6_tick_and_time, df),
+                "filter_7_suspicious_volume": self._run_filter_safe(self.filter_7_suspicious_volume, df),
+                "filter_8_swing_trade": self._run_filter_safe(self.filter_8_swing_trade, df),
+                "filter_9_first_hour": self._run_filter_safe(self.filter_9_first_hour, df),
+                "filter_10_heavy_buy_queue": self._run_filter_safe(self.filter_10_heavy_buy_queue, df),
                 "filter_11_hoghooghi_haghighi_strong_buy": self._run_filter_safe(
-                    self.filter_11_hoghooghi_haghighi_strong_buy, df_api1
+                    self.filter_11_hoghooghi_haghighi_strong_buy, df
                 ),
             }
 
-        # فیلتر 10 روی API دوم با غنی‌سازی از API اول
-        if not df_api2.empty:
-            results["api2"] = {
-                "filter_10_heavy_buy_queue": self._run_filter_safe(
-                    self.filter_10_heavy_buy_queue, df_api2, df_api1
-                ),
-            }
-
-        # خلاصه نتایج
-        total_api1 = sum(len(v) for v in results["api1"].values())
-        total_api2 = sum(len(v) for v in results["api2"].values())
-
-        logger.info("✅ جمع نتایج فیلترها:")
-        logger.info(f"  • API اول (فیلتر 1-9, 11): {total_api1} سهم")
-        logger.info(f"  • API دوم (فیلتر 10): {total_api2} نماد")
+        total = sum(len(v) for v in results.values())
+        logger.info(f"✅ جمع نتایج فیلترها: {total} سهم/صندوق (۱۱ فیلتر)")
 
         self.filters_results = results
         return results
