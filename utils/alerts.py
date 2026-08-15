@@ -89,11 +89,30 @@ def line_marketcap(row: pd.Series) -> Optional[str]:
 
 
 def line_5_day_return(row: pd.Series) -> Optional[str]:
+    """بازده هفتگی (بازدهی 5 روز اخیر)"""
     if "5_day_return" not in row or pd.isna(row["5_day_return"]):
         return None
     value = row["5_day_return"]
     emoji = "🟢" if value > 0 else "🔴" if value < 0 else "⚪"
-    return f"{emoji} بازدهی 5 روز اخیر: <b>{value:+.2f}%</b>\n"
+    return f"{emoji} بازده هفتگی: <b>{value:+.2f}%</b>\n"
+
+
+def line_20_day_return(row: pd.Series) -> Optional[str]:
+    """بازدهی ماهانه (بازدهی 20 روز اخیر)"""
+    if "20_day_return" not in row or pd.isna(row["20_day_return"]):
+        return None
+    value = row["20_day_return"]
+    emoji = "🟢" if value > 0 else "🔴" if value < 0 else "⚪"
+    return f"{emoji} بازدهی ماهانه: <b>{value:+.2f}%</b>\n"
+
+
+def line_value_5_to_20(row: pd.Series) -> Optional[str]:
+    """نسبت میانگین ارزش معاملات 5 روزه به 20 روزه"""
+    if "value_5_to_20_ratio" not in row or pd.isna(row["value_5_to_20_ratio"]):
+        return None
+    value = row["value_5_to_20_ratio"]
+    emoji = "🟢" if value > 1 else "🔴" if value < 1 else "⚪"
+    return f"{emoji} حجم 5 به 20 روزه: <b>{value:.2f}x</b>\n"
 
 
 def line_diff_buy_sell_order(row: pd.Series) -> Optional[str]:
@@ -270,7 +289,7 @@ FILTER_DISPLAY_CONFIG = {
         ),
         show_industry=True,
         lines=[
-            line_price, line_value, line_value_ratio(bold=True),
+            line_price, line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(bold=False),
             line_sarane_diff,
             line_godrat_kharid(bold=True),
@@ -279,7 +298,7 @@ FILTER_DISPLAY_CONFIG = {
             line_pol_hagigi_5day_avg,
             line_pol_power(),
             line_diff_buy_sell_order,
-            line_5_day_return, line_marketcap,
+            line_5_day_return, line_20_day_return, line_marketcap,
         ],
     ),
     "filter_2_sarane_cross": FilterDisplay(
@@ -288,7 +307,7 @@ FILTER_DISPLAY_CONFIG = {
         show_industry=True,
         lines=[
             line_price, line_value,
-            line_value_ratio(bold=True),  # FIX: قبلاً بولد نبود، حالا یکسان با بقیه
+            line_value_ratio(bold=True), line_value_5_to_20,  # FIX: قبلاً بولد نبود، حالا یکسان با بقیه
             line_sarane_kharid(label="سرانه خرید"),
             line_sarane_diff,
             line_godrat_kharid(label="قدرت خرید"),  # FIX: قبلاً "قدرت خریدار" بود
@@ -296,7 +315,7 @@ FILTER_DISPLAY_CONFIG = {
             line_pol_hagigi_5day_avg,
             line_pol_power(),
             line_diff_buy_sell_order,
-            line_5_day_return, line_marketcap,
+            line_5_day_return, line_20_day_return, line_marketcap,
         ],
     ),
     "filter_3_watchlist": FilterDisplay(
@@ -309,14 +328,14 @@ FILTER_DISPLAY_CONFIG = {
         show_industry=True,
         lines=[
             line_price, line_threshold, line_final_price, line_value,
-            line_value_ratio(bold=True),
+            line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
             line_sarane_diff,
             line_pol_hagigi(),
             line_pol_hagigi_5day_avg,
             line_pol_power(),
             line_diff_buy_sell_order,
-            line_5_day_return, line_marketcap,
+            line_5_day_return, line_20_day_return, line_marketcap,
         ],
     ),
     "filter_4_range_mosbat": FilterDisplay(
@@ -324,7 +343,7 @@ FILTER_DISPLAY_CONFIG = {
         header_emoji=_static_emoji("🎯"),
         show_industry=True,
         lines=[
-            line_price, line_value, line_value_ratio(bold=True),
+            line_price, line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
             line_sarane_diff,
             line_godrat_kharid(),  # FIX: خط قدرت خرید جا افتاده بود
@@ -332,7 +351,7 @@ FILTER_DISPLAY_CONFIG = {
             line_pol_hagigi_5day_avg,
             line_pol_power(),
             line_diff_buy_sell_order,
-            line_5_day_return, line_marketcap,
+            line_5_day_return, line_20_day_return, line_marketcap,
         ],
     ),
     "filter_5_pol_hagigi_ratio": FilterDisplay(
@@ -344,7 +363,7 @@ FILTER_DISPLAY_CONFIG = {
         ),
         show_industry=True,
         lines=[
-            line_price, line_value, line_value_ratio(bold=True),
+            line_price, line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
             line_sarane_diff,
             line_godrat_kharid(),  # FIX: قبلاً "قدرت خریدار" بود
@@ -352,7 +371,7 @@ FILTER_DISPLAY_CONFIG = {
             line_pol_hagigi_5day_avg,
             line_pol_power(),
             line_diff_buy_sell_order,
-            line_5_day_return, line_marketcap,
+            line_5_day_return, line_20_day_return, line_marketcap,
         ],
     ),
     "filter_6_tick_time": FilterDisplay(
@@ -360,7 +379,7 @@ FILTER_DISPLAY_CONFIG = {
         header_emoji=_static_emoji("📌"),
         show_industry=True,
         lines=[
-            line_price, line_tick_diff, line_value, line_value_ratio(bold=True),
+            line_price, line_tick_diff, line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
             line_sarane_diff,
             line_godrat_kharid(),
@@ -368,7 +387,7 @@ FILTER_DISPLAY_CONFIG = {
             line_pol_hagigi_5day_avg,
             line_pol_power(),
             line_diff_buy_sell_order,
-            line_5_day_return, line_marketcap,
+            line_5_day_return, line_20_day_return, line_marketcap,
         ],
     ),
     "filter_7_suspicious_volume": None,   # از default_alert استفاده می‌کنه
@@ -380,14 +399,14 @@ FILTER_DISPLAY_CONFIG = {
         show_industry=False,  # نسخه‌ی قبلی هم اینجا industry نداشت (داده از API دوم میاد)
         lines=[
             line_price, line_buy_queue_value, line_buy_order,
-            line_value, line_value_ratio(bold=True),
+            line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
             line_sarane_diff,
             line_godrat_kharid(),
             line_pol_hagigi(),
             line_pol_hagigi_5day_avg,
             line_pol_power(),
-            line_5_day_return, line_marketcap,
+            line_5_day_return, line_20_day_return, line_marketcap,
         ],
     ),
     "filter_11_hoghooghi_haghighi_strong_buy": FilterDisplay(
@@ -399,7 +418,7 @@ FILTER_DISPLAY_CONFIG = {
         ),
         show_industry=True,
         lines=[
-            line_price, line_value, line_value_ratio(bold=True),
+            line_price, line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),  # FIX: قبلاً بولد بود، حالا یکسان با بقیه
             line_sarane_diff,
             line_godrat_kharid(),
@@ -407,7 +426,7 @@ FILTER_DISPLAY_CONFIG = {
             line_pol_hagigi_5day_avg,
             line_pol_power_negative(),
             line_diff_buy_sell_order,
-            line_5_day_return, line_marketcap,
+            line_5_day_return, line_20_day_return, line_marketcap,
         ],
     ),
 }
@@ -418,12 +437,12 @@ DEFAULT_ALERT_TITLES = {
     "filter_9_first_hour": "#نیم_ساعت_اول",
 }
 DEFAULT_ALERT_LINES = [
-    line_price, line_value, line_value_ratio(bold=True),
+    line_price, line_value, line_value_ratio(bold=True), line_value_5_to_20,
     line_sarane_kharid(), line_sarane_diff, line_godrat_kharid(), line_pol_hagigi(),
     line_pol_hagigi_5day_avg,
     line_pol_power(),
     line_diff_buy_sell_order,
-    line_5_day_return, line_marketcap,
+    line_5_day_return, line_20_day_return, line_marketcap,
 ]
 
 
