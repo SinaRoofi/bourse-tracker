@@ -11,7 +11,6 @@ from config import (
     MARKET_START_TIME,
     MARKET_END_TIME,
     API_BASE_URL,
-    BRSAPI_KEY,
     ERROR_CHAT_ID,
     GIST_ID,
     GIST_TOKEN,
@@ -305,17 +304,17 @@ async def main_async():
             logger.info("⏸️  بازار بسته است. خروج از برنامه.")
             return
 
-        logger.info("\n📥 شروع دریافت داده از APIها...")
-        fetcher = UnifiedDataFetcher(api1_base_url=API_BASE_URL, api2_key=BRSAPI_KEY)
-        df_api1_raw, df_api2_raw = fetcher.fetch_all_data()
+        logger.info("\n📥 شروع دریافت داده از API...")
+        fetcher = UnifiedDataFetcher(api1_base_url=API_BASE_URL)
+        df_raw = fetcher.fetch_all_data()
 
         t_process_start = time.time()
         logger.info("\n🔄 شروع پردازش داده‌ها...")
         processor = BourseDataProcessor()
-        df_api1, df_api2 = processor.process_all_data(df_api1_raw, df_api2_raw)
+        df = processor.process_all_data(df_raw)
 
         logger.info("\n🔍 اعمال فیلترها...")
-        all_results = processor.apply_all_filters(df_api1, df_api2)
+        all_results = processor.apply_all_filters(df)
         t_process_end = time.time()
         logger.info(f"⏱️ پردازش + فیلترها: {t_process_end - t_process_start:.1f}s")
 
@@ -350,17 +349,9 @@ async def main_async():
         total_skipped = 0
         t_send_start = time.time()
 
-        if "api1" in all_results and all_results["api1"]:
+        if all_results:
             sent, skipped = await send_alerts_for_filters_async(
-                alert, alert_manager, all_results["api1"], "API اول (فیلترهای 1-9)",
-                personal_watchlist, WATCHLIST_CHAT_ID,
-            )
-            total_sent += sent
-            total_skipped += skipped
-
-        if "api2" in all_results and all_results["api2"]:
-            sent, skipped = await send_alerts_for_filters_async(
-                alert, alert_manager, all_results["api2"], "API دوم (فیلتر 10)",
+                alert, alert_manager, all_results, "همه‌ی فیلترها (1-11)",
                 personal_watchlist, WATCHLIST_CHAT_ID,
             )
             total_sent += sent
