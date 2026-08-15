@@ -19,8 +19,7 @@ WATCHLIST_CHAT_ID = os.getenv("WATCHLIST_CHAT_ID", "")  # اختیاری: کان
 # ========================================
 # تنظیمات API
 # ========================================
-API_BASE_URL = os.getenv("API_BASE_URL")  # API اول
-BRSAPI_KEY = os.getenv("BRSAPI_KEY")  # کلید BrsApi
+API_BASE_URL = os.getenv("API_BASE_URL")  # tradersarena.ir - endpoint /data/industries/{slug}/snapshot
 
 # ========================================
 # GitHub Gist
@@ -281,8 +280,8 @@ def validate_config():
     if not TELEGRAM_CHAT_ID:
         errors.append("TELEGRAM_CHAT_ID تنظیم نشده است")
 
-    if not API_BASE_URL and not BRSAPI_KEY:
-        errors.append("حداقل یکی از API_BASE_URL یا BRSAPI_KEY باید تنظیم شود")
+    if not API_BASE_URL:
+        errors.append("API_BASE_URL تنظیم نشده است")
 
     if not GIST_TOKEN:
         errors.append("GIST_TOKEN تنظیم نشده است")
