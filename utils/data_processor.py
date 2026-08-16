@@ -141,7 +141,7 @@ class BourseDataProcessor:
             )
             df["pol_hagigi_to_avg_monthly_value"] = 0
 
-        # محاسبه value_5_to_20_ratio (میانگین ارزش معاملات 5 روزه نسبت به 20 روزه)
+        # محاسبه value_5_to_20_ratio (میانگین ارزش معاملات هفتگی نسبت به میانگین ماهانه)
         if all(col in df.columns for col in ["avg_5_day_value", "avg_monthly_value"]):
             df["value_5_to_20_ratio"] = df.apply(
                 lambda row: (
@@ -158,6 +158,24 @@ class BourseDataProcessor:
                 "⚠️ ستون‌های avg_5_day_value یا avg_monthly_value برای محاسبه نسبت یافت نشد"
             )
             df["value_5_to_20_ratio"] = 0
+
+        # محاسبه value_5_to_60_ratio (میانگین ارزش معاملات هفتگی نسبت به میانگین 3 ماهه)
+        if all(col in df.columns for col in ["avg_5_day_value", "avg_3_month_value"]):
+            df["value_5_to_60_ratio"] = df.apply(
+                lambda row: (
+                    row["avg_5_day_value"] / row["avg_3_month_value"]
+                    if row["avg_3_month_value"] != 0
+                    and pd.notna(row["avg_3_month_value"])
+                    else 0
+                ),
+                axis=1,
+            )
+            logger.info("✅ محاسبه value_5_to_60_ratio انجام شد")
+        else:
+            logger.warning(
+                "⚠️ ستون‌های avg_5_day_value یا avg_3_month_value برای محاسبه نسبت یافت نشد"
+            )
+            df["value_5_to_60_ratio"] = 0
 
         return df
 
