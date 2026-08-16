@@ -103,7 +103,7 @@ def line_20_day_return(row: pd.Series) -> Optional[str]:
         return None
     value = row["20_day_return"]
     emoji = "🟢" if value > 0 else "🔴" if value < 0 else "⚪"
-    return f"{emoji} بازدهی ماهانه: <b>{value:+.2f}%</b>\n"
+    return f"{emoji} بازده ماهانه: <b>{value:+.2f}%</b>\n"
 
 
 def line_value_5_to_20(row: pd.Series) -> Optional[str]:
