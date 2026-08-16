@@ -274,7 +274,7 @@ def line_bubble(row: pd.Series) -> Optional[str]:
 
     line = f"{emoji} حباب: <b>{bubble:+.2f}%</b>\n"
     if has_avg:
-        line += f"📊 میانگین حباب 1 ماهه: {avg_bubble:+.2f}%\n"
+        line += f"📊 میانگین حباب ماهانه: {avg_bubble:+.2f}%\n"
     return line
 
 
@@ -319,7 +319,7 @@ FILTER_DISPLAY_CONFIG = {
             line_pol_hagigi_5day_avg,
             line_pol_power(),
             line_diff_buy_sell_order,
-            line_5_day_return, line_20_day_return, line_marketcap, line_bubble,
+            line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
         ],
     ),
     "filter_2_sarane_cross": FilterDisplay(
@@ -336,7 +336,7 @@ FILTER_DISPLAY_CONFIG = {
             line_pol_hagigi_5day_avg,
             line_pol_power(),
             line_diff_buy_sell_order,
-            line_5_day_return, line_20_day_return, line_marketcap, line_bubble,
+            line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
         ],
     ),
     "filter_3_watchlist": FilterDisplay(
@@ -356,7 +356,7 @@ FILTER_DISPLAY_CONFIG = {
             line_pol_hagigi_5day_avg,
             line_pol_power(),
             line_diff_buy_sell_order,
-            line_5_day_return, line_20_day_return, line_marketcap, line_bubble,
+            line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
         ],
     ),
     "filter_4_range_mosbat": FilterDisplay(
@@ -372,7 +372,7 @@ FILTER_DISPLAY_CONFIG = {
             line_pol_hagigi_5day_avg,
             line_pol_power(),
             line_diff_buy_sell_order,
-            line_5_day_return, line_20_day_return, line_marketcap, line_bubble,
+            line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
         ],
     ),
     "filter_5_pol_hagigi_ratio": FilterDisplay(
@@ -392,7 +392,7 @@ FILTER_DISPLAY_CONFIG = {
             line_pol_hagigi_5day_avg,
             line_pol_power(),
             line_diff_buy_sell_order,
-            line_5_day_return, line_20_day_return, line_marketcap, line_bubble,
+            line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
         ],
     ),
     "filter_6_tick_time": FilterDisplay(
@@ -408,7 +408,7 @@ FILTER_DISPLAY_CONFIG = {
             line_pol_hagigi_5day_avg,
             line_pol_power(),
             line_diff_buy_sell_order,
-            line_5_day_return, line_20_day_return, line_marketcap, line_bubble,
+            line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
         ],
     ),
     "filter_7_suspicious_volume": None,   # از default_alert استفاده می‌کنه
@@ -427,7 +427,7 @@ FILTER_DISPLAY_CONFIG = {
             line_pol_hagigi(),
             line_pol_hagigi_5day_avg,
             line_pol_power(),
-            line_5_day_return, line_20_day_return, line_marketcap, line_bubble,
+            line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
         ],
     ),
     "filter_11_hoghooghi_haghighi_strong_buy": FilterDisplay(
@@ -447,7 +447,7 @@ FILTER_DISPLAY_CONFIG = {
             line_pol_hagigi_5day_avg,
             line_pol_power_negative(),
             line_diff_buy_sell_order,
-            line_5_day_return, line_20_day_return, line_marketcap, line_bubble,
+            line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
         ],
     ),
 }
@@ -463,7 +463,7 @@ DEFAULT_ALERT_LINES = [
     line_pol_hagigi_5day_avg,
     line_pol_power(),
     line_diff_buy_sell_order,
-    line_5_day_return, line_20_day_return, line_marketcap, line_bubble,
+    line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
 ]
 
 
