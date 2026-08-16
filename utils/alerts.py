@@ -122,7 +122,7 @@ def line_value_5_to_20(row: pd.Series) -> Optional[str]:
 
     if has_20 and has_60:
         emoji = "🟢" if (ratio_20 > 1 and ratio_60 > 1) else "🔴"
-        return f"{emoji} حجم هفتگی به ماهانه/۳ماهه: <b>{ratio_20:.2f}x / {ratio_60:.2f}x</b>\n"
+        return f"{emoji} حجم هفتگی: <b>{ratio_20:.2f}x</b> ماه | <b>{ratio_60:.2f}x</b> ۳ماه\n"
     elif has_20:
         emoji = "🟢" if ratio_20 > 1 else "🔴"
         return f"{emoji} حجم هفتگی به ماهانه: <b>{ratio_20:.2f}x</b>\n"
