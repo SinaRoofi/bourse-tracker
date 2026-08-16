@@ -32,6 +32,20 @@ def _format_billion(value: float) -> str:
     return f"{value:.2f}" if abs(value) >= 1 else f"{value:.3f}"
 
 
+def _format_smart_toman(value: float) -> tuple:
+    """
+    مقادیر پولی (واحد پایه: میلیارد تومان) رو با واحد خوانا برمی‌گردونه:
+    قدرمطلق کمتر از 1 میلیارد -> به میلیون تومان تبدیل می‌شه (بدون اعشار).
+    قدرمطلق 1 میلیارد یا بیشتر -> همون میلیارد تومان (فرمت قبلی، _format_billion).
+    خروجی: تاپل (متن_عدد, واحد) - بدون علامت + اجباری (هم‌شکل با رفتار قبلی).
+    """
+    if pd.isna(value) or value == 0:
+        return "0", "میلیارد تومان"
+    if abs(value) < 1:
+        return f"{value * 1000:.0f}", "میلیون تومان"
+    return _format_billion(value), "میلیارد تومان"
+
+
 def _format_price(value: float) -> str:
     if pd.isna(value):
         return "0"
@@ -84,7 +98,11 @@ def line_value_ratio(bold: bool = True) -> LineBuilder:
 def line_marketcap(row: pd.Series) -> Optional[str]:
     if "marketcap" not in row or pd.isna(row["marketcap"]):
         return None
-    value_in_trillion = row["marketcap"] / 1000  # میلیارد -> هزار میلیارد تومان
+    marketcap = row["marketcap"]  # میلیارد تومان
+    if abs(marketcap) < 1000:
+        # کمتر از 1 هزار میلیارد -> خودِ میلیارد تومان نشون بده (خواناتره)
+        return f"🏦 ارزش بازار: {_format_billion(marketcap)} میلیارد تومان\n"
+    value_in_trillion = marketcap / 1000  # میلیارد -> هزار میلیارد تومان
     return f"🏦 ارزش بازار: {_format_marketcap_trillion(value_in_trillion)} هزار میلیارد تومان\n"
 
 
@@ -136,6 +154,8 @@ def line_diff_buy_sell_order(row: pd.Series) -> Optional[str]:
         return None
     value = row["diff_buy_sell_order"]
     emoji = "🟢" if value > 0 else "🔴" if value < 0 else "⚪"
+    if value != 0 and abs(value) < 1:
+        return f"{emoji} چربش اردر: {value * 1000:+.0f} میلیون تومان\n"
     return f"{emoji} چربش اردر: {value:+.2f} میلیارد تومان\n"
 
 
@@ -183,9 +203,11 @@ def line_pol_hagigi(always_negative_abs: bool = False) -> LineBuilder:
         if "pol_hagigi" not in row or pd.isna(row["pol_hagigi"]):
             return None
         if always_negative_abs:
-            return f"🔴 پول حقیقی: {_format_billion(abs(row['pol_hagigi']))} میلیارد تومان\n"
+            num, unit = _format_smart_toman(abs(row["pol_hagigi"]))
+            return f"🔴 پول حقیقی: {num} {unit}\n"
         emoji = "🟢" if row["pol_hagigi"] > 0 else "🔴"
-        return f"{emoji} ورود پول حقیقی: {_format_billion(row['pol_hagigi'])} میلیارد تومان\n"
+        num, unit = _format_smart_toman(row["pol_hagigi"])
+        return f"{emoji} ورود پول حقیقی: {num} {unit}\n"
 
     return _builder
 
@@ -199,7 +221,8 @@ def line_pol_hagigi_weekly(row: pd.Series) -> Optional[str]:
         return None
     value = row["5_day_pol_hagigi"]
     emoji = "🟢" if value > 0 else "🔴" if value < 0 else "⚪"
-    return f"{emoji} پول حقیقی هفتگی: {_format_billion(value)} میلیارد تومان\n"
+    num, unit = _format_smart_toman(value)
+    return f"{emoji} پول حقیقی هفتگی: {num} {unit}\n"
 
 
 def line_pol_power(column: str = "pol_hagigi_to_avg_monthly_value") -> LineBuilder:
