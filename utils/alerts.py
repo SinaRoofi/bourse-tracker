@@ -107,12 +107,28 @@ def line_20_day_return(row: pd.Series) -> Optional[str]:
 
 
 def line_value_5_to_20(row: pd.Series) -> Optional[str]:
-    """نسبت میانگین ارزش معاملات 5 روزه به 20 روزه"""
-    if "value_5_to_20_ratio" not in row or pd.isna(row["value_5_to_20_ratio"]):
+    """
+    میانگین ارزش معاملات هفتگی (5 روزه) در مقایسه با میانگین ماهانه (20 روزه)
+    و میانگین 3 ماهه (60 روزه). سبز فقط وقتی که هفته‌ی اخیر از هر دو
+    بیشتر باشه (تأیید دوطرفه، کمتر مستعد bias خودتزریقی میانگین 20 روزه).
+    """
+    has_20 = "value_5_to_20_ratio" in row and pd.notna(row["value_5_to_20_ratio"])
+    has_60 = "value_5_to_60_ratio" in row and pd.notna(row["value_5_to_60_ratio"])
+    if not has_20 and not has_60:
         return None
-    value = row["value_5_to_20_ratio"]
-    emoji = "🟢" if value > 1 else "🔴" if value < 1 else "⚪"
-    return f"{emoji} حجم 5 به 20 روزه: <b>{value:.2f}x</b>\n"
+
+    ratio_20 = row["value_5_to_20_ratio"] if has_20 else None
+    ratio_60 = row["value_5_to_60_ratio"] if has_60 else None
+
+    if has_20 and has_60:
+        emoji = "🟢" if (ratio_20 > 1 and ratio_60 > 1) else "🔴"
+        return f"{emoji} حجم هفتگی به ماهانه/۳ماهه: <b>{ratio_20:.2f}x / {ratio_60:.2f}x</b>\n"
+    elif has_20:
+        emoji = "🟢" if ratio_20 > 1 else "🔴"
+        return f"{emoji} حجم هفتگی به ماهانه: <b>{ratio_20:.2f}x</b>\n"
+    else:
+        emoji = "🟢" if ratio_60 > 1 else "🔴"
+        return f"{emoji} حجم هفتگی به ۳ماهه: <b>{ratio_60:.2f}x</b>\n"
 
 
 def line_diff_buy_sell_order(row: pd.Series) -> Optional[str]:
