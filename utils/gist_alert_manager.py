@@ -163,9 +163,19 @@ class GistAlertManager:
         ذخیره هشدارهای ارسال‌شده در Gist
 
         Args:
-            alerts: لیست تاپل‌های (symbol, alert_type, value) یا (symbol, alert_type, value, is_fund)
-                    value می‌تواند None باشد (برای فیلترهایی که value ندارند)
-                    is_fund می‌تواند None باشد (یعنی نامشخص)
+            alerts: لیست تاپل‌ها با یکی از این فرمت‌ها (طول متغیر، از چپ به راست):
+                (symbol, alert_type)
+                (symbol, alert_type, value)
+                (symbol, alert_type, value, is_fund)
+                (symbol, alert_type, value, is_fund, industry_name)
+                (symbol, alert_type, value, is_fund, industry_name, price_change_percent)
+
+                value: می‌تواند None باشد (برای فیلترهایی که value ندارند)
+                is_fund: می‌تواند None باشد (یعنی نامشخص)
+                industry_name: نام صنعت نماد در لحظه‌ی ارسال (برای گزارش «برترین صنایع»)؛
+                    برای صندوق‌ها معمولاً None است
+                price_change_percent: درصد تغییر قیمت پایانی نماد در لحظه‌ی ارسال (برای
+                    نمایش کنار نماد در Top-N هر فیلتر)
         """
         if not alerts:
             return True
@@ -187,12 +197,19 @@ class GistAlertManager:
 
         new_items = []
         for item in alerts:
-            # پشتیبانی از سه فرمت: (symbol, alert_type)، (symbol, alert_type, value)
-            # و (symbol, alert_type, value, is_fund)
+            # پشتیبانی از فرمت‌های ۲ تا ۶ عضوی (ترتیب ثابت، از چپ اضافه می‌شن)
             is_fund = None
-            if len(item) == 4:
+            industry_name = None
+            price_change_percent = None
+
+            n = len(item)
+            if n == 6:
+                s, t, val, is_fund, industry_name, price_change_percent = item
+            elif n == 5:
+                s, t, val, is_fund, industry_name = item
+            elif n == 4:
                 s, t, val, is_fund = item
-            elif len(item) == 3:
+            elif n == 3:
                 s, t, val = item
             else:
                 s, t = item
@@ -204,6 +221,10 @@ class GistAlertManager:
                     entry["value"] = val
                 if is_fund is not None:
                     entry["is_fund"] = bool(is_fund)
+                if industry_name is not None:
+                    entry["industry_name"] = industry_name
+                if price_change_percent is not None:
+                    entry["price_change_percent"] = price_change_percent
                 new_items.append(entry)
 
         if not new_items:
