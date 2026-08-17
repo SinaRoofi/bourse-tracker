@@ -256,10 +256,14 @@ async def send_alerts_for_filters_async(
                     f"❌ خطا در ارسال {filter_name} [{dedup_type}] گروه {chunk_idx}: {result}"
                 )
             elif result:
-                # استخراج value و is_fund برای هر نماد از chunk_to_send
+                # استخراج value، is_fund، صنعت و درصد تغییر قیمت پایانی برای هر نماد
+                # از chunk_to_send (industry_name و final_price_change_percent برای
+                # گزارش خلاصه‌ی روزانه لازم‌ان: «برترین صنایع» و نمایش درصد کنار نماد)
                 for s in symbols:
                     val = None
                     is_fund = None
+                    industry_name = None
+                    price_change_percent = None
                     row = chunk_to_send[chunk_to_send["symbol"] == s]
                     if not row.empty:
                         if value_col and value_col in chunk_to_send.columns:
@@ -271,7 +275,20 @@ async def send_alerts_for_filters_async(
                             is_fund_val = row.iloc[0]["is_fund"]
                             if pd.notna(is_fund_val):
                                 is_fund = bool(is_fund_val)
-                    successful_marks.append((s, dedup_type, val, is_fund))
+                        if "industry_name" in chunk_to_send.columns:
+                            industry_val = row.iloc[0]["industry_name"]
+                            if pd.notna(industry_val):
+                                industry_name = str(industry_val)
+                        if "final_price_change_percent" in chunk_to_send.columns:
+                            try:
+                                price_val = row.iloc[0]["final_price_change_percent"]
+                                if pd.notna(price_val):
+                                    price_change_percent = float(price_val)
+                            except (ValueError, TypeError):
+                                price_change_percent = None
+                    successful_marks.append(
+                        (s, dedup_type, val, is_fund, industry_name, price_change_percent)
+                    )
 
                 sent_count += len(symbols)
                 logger.info(
