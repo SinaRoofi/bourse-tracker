@@ -287,7 +287,7 @@ def line_buy_order(row: pd.Series) -> Optional[str]:
     """اختصاصی filter_10 (فقط از API دوم میاد)"""
     if "buy_order" not in row or pd.isna(row["buy_order"]):
         return None
-    return f"📋 سفارش هر کد: {row['buy_order']:.0f} میلیون تومان\n"
+    return f"📋 ارزش هر اردر: {row['buy_order']:.0f} میلیون تومان\n"
 
 
 def line_bubble(row: pd.Series) -> Optional[str]:
