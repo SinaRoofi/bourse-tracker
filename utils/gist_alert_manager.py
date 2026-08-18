@@ -59,6 +59,7 @@ class GistAlertManager:
     def _create_new_gist_sync(self):
         initial_data = {
             "_daily_summary_sent": {},
+            "_industry_universe": {},
             self.today_jalali: []
         }
 
@@ -157,6 +158,37 @@ class GistAlertManager:
         return await self._save_to_gist(data)
 
     # ------------------------------------------------------------------
+    # Industry Universe (برای نرمال‌سازی «برترین صنایع» بر اساس اندازه‌ی صنعت)
+    # ------------------------------------------------------------------
+    async def get_industry_universe(self) -> dict:
+        """
+        تعداد کل نمادهای هر صنعت (نه فقط نمادهای هشداردهنده) که یک‌بار در
+        روز توسط main.py ذخیره می‌شه. برای محاسبه‌ی «درصد مشارکت صنعت»
+        در گزارش خلاصه‌ی روزانه استفاده می‌شه؛ اگه هنوز برای امروز ذخیره
+        نشده باشه (مثلاً روز اول دیپلوی این ویژگی)، دیکشنری خالی برمی‌گرده.
+        """
+        data = await self._load_gist_content()
+        return data.get("_industry_universe", {}).get(self.today_jalali, {})
+
+    async def save_industry_universe(self, mapping: dict) -> bool:
+        """
+        ذخیره‌ی تعداد کل نماد هر صنعت برای امروز. عمداً idempotent هست —
+        اگه امروز قبلاً ذخیره شده، دوباره Gist رو ننویس (چون main.py طی روز
+        چندبار اجرا می‌شه و اندازه‌ی صنایع در طول روز عوض نمی‌شه، پس بازنویسی
+        مکرر فقط هزینه‌ی بی‌مورد به Gist API تحمیل می‌کنه).
+        """
+        if not mapping:
+            return True
+
+        data = await self._load_gist_content(use_cache=False)
+        existing = data.setdefault("_industry_universe", {})
+        if existing.get(self.today_jalali):
+            return True  # امروز قبلاً ذخیره شده
+
+        existing[self.today_jalali] = mapping
+        return await self._save_to_gist(data)
+
+    # ------------------------------------------------------------------
     # Alert Dedup
     # ------------------------------------------------------------------
     async def should_send_alert(self, symbol: str, alert_type: str) -> bool:
@@ -196,7 +228,7 @@ class GistAlertManager:
         cutoff = (jdatetime.date.today() - jdatetime.timedelta(days=3)).strftime("%Y-%m-%d")
         keys_to_delete = [
             k for k in list(data.keys())
-            if k != "_daily_summary_sent" and k < cutoff
+            if k not in ("_daily_summary_sent", "_industry_universe") and k < cutoff
         ]
         for k in keys_to_delete:
             del data[k]
