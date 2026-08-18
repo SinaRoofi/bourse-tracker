@@ -2,17 +2,23 @@
 ماژول تولید گزارش خلاصه روزانه
 تحلیل نمادهای پرتکرار از هشدارهای ثبت شده در Gist
 + ارسال Top-5 نمادهای برتر هر فیلتر
++ ارسال برترین صنایع بر اساس تعداد نمادهای فعال هر صنعت
 """
 
 import logging
 from datetime import datetime
 import jdatetime
 import pytz
-from typing import Dict, List
+from typing import Dict, List, Optional
+
+from utils.gist_alert_manager import WATCHLIST_COPY_SUFFIX
 
 logger = logging.getLogger(__name__)
 
 TEHRAN_TZ = pytz.timezone("Asia/Tehran")
+
+# مدال برای سه رتبه‌ی اول نمادهای پرتکرار (زیباتر از عدد خشک)
+RANK_MEDALS = {1: "🥇", 2: "🥈", 3: "🥉"}
 
 # عنوان فارسی و واحد هر فیلتر برای نمایش در پیام
 FILTER_META = {
@@ -68,10 +74,14 @@ class DailySummaryGenerator:
     # ------------------------------------------------------------------
     # نمادهای پرتکرار
     # ------------------------------------------------------------------
-    async def get_frequent_symbols(self, min_count: int = 3, top_n: int = None) -> Dict[str, int]:
-        logger.info(f"📊 شروع تحلیل هشدارهای امروز ({self.today_jalali})...")
-
-        data = await self.alert_manager._load_gist_content()
+    def get_frequent_symbols(
+        self, data: dict, min_count: int = 3, top_n: int = None
+    ) -> Dict[str, int]:
+        """
+        محاسبه‌ی نمادهای پرتکرار از داده‌ی از قبل لود شده‌ی Gist.
+        `data` باید همون دیکشنری کامل خروجی `_load_gist_content` باشه —
+        این متد دیگه خودش I/O انجام نمی‌ده (به فراخوان سپرده شده).
+        """
         today_alerts = data.get(self.today_jalali, [])
 
         if not today_alerts:
@@ -80,11 +90,24 @@ class DailySummaryGenerator:
 
         logger.info(f"✅ {len(today_alerts)} هشدار یافت شد")
 
+        # هر سیگنال باید فقط یک‌بار شمرده بشه، حتی اگه (چون نماد در واچ‌لیست
+        # شخصیه) یه کپی‌ش هم به کانال دوم ارسال شده باشه. کپی واچ‌لیست با
+        # پسوند WATCHLIST_COPY_SUFFIX روی alert_type ذخیره می‌شه؛ اینجا اون
+        # پسوند رو حذف می‌کنیم تا (symbol, filter_name واقعی) یکتا شمرده بشه
+        # — نه رکورد خام Gist.
+        seen_signals = set()
         symbol_count = {}
         for alert in today_alerts:
             symbol = alert.get("symbol")
-            if symbol:
-                symbol_count[symbol] = symbol_count.get(symbol, 0) + 1
+            alert_type = alert.get("alert_type", "")
+            if not symbol:
+                continue
+            base_alert_type = alert_type.removesuffix(WATCHLIST_COPY_SUFFIX)
+            signal = (symbol, base_alert_type)
+            if signal in seen_signals:
+                continue
+            seen_signals.add(signal)
+            symbol_count[symbol] = symbol_count.get(symbol, 0) + 1
 
         frequent_symbols = {
             symbol: count
@@ -105,16 +128,19 @@ class DailySummaryGenerator:
         return dict(sorted_symbols)
 
     # ------------------------------------------------------------------
-    # Top-5 هر فیلتر
+    # Top-N هر فیلتر
     # ------------------------------------------------------------------
-    async def get_top_symbols_per_filter(self, top_n: int = 5) -> Dict[str, List[dict]]:
+    def get_top_symbols_per_filter(self, data: dict, top_n: int = 5) -> Dict[str, List[dict]]:
         """
-        دریافت top_n نماد برتر برای هر فیلتر بر اساس value ذخیره‌شده در Gist
+        دریافت top_n نماد برتر برای هر فیلتر بر اساس value ذخیره‌شده در Gist.
+
+        dedup: برای هر نماد، آخرین رکورد ثبت‌شده‌ش در همون فیلتر نگه داشته
+        می‌شه (نه بیشترین value) — چون آخرین alert نشون‌دهنده‌ی جدیدترین
+        وضعیت نماده، نه لزوماً بهترین لحظه‌ی روز.
 
         Returns:
-            dict: {filter_name: [{"symbol": ..., "value": ...}, ...]}
+            dict: {filter_name: [{"symbol":..., "value":..., "price_change_percent":...}, ...]}
         """
-        data = await self.alert_manager._load_gist_content()
         today_alerts = data.get(self.today_jalali, [])
 
         if not today_alerts:
@@ -132,10 +158,9 @@ class DailySummaryGenerator:
                 continue
             filter_groups.setdefault(filter_name, []).append(alert)
 
-        # dedup: برای هر نماد فقط بالاترین value نگه داشته می‌شه
         result = {}
         for filter_name, items in filter_groups.items():
-            # آخرین entry هر نماد (ترتیب Gist = ترتیب زمانی)
+            # آخرین entry هر نماد (ترتیب Gist = ترتیب زمانی ثبت)
             last_per_symbol = {}
             for item in items:
                 last_per_symbol[item["symbol"]] = item
@@ -143,6 +168,55 @@ class DailySummaryGenerator:
             result[filter_name] = sorted_items[:top_n]
 
         logger.info(f"🏆 Top-{top_n} فیلترها: {list(result.keys())}")
+        return result
+
+    # ------------------------------------------------------------------
+    # برترین صنایع
+    # ------------------------------------------------------------------
+    def get_top_industries(self, data: dict, top_n: int = 5, symbols_preview: int = 4) -> List[dict]:
+        """
+        صنایعی که بیشترین تعداد نماد یکتای فعال (هشداردهنده) رو امروز داشتن.
+
+        معیار رتبه‌بندی عمداً «تعداد نماد یکتا» ست نه «تعداد کل alert» — وگرنه
+        یه نماد که در چند فیلتر هم‌زمان alert می‌گیره می‌تونست صنعتش رو
+        مصنوعی بالا بکشه. صندوق‌ها (is_fund=True) و رکوردهایی که industry_name
+        ندارن (چون قبل از این تغییر ثبت شدن یا صندوق بودن) کنار گذاشته می‌شن.
+
+        Returns:
+            list: [{"industry_name": ..., "symbol_count": ..., "symbols": [...]}]
+                  مرتب‌شده نزولی بر اساس symbol_count
+        """
+        today_alerts = data.get(self.today_jalali, [])
+        if not today_alerts:
+            return []
+
+        industry_symbols: Dict[str, set] = {}
+        for alert in today_alerts:
+            if alert.get("is_fund"):
+                continue
+            industry_name = alert.get("industry_name")
+            symbol = alert.get("symbol")
+            if not industry_name or not symbol:
+                continue
+            industry_symbols.setdefault(industry_name, set()).add(symbol)
+
+        if not industry_symbols:
+            return []
+
+        ranked = sorted(
+            industry_symbols.items(), key=lambda x: len(x[1]), reverse=True
+        )[:top_n]
+
+        result = [
+            {
+                "industry_name": industry_name,
+                "symbol_count": len(symbols),
+                "symbols": sorted(symbols)[:symbols_preview],
+            }
+            for industry_name, symbols in ranked
+        ]
+
+        logger.info(f"🏭 برترین صنایع: {[r['industry_name'] for r in result]}")
         return result
 
     # ------------------------------------------------------------------
@@ -155,17 +229,18 @@ class DailySummaryGenerator:
     ) -> str:
         date_str, time_str = self._get_tehran_datetime()
 
-        message = "📊 <b>خلاصه هشدارها</b>\n\n"
+        message = "📊 <b>خلاصه هشدارهای امروز</b>\n\n"
 
         if frequent_symbols:
             count_groups = {}
             for symbol, count in frequent_symbols.items():
                 count_groups.setdefault(count, []).append(symbol)
 
-            for count in sorted(count_groups.keys(), reverse=True):
+            for rank, count in enumerate(sorted(count_groups.keys(), reverse=True), 1):
                 symbols_list = sorted(count_groups[count])
                 hashtags = " ".join([f"#{self._format_symbol_hashtag(s)}" for s in symbols_list])
-                message += f"<b>({count}×)</b> {hashtags}\n"
+                prefix = RANK_MEDALS.get(rank, "▪️")
+                message += f"{prefix} <b>({count}×)</b> {hashtags}\n"
         else:
             message += "هیچ نماد پرتکراری نبود\n"
 
@@ -176,11 +251,12 @@ class DailySummaryGenerator:
         return message
 
     # ------------------------------------------------------------------
-    # فرمت پیام Top-5 فیلترها
+    # فرمت پیام Top-N فیلترها
     # ------------------------------------------------------------------
     def format_top_filter_message(self, top_per_filter: Dict[str, List[dict]]) -> str:
         """
-        فرمت پیام Top-5 نمادهای برتر هر فیلتر
+        فرمت پیام Top-N نمادهای برتر هر فیلتر، همراه با درصد تغییر قیمت
+        پایانی نماد (نه قیمت آخر) کنار هر ردیف — برای زمینه‌ی سریع‌تر.
 
         Returns:
             str: پیام آماده برای ارسال به تلگرام
@@ -207,8 +283,41 @@ class DailySummaryGenerator:
                 raw_val = item["value"] * multiplier
                 val_str = format(raw_val, fmt)
                 unit_str = f" {unit}" if unit else ""
-                message += f"  {i}. #{symbol} — {val_str}{unit_str}\n"
+                message += f"  {i}. #{symbol} — {val_str}{unit_str}"
+                message += self._format_price_change_suffix(item.get("price_change_percent"))
+                message += "\n"
 
+            message += "\n"
+
+        message += f"📅 {date_str} | 🕐 {time_str}\n"
+        message += f"📢 {self.telegram.channel_name}"
+
+        return message
+
+    # ------------------------------------------------------------------
+    # فرمت پیام برترین صنایع
+    # ------------------------------------------------------------------
+    def format_top_industries_message(self, top_industries: List[dict]) -> str:
+        """
+        فرمت پیام برترین صنایع — هم‌الگو با پیام Top-N فیلترها (لیست
+        شماره‌دار)، بدون خط جداکننده، فوتر هم‌شکل با بقیه‌ی پیام‌ها.
+        """
+        if not top_industries:
+            return ""
+
+        date_str, time_str = self._get_tehran_datetime()
+
+        message = "🏭 <b>برترین صنایع امروز</b>\n\n"
+
+        for i, industry in enumerate(top_industries, 1):
+            name = industry["industry_name"].replace(" ", "_")
+            count = industry["symbol_count"]
+            hashtags = " ".join(
+                f"#{self._format_symbol_hashtag(s)}" for s in industry["symbols"]
+            )
+            message += f"{i}. {name} — {count} نماد\n"
+            if hashtags:
+                message += f"   {hashtags}\n"
             message += "\n"
 
         message += f"📅 {date_str} | 🕐 {time_str}\n"
@@ -226,6 +335,14 @@ class DailySummaryGenerator:
         return str(symbol).replace(' ', '_').replace('\u200c', '_').strip()
 
     @staticmethod
+    def _format_price_change_suffix(price_change_percent: Optional[float]) -> str:
+        """تبدیل درصد تغییر قیمت پایانی به پسوند نمایشی '  ▲ 3.2%' یا '  ▼ 1.0%'."""
+        if price_change_percent is None:
+            return ""
+        arrow = "▲" if price_change_percent >= 0 else "▼"
+        return f"  {arrow} {abs(price_change_percent):.1f}%"
+
+    @staticmethod
     def _get_tehran_datetime() -> tuple:
         now = datetime.now(TEHRAN_TZ)
         jnow = jdatetime.datetime.fromgregorian(datetime=now.replace(tzinfo=None))
@@ -234,16 +351,20 @@ class DailySummaryGenerator:
         return date_str, time_str
 
     # ------------------------------------------------------------------
-    # تولید و ارسال — هر دو پیام
+    # تولید و ارسال — هر سه پیام
     # ------------------------------------------------------------------
     async def generate_and_send(self, min_count: int = 3, top_n: int = None) -> bool:
         """
-        تولید و ارسال دو پیام:
+        تولید و ارسال سه پیام:
           ۱. خلاصه نمادهای پرتکرار
-          ۲. Top-5 برترین نمادهای هر فیلتر
+          ۲. Top-N برترین نمادهای هر فیلتر
+          ۳. برترین صنایع امروز
+
+        داده‌ی Gist فقط یک‌بار در ابتدا لود می‌شه و بین هر سه محاسبه به
+        اشتراک گذاشته می‌شه (قبلاً هر متد جدا لود می‌کرد).
 
         Returns:
-            bool: True اگر هر دو پیام موفق باشند
+            bool: True اگر همه‌ی پیام‌های قابل‌ارسال موفق باشند
         """
         try:
             data = await self.alert_manager._load_gist_content()
@@ -253,7 +374,7 @@ class DailySummaryGenerator:
             ))
 
             # پیام ۱: نمادهای پرتکرار
-            frequent_symbols = await self.get_frequent_symbols(min_count, top_n)
+            frequent_symbols = self.get_frequent_symbols(data, min_count, top_n)
             message1 = self.format_summary_message(frequent_symbols, total_unique_symbols)
 
             logger.info("📤 ارسال پیام خلاصه نمادهای پرتکرار...")
@@ -265,7 +386,7 @@ class DailySummaryGenerator:
                 logger.error("❌ خطا در ارسال پیام خلاصه")
 
             # پیام ۲: Top-5 هر فیلتر
-            top_per_filter = await self.get_top_symbols_per_filter(top_n=5)
+            top_per_filter = self.get_top_symbols_per_filter(data, top_n=5)
             message2 = self.format_top_filter_message(top_per_filter)
 
             success2 = True
@@ -279,7 +400,22 @@ class DailySummaryGenerator:
             else:
                 logger.info("ℹ️ داده‌ای برای Top-5 موجود نیست")
 
-            return success1 and success2
+            # پیام ۳: برترین صنایع
+            top_industries = self.get_top_industries(data, top_n=5)
+            message3 = self.format_top_industries_message(top_industries)
+
+            success3 = True
+            if message3:
+                logger.info("📤 ارسال پیام برترین صنایع...")
+                success3 = await self.telegram.send_message(message3, parse_mode='HTML')
+                if success3:
+                    logger.info("✅ پیام برترین صنایع ارسال شد")
+                else:
+                    logger.error("❌ خطا در ارسال پیام برترین صنایع")
+            else:
+                logger.info("ℹ️ داده‌ای برای برترین صنایع موجود نیست")
+
+            return success1 and success2 and success3
 
         except Exception as e:
             logger.error(f"❌ خطا در تولید گزارش خلاصه: {e}", exc_info=True)
