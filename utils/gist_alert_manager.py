@@ -14,6 +14,15 @@ import time
 
 logger = logging.getLogger(__name__)
 
+# پسوند dedup برای کپیِ واچ‌لیست شخصی در کانال دوم — عمداً از filter_name جدا نگه
+# داشته می‌شه تا ارسال به کانال اصلی و ارسال به کانال دوم مستقل از هم dedup بشن
+# (وگرنه چون GistAlertManager فقط بر اساس (symbol, alert_type) چک می‌کنه، ارسال
+# دوم به‌اشتباه «قبلاً ارسال شده» تشخیص داده می‌شد و رد می‌شد).
+# این ثابت اینجا تعریف شده (نه در main.py) چون هم main.py و هم
+# daily_summary_generator.py بهش نیاز دارن؛ داشتنش در یک‌جا از عدم‌همگامی
+# بین دو فایل جلوگیری می‌کنه.
+WATCHLIST_COPY_SUFFIX = "__watchlist_copy"
+
 
 class GistAlertManager:
     """مدیریت هشدارها با ذخیره مستقیم در GitHub Gist - نسخه Async"""
