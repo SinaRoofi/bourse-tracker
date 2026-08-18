@@ -74,6 +74,29 @@ class DailySummaryGenerator:
     # ------------------------------------------------------------------
     # نمادهای پرتکرار
     # ------------------------------------------------------------------
+    @staticmethod
+    def _count_unique_signals(today_alerts: List[dict]) -> Dict[str, int]:
+        """
+        شمارش تعداد سیگنال‌های یکتای هر نماد در امروز — هر (نماد، فیلتر واقعی)
+        فقط یک‌بار حساب می‌شه، حتی اگه به‌خاطر واچ‌لیست شخصی کپی هم داشته
+        باشه (پسوند WATCHLIST_COPY_SUFFIX حذف می‌شه). هم برای «نمادهای
+        پرتکرار» و هم برای رتبه‌بندی preview نمادهای هر صنعت استفاده می‌شه.
+        """
+        seen_signals = set()
+        symbol_count: Dict[str, int] = {}
+        for alert in today_alerts:
+            symbol = alert.get("symbol")
+            alert_type = alert.get("alert_type", "")
+            if not symbol:
+                continue
+            base_alert_type = alert_type.removesuffix(WATCHLIST_COPY_SUFFIX)
+            signal = (symbol, base_alert_type)
+            if signal in seen_signals:
+                continue
+            seen_signals.add(signal)
+            symbol_count[symbol] = symbol_count.get(symbol, 0) + 1
+        return symbol_count
+
     def get_frequent_symbols(
         self, data: dict, min_count: int = 3, top_n: int = None
     ) -> Dict[str, int]:
@@ -90,24 +113,7 @@ class DailySummaryGenerator:
 
         logger.info(f"✅ {len(today_alerts)} هشدار یافت شد")
 
-        # هر سیگنال باید فقط یک‌بار شمرده بشه، حتی اگه (چون نماد در واچ‌لیست
-        # شخصیه) یه کپی‌ش هم به کانال دوم ارسال شده باشه. کپی واچ‌لیست با
-        # پسوند WATCHLIST_COPY_SUFFIX روی alert_type ذخیره می‌شه؛ اینجا اون
-        # پسوند رو حذف می‌کنیم تا (symbol, filter_name واقعی) یکتا شمرده بشه
-        # — نه رکورد خام Gist.
-        seen_signals = set()
-        symbol_count = {}
-        for alert in today_alerts:
-            symbol = alert.get("symbol")
-            alert_type = alert.get("alert_type", "")
-            if not symbol:
-                continue
-            base_alert_type = alert_type.removesuffix(WATCHLIST_COPY_SUFFIX)
-            signal = (symbol, base_alert_type)
-            if signal in seen_signals:
-                continue
-            seen_signals.add(signal)
-            symbol_count[symbol] = symbol_count.get(symbol, 0) + 1
+        symbol_count = self._count_unique_signals(today_alerts)
 
         frequent_symbols = {
             symbol: count
@@ -173,22 +179,43 @@ class DailySummaryGenerator:
     # ------------------------------------------------------------------
     # برترین صنایع
     # ------------------------------------------------------------------
-    def get_top_industries(self, data: dict, top_n: int = 5, symbols_preview: int = 4) -> List[dict]:
+    def get_top_industries(
+        self,
+        data: dict,
+        industry_universe: Optional[dict] = None,
+        top_n: int = 5,
+        symbols_preview: int = 4,
+    ) -> List[dict]:
         """
-        صنایعی که بیشترین تعداد نماد یکتای فعال (هشداردهنده) رو امروز داشتن.
+        صنایعی که امروز بیشترین «مشارکت» رو داشتن.
 
-        معیار رتبه‌بندی عمداً «تعداد نماد یکتا» ست نه «تعداد کل alert» — وگرنه
-        یه نماد که در چند فیلتر هم‌زمان alert می‌گیره می‌تونست صنعتش رو
-        مصنوعی بالا بکشه. صندوق‌ها (is_fund=True) و رکوردهایی که industry_name
-        ندارن (چون قبل از این تغییر ثبت شدن یا صندوق بودن) کنار گذاشته می‌شن.
+        معیار رتبه‌بندی: درصد مشارکت = (تعداد نماد یکتای هشداردهنده در صنعت)
+        / (تعداد کل نماد اون صنعت، از industry_universe). این عمداً به‌جای
+        عدد خام استفاده می‌شه، چون صنایع بزرگ (سرمایه‌گذاری، دارویی، ...) صرفاً
+        به‌خاطر تعداد زیاد نماد همیشه بالای لیست می‌موندن، حتی روزهای عادی —
+        درصد نشون می‌ده کدوم صنعت *نسبت به اندازه‌ی خودش* امروز داغ بوده.
+
+        اگه industry_universe خالی باشه (مثلاً روز اول دیپلوی این ویژگی و
+        هنوز main.py چیزی ذخیره نکرده)، برمی‌گرده به رتبه‌بندی بر اساس عدد
+        خام (رفتار قبلی) بدون کرش کردن.
+
+        preview نمادها: به‌جای الفبایی، بر اساس تعداد سیگنال هر نماد در کل
+        بازار امروز (از _count_unique_signals) مرتب می‌شه — یعنی نمادهایی که
+        در چند فیلتر هم‌زمان alert گرفتن (سیگنال قوی‌تر) اول preview میان.
+
+        صندوق‌ها (is_fund=True) و رکوردهای بدون industry_name کنار گذاشته
+        می‌شن.
 
         Returns:
-            list: [{"industry_name": ..., "symbol_count": ..., "symbols": [...]}]
-                  مرتب‌شده نزولی بر اساس symbol_count
+            list: [{"industry_name", "symbol_count", "universe_count",
+                     "participation_pct", "symbols": [...]}]
+                  مرتب‌شده نزولی — اول بر اساس درصد مشارکت (اگه موجود باشه)
         """
         today_alerts = data.get(self.today_jalali, [])
         if not today_alerts:
             return []
+
+        signal_counts = self._count_unique_signals(today_alerts)
 
         industry_symbols: Dict[str, set] = {}
         for alert in today_alerts:
@@ -203,18 +230,38 @@ class DailySummaryGenerator:
         if not industry_symbols:
             return []
 
-        ranked = sorted(
-            industry_symbols.items(), key=lambda x: len(x[1]), reverse=True
-        )[:top_n]
+        industry_universe = industry_universe or {}
 
-        result = [
-            {
+        rows = []
+        for industry_name, symbols in industry_symbols.items():
+            alerted_count = len(symbols)
+            universe_count = industry_universe.get(industry_name)
+            participation_pct = (
+                (alerted_count / universe_count * 100) if universe_count else None
+            )
+            preview_symbols = sorted(
+                symbols, key=lambda s: (-signal_counts.get(s, 0), s)
+            )[:symbols_preview]
+            rows.append({
                 "industry_name": industry_name,
-                "symbol_count": len(symbols),
-                "symbols": sorted(symbols)[:symbols_preview],
-            }
-            for industry_name, symbols in ranked
-        ]
+                "symbol_count": alerted_count,
+                "universe_count": universe_count,
+                "participation_pct": participation_pct,
+                "symbols": preview_symbols,
+            })
+
+        # صنایعی که درصد مشارکت دارن (معیار بهتر) همیشه قبل از صنایعی که
+        # هنوز universe_count ندارن رتبه‌بندی می‌شن
+        rows_with_pct = sorted(
+            (r for r in rows if r["participation_pct"] is not None),
+            key=lambda r: r["participation_pct"], reverse=True,
+        )
+        rows_without_pct = sorted(
+            (r for r in rows if r["participation_pct"] is None),
+            key=lambda r: r["symbol_count"], reverse=True,
+        )
+
+        result = (rows_with_pct + rows_without_pct)[:top_n]
 
         logger.info(f"🏭 برترین صنایع: {[r['industry_name'] for r in result]}")
         return result
@@ -283,9 +330,8 @@ class DailySummaryGenerator:
                 raw_val = item["value"] * multiplier
                 val_str = format(raw_val, fmt)
                 unit_str = f" {unit}" if unit else ""
-                message += f"  {i}. #{symbol} — {val_str}{unit_str}"
-                message += self._format_price_change_suffix(item.get("price_change_percent"))
-                message += "\n"
+                price_prefix = self._format_price_change_prefix(item.get("price_change_percent"))
+                message += f"  {i}. #{symbol} — {price_prefix}{val_str}{unit_str}\n"
 
             message += "\n"
 
@@ -301,6 +347,9 @@ class DailySummaryGenerator:
         """
         فرمت پیام برترین صنایع — هم‌الگو با پیام Top-N فیلترها (لیست
         شماره‌دار)، بدون خط جداکننده، فوتر هم‌شکل با بقیه‌ی پیام‌ها.
+
+        اگه درصد مشارکت موجود باشه: «۳۸/۹۰ نماد (۴۲٪)»
+        وگرنه (fallback، مثلاً روز اول قبل از ذخیره‌شدن universe): «۳۸ نماد»
         """
         if not top_industries:
             return ""
@@ -312,10 +361,18 @@ class DailySummaryGenerator:
         for i, industry in enumerate(top_industries, 1):
             name = industry["industry_name"].replace(" ", "_")
             count = industry["symbol_count"]
+            universe_count = industry.get("universe_count")
+            participation_pct = industry.get("participation_pct")
+
+            if participation_pct is not None and universe_count:
+                count_str = f"{count}/{universe_count} نماد ({participation_pct:.0f}٪)"
+            else:
+                count_str = f"{count} نماد"
+
             hashtags = " ".join(
                 f"#{self._format_symbol_hashtag(s)}" for s in industry["symbols"]
             )
-            message += f"{i}. {name} — {count} نماد\n"
+            message += f"{i}. {name} — {count_str}\n"
             if hashtags:
                 message += f"   {hashtags}\n"
             message += "\n"
@@ -335,12 +392,15 @@ class DailySummaryGenerator:
         return str(symbol).replace(' ', '_').replace('\u200c', '_').strip()
 
     @staticmethod
-    def _format_price_change_suffix(price_change_percent: Optional[float]) -> str:
-        """تبدیل درصد تغییر قیمت پایانی به پسوند نمایشی '  ▲ 3.2%' یا '  ▼ 1.0%'."""
+    def _format_price_change_prefix(price_change_percent: Optional[float]) -> str:
+        """تبدیل درصد تغییر قیمت پایانی به پیشوند نمایشی '▲2.9% | ' یا '▼1.0% | '،
+        که قبل از مقدار خودِ فیلتر میاد (مثلاً '▲2.9% | 1035 M'). درصد قیمت
+        عمداً اول میاد چون سیگنال مهم‌تری برای نگاه اول کاربره؛ مقدار فیلتر
+        بعدش با یه '|' از هم جدا می‌شه تا با عدد سمت راستش قاطی نشه."""
         if price_change_percent is None:
             return ""
         arrow = "▲" if price_change_percent >= 0 else "▼"
-        return f"  {arrow} {abs(price_change_percent):.1f}%"
+        return f"{arrow}{abs(price_change_percent):.1f}% | "
 
     @staticmethod
     def _get_tehran_datetime() -> tuple:
@@ -401,7 +461,8 @@ class DailySummaryGenerator:
                 logger.info("ℹ️ داده‌ای برای Top-5 موجود نیست")
 
             # پیام ۳: برترین صنایع
-            top_industries = self.get_top_industries(data, top_n=5)
+            industry_universe = await self.alert_manager.get_industry_universe()
+            top_industries = self.get_top_industries(data, industry_universe, top_n=5)
             message3 = self.format_top_industries_message(top_industries)
 
             success3 = True
