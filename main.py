@@ -22,7 +22,7 @@ from utils.holidays import is_trading_day
 from utils.data_fetcher import UnifiedDataFetcher
 from utils.data_processor import BourseDataProcessor
 from utils.alerts import TelegramAlert
-from utils.gist_alert_manager import GistAlertManager
+from utils.gist_alert_manager import GistAlertManager, WATCHLIST_COPY_SUFFIX
 
 # ===========================
 # تنظیم timezone تهران
@@ -112,11 +112,10 @@ def chunk_dataframe(df, filter_name):
 # ارسال هشدارها - نسخه Parallel
 # ===========================
 
-# پسوند dedup برای کپیِ واچ‌لیست شخصی در کانال دوم — عمداً از filter_name جدا نگه
-# داشته می‌شه تا ارسال به کانال اصلی و ارسال به کانال دوم مستقل از هم dedup بشن
-# (وگرنه چون GistAlertManager فقط بر اساس (symbol, alert_type) چک می‌کنه، ارسال
-# دوم به‌اشتباه «قبلاً ارسال شده» تشخیص داده می‌شد و رد می‌شد).
-WATCHLIST_COPY_SUFFIX = "__watchlist_copy"
+# توجه: WATCHLIST_COPY_SUFFIX از utils.gist_alert_manager ایمپورت می‌شه (نه اینجا
+# تعریف می‌شه) چون daily_summary_generator.py هم برای رفع دوبار-شمارش نمادهای
+# واچ‌لیستی در گزارش «نمادهای پرتکرار» بهش نیاز داره — نگه‌داری در یک‌جا از
+# عدم‌همگامی بین دو فایل جلوگیری می‌کنه.
 
 
 async def _queue_filter_tasks(
