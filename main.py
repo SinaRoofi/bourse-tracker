@@ -358,6 +358,20 @@ async def main_async():
         logger.info("\n📤 شروع ارسال هشدارها به تلگرام...")
         alert_manager = GistAlertManager(GIST_TOKEN, GIST_ID)
 
+        # ذخیره‌ی یک‌باره‌ی تعداد کل نماد هر صنعت (universe) — برای نرمال‌سازی
+        # «برترین صنایع» در گزارش خلاصه‌ی روزانه (درصد مشارکت به‌جای عدد خام).
+        # save_industry_universe خودش idempotent هست، پس فراخوانی مکرر طی روز
+        # بی‌خطره و فقط یک‌بار واقعاً می‌نویسه.
+        if "industry_name" in df.columns:
+            universe_df = df if "is_fund" not in df.columns else df[~df["is_fund"].fillna(False)]
+            # json.dumps نمی‌تونه numpy.int64 رو serialize کنه، پس صریحاً int می‌کنیم
+            industry_universe = {
+                str(name): int(count)
+                for name, count in universe_df["industry_name"].dropna().value_counts().items()
+            }
+            if industry_universe:
+                await alert_manager.save_industry_universe(industry_universe)
+
         # هشدار فوری اگه یکی از فیلترها امروز خطا داده باشه (کانال جدا، نه کانال اصلی)
         if processor.failed_filters:
             failed_list = "، ".join(processor.failed_filters)
