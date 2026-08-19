@@ -1,10 +1,16 @@
 """
 Entry point برای Daily Summary Reporter
 فقط یک‌بار در روز و فقط بعد از ساعت 12:31 تهران اجرا می‌شود
+
+برای تست: با ست‌کردن متغیر محیطی FORCE_SUMMARY=true می‌تونید چک روز
+معاملاتی، چک ساعت، و قفل «قبلاً ارسال شده» رو دور بزنید. توی حالت فورس،
+خلاصه ارسال می‌شه ولی قفل روزانه ثبت نمی‌شه (تا اجرای واقعی بعدی خراب نشه).
+مثال اجرا: FORCE_SUMMARY=true python daily_summary_main.py
 """
 
 import asyncio
 from datetime import datetime
+import os
 import pytz
 import sys
 import logging
@@ -37,6 +43,11 @@ logging.basicConfig(
 logging.Formatter.converter = tehran_time
 logger = logging.getLogger(__name__)
 
+# ===========================
+# حالت فورس (تست)
+# ===========================
+FORCE_SUMMARY = os.getenv("FORCE_SUMMARY", "false").strip().lower() in ("1", "true", "yes")
+
 
 def should_send_summary_by_time() -> bool:
     """فقط بعد از 12:31 تهران"""
@@ -62,8 +73,11 @@ async def main_async():
     logger.info("=" * 80)
 
     try:
+        if FORCE_SUMMARY:
+            logger.warning("🧪 FORCE_SUMMARY فعاله — چک روز معاملاتی، چک ساعت و قفل روزانه دور زده می‌شن")
+
         # 1) چک روز معاملاتی (روز کاری + غیرتعطیل)
-        if not is_trading_day_today():
+        if not FORCE_SUMMARY and not is_trading_day_today():
             logger.info("⏭️ امروز روز معاملاتی بورس نیست — خروج بدون ارسال")
             return
 
@@ -71,7 +85,7 @@ async def main_async():
         now = datetime.now(TEHRAN_TZ)
         current_time = now.strftime("%H:%M")
 
-        if not should_send_summary_by_time():
+        if not FORCE_SUMMARY and not should_send_summary_by_time():
             logger.info(f"⏭️ هنوز زود است. ساعت فعلی: {current_time}")
             return
 
@@ -88,7 +102,7 @@ async def main_async():
         summary_generator = DailySummaryGenerator(alert_manager, telegram_alert)
 
         # 5) چک ارسال‌شدن قبلی (قفل روزانه)
-        if await alert_manager.is_today_summary_sent():
+        if not FORCE_SUMMARY and await alert_manager.is_today_summary_sent():
             logger.info("⏭️ خلاصه امروز قبلاً ارسال شده — خروج")
             return
 
@@ -100,9 +114,12 @@ async def main_async():
             top_n=None
         )
 
-        # 7) ثبت قفل روزانه
+        # 7) ثبت قفل روزانه (توی حالت فورس قفل ثبت نمی‌شه)
         if success:
-            await alert_manager.mark_today_summary_sent()
+            if FORCE_SUMMARY:
+                logger.info("🧪 حالت فورس: قفل روزانه ثبت نشد")
+            else:
+                await alert_manager.mark_today_summary_sent()
             logger.info("=" * 80)
             logger.info("✅ خلاصه روزانه با موفقیت ارسال و ثبت شد")
             logger.info("=" * 80)
