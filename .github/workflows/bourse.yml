@@ -1,6 +1,11 @@
 name: Bourse Tracker
 on:
   workflow_dispatch:
+    inputs:
+      force_summary:
+        description: "فورس ارسال خلاصه روزانه (بدون چک ساعت/روز/قفل) - فقط برای تست"
+        type: boolean
+        default: false
   repository_dispatch:
     types: [run-tracker]
 
@@ -43,6 +48,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          FORCE_SUMMARY: ${{ inputs.force_summary || 'false' }}
 
       - if: failure()
         uses: actions/upload-artifact@v4
