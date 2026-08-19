@@ -220,14 +220,23 @@ class BourseDataProcessor:
         config = SARANE_CROSS_CONFIG
         logger.info("اعمال فیلتر 2: کراس سرانه خرید")
         logger.info(
-            f"  • شرط 4: buy_queue_value < {config['max_buy_queue_value']} میلیارد تومان (ارزش ردیف اول صف خرید)"
+            f"  • شرط 4: اگه نماد روی سقف قیمت قفله، ارزش سفارش ردیف اول صف خرید باید کمتر از "
+            f"{config['max_buy_queue_value']} میلیارد تومان باشه (وگرنه حذف می‌شه)"
+        )
+
+        # شرط ارزش ردیف اول فقط وقتی اعمال می‌شه که نماد روی سقف قیمت قفل
+        # باشه (last_price == ceiling_price). صندوق‌ها ceiling_price ندارن
+        # (NaN) که مقایسه‌ش به‌طور طبیعی False می‌شه و از این شرط رد می‌شن.
+        is_at_ceiling = df["last_price"] == df["ceiling_price"]
+        heavy_queue_at_ceiling = is_at_ceiling & (
+            df["buy_queue_value"] >= config["max_buy_queue_value"]
         )
 
         filtered = df[
             (df["sarane_kharid"] > df["sarane_forosh"])
             & (df["value_to_avg_monthly_value"] >= config["min_value_to_avg_monthly"])
             & (df["sarane_kharid"] >= config["min_sarane_kharid"])
-            & (df["buy_queue_value"] < config["max_buy_queue_value"])  # ارزش ردیف اول صف خرید < 2 میلیارد تومان
+            & ~heavy_queue_at_ceiling
         ].copy()
 
         filtered = filtered.sort_values("sarane_kharid", ascending=False)
