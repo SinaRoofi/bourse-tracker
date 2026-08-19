@@ -6,7 +6,6 @@
 """
 
 import logging
-import math
 from datetime import datetime
 import jdatetime
 import pytz
@@ -188,38 +187,32 @@ class DailySummaryGenerator:
         symbols_preview: int = 4,
     ) -> List[dict]:
         """
-        صنایعی که امروز بیشترین «مشارکت» رو داشتن.
+        صنایعی که امروز بیشترین «هشدار» (فعالیت) رو داشتن.
 
-        معیار رتبه‌بندی: score = participation_pct × log(universe_count + 1)
+        معیار رتبه‌بندی: total_alert_count = مجموع تعداد کل هشدارهای
+        ثبت‌شده امروز برای اون صنعت (نه تعداد نماد یکتا). یعنی نمادی که
+        امروز ۵ بار توی فیلترهای مختلف هشدار گرفته، ۵ برابر نمادی که فقط
+        ۱ بار هشدار گرفته وزن داره — برخلاف قبل که فقط «حضور حداقل یه‌بار»
+        حساب می‌شد و صنایع کوچیک با چندتا نماد کم‌اهمیت هم مصنوعی بالا
+        می‌اومدن.
 
-        درصد خام مشارکت (alerted/universe) به‌تنهایی به نفع صنایع خیلی
-        کوچیکه: یه صنعت تک‌نمادی که همون یه نمادش امروز هشدار بگیره،
-        فوراً می‌شه ۱۰۰٪ و بالای لیست می‌شینه، بدون اینکه واقعاً یه
-        «روند صنعتی» معنادار باشه. برای رفع این bias، درصد رو در
-        log(universe_count + 1) ضرب می‌کنیم تا صنایع با تعداد نماد
-        بیشتر (که مشارکت بالاشون معنادارتره) وزن بیشتری بگیرن؛ ضرب
-        لگاریتمی (نه خطی) باعث می‌شه صنایع خیلی بزرگ هم دوباره صرفاً
-        به‌خاطر اندازه‌شون حاکم نشن.
+        حداقل ۲ نماد یکتای هشداردهنده (alerted_count >= 2) هم لازمه تا
+        صنعت وارد رتبه‌بندی بشه — جلوی صنایعی رو می‌گیره که کل «داغی»شون
+        فقط از یه نماد تک‌رقمی میاد.
 
-        علاوه بر این، حداقل ۲ نماد هشداردهنده (alerted_count >= 2) لازمه
-        تا صنعت اصلاً وارد رتبه‌بندی بشه — این جلوی نوسان بی‌معنی صنایع
-        تک‌نمادی رو می‌گیره.
-
-        اگه industry_universe خالی باشه (مثلاً روز اول دیپلوی این ویژگی و
-        هنوز main.py چیزی ذخیره نکرده)، برمی‌گرده به رتبه‌بندی بر اساس عدد
-        خام (رفتار قبلی) بدون کرش کردن.
-
-        preview نمادها: به‌جای الفبایی، بر اساس تعداد سیگنال هر نماد در کل
-        بازار امروز (از _count_unique_signals) مرتب می‌شه — یعنی نمادهایی که
-        در چند فیلتر هم‌زمان alert گرفتن (سیگنال قوی‌تر) اول preview میان.
+        preview نمادها (نمادهای داغ صنعت): به‌جای الفبایی، بر اساس تعداد
+        سیگنال هر نماد در کل بازار امروز (از _count_unique_signals) مرتب
+        می‌شه — یعنی نمادهایی که در چند فیلتر هم‌زمان alert گرفتن (سیگنال
+        قوی‌تر) اول preview میان.
 
         صندوق‌ها (is_fund=True) و رکوردهای بدون industry_name کنار گذاشته
         می‌شن.
 
         Returns:
             list: [{"industry_name", "symbol_count", "universe_count",
-                     "participation_pct", "score", "symbols": [...]}]
-                  مرتب‌شده نزولی — اول بر اساس score (اگه موجود باشه)
+                     "participation_pct", "total_alert_count",
+                     "symbols": [...]}]
+                  مرتب‌شده نزولی بر اساس total_alert_count
         """
         today_alerts = data.get(self.today_jalali, [])
         if not today_alerts:
@@ -228,6 +221,7 @@ class DailySummaryGenerator:
         signal_counts = self._count_unique_signals(today_alerts)
 
         industry_symbols: Dict[str, set] = {}
+        industry_alert_counts: Dict[str, int] = {}
         for alert in today_alerts:
             if alert.get("is_fund"):
                 continue
@@ -236,12 +230,13 @@ class DailySummaryGenerator:
             if not industry_name or not symbol:
                 continue
             industry_symbols.setdefault(industry_name, set()).add(symbol)
+            industry_alert_counts[industry_name] = industry_alert_counts.get(industry_name, 0) + 1
 
         if not industry_symbols:
             return []
 
         industry_universe = industry_universe or {}
-        MIN_ALERTED_SYMBOLS = 2  # حداقل نماد هشداردهنده برای ورود به رتبه‌بندی
+        MIN_ALERTED_SYMBOLS = 2  # حداقل نماد یکتای هشداردهنده برای ورود به رتبه‌بندی
 
         rows = []
         for industry_name, symbols in industry_symbols.items():
@@ -252,11 +247,6 @@ class DailySummaryGenerator:
             participation_pct = (
                 (alerted_count / universe_count * 100) if universe_count else None
             )
-            score = (
-                participation_pct * math.log(universe_count + 1)
-                if participation_pct is not None
-                else None
-            )
             preview_symbols = sorted(
                 symbols, key=lambda s: (-signal_counts.get(s, 0), s)
             )[:symbols_preview]
@@ -265,22 +255,13 @@ class DailySummaryGenerator:
                 "symbol_count": alerted_count,
                 "universe_count": universe_count,
                 "participation_pct": participation_pct,
-                "score": score,
+                "total_alert_count": industry_alert_counts[industry_name],
                 "symbols": preview_symbols,
             })
 
-        # صنایعی که score دارن (معیار بهتر) همیشه قبل از صنایعی که
-        # هنوز universe_count ندارن رتبه‌بندی می‌شن
-        rows_with_score = sorted(
-            (r for r in rows if r["score"] is not None),
-            key=lambda r: r["score"], reverse=True,
-        )
-        rows_without_score = sorted(
-            (r for r in rows if r["score"] is None),
-            key=lambda r: r["symbol_count"], reverse=True,
-        )
-
-        result = (rows_with_score + rows_without_score)[:top_n]
+        result = sorted(
+            rows, key=lambda r: r["total_alert_count"], reverse=True
+        )[:top_n]
 
         logger.info(f"🏭 برترین صنایع: {[r['industry_name'] for r in result]}")
         return result
@@ -367,8 +348,10 @@ class DailySummaryGenerator:
         فرمت پیام برترین صنایع — هم‌الگو با پیام Top-N فیلترها (لیست
         شماره‌دار)، بدون خط جداکننده، فوتر هم‌شکل با بقیه‌ی پیام‌ها.
 
-        اگه درصد مشارکت موجود باشه: «۳۸/۹۰ نماد (۴۲٪)»
-        وگرنه (fallback، مثلاً روز اول قبل از ذخیره‌شدن universe): «۳۸ نماد»
+        نمایش: «۵۸ هشدار (۳۶/۵۱ نماد، ۷۱٪)» — تعداد کل هشدار (معیار
+        رتبه‌بندی) همراه با تعداد نماد یکتا و درصد مشارکت به‌عنوان اطلاعات
+        تکمیلی. اگه درصد مشارکت موجود نباشه (fallback، مثلاً روز اول قبل
+        از ذخیره‌شدن universe): «۵۸ هشدار (۳۶ نماد)»
         """
         if not top_industries:
             return ""
@@ -382,11 +365,12 @@ class DailySummaryGenerator:
             count = industry["symbol_count"]
             universe_count = industry.get("universe_count")
             participation_pct = industry.get("participation_pct")
+            total_alert_count = industry.get("total_alert_count", 0)
 
             if participation_pct is not None and universe_count:
-                count_str = f"{count}/{universe_count} نماد ({participation_pct:.0f}٪)"
+                count_str = f"{total_alert_count} هشدار ({count}/{universe_count} نماد، {participation_pct:.0f}٪)"
             else:
-                count_str = f"{count} نماد"
+                count_str = f"{total_alert_count} هشدار ({count} نماد)"
 
             hashtags = " ".join(
                 f"#{self._format_symbol_hashtag(s)}" for s in industry["symbols"]
