@@ -219,11 +219,15 @@ class BourseDataProcessor:
 
         config = SARANE_CROSS_CONFIG
         logger.info("اعمال فیلتر 2: کراس سرانه خرید")
+        logger.info(
+            f"  • شرط 4: buy_queue_value < {config['max_buy_queue_value']} میلیارد تومان (ارزش ردیف اول صف خرید)"
+        )
 
         filtered = df[
             (df["sarane_kharid"] > df["sarane_forosh"])
             & (df["value_to_avg_monthly_value"] >= config["min_value_to_avg_monthly"])
             & (df["sarane_kharid"] >= config["min_sarane_kharid"])
+            & (df["buy_queue_value"] < config["max_buy_queue_value"])  # ارزش ردیف اول صف خرید < 2 میلیارد تومان
         ].copy()
 
         filtered = filtered.sort_values("sarane_kharid", ascending=False)
