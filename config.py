@@ -181,6 +181,7 @@ SARANE_CROSS_CONFIG = {
     "sarane_kharid_greater_than_forosh": True,
     "min_value_to_avg_monthly": 0.5,
     "min_sarane_kharid": 100,
+    "max_buy_queue_value": 2,  # میلیارد تومان - ارزش صف خرید ردیف اول باید کمتر از این باشه
 }
 
 # فیلتر 3: واچ‌لیست شخصی — عبور از یک آستانه‌ی واحد
