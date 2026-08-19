@@ -6,6 +6,7 @@
 """
 
 import logging
+import math
 from datetime import datetime
 import jdatetime
 import pytz
@@ -189,11 +190,20 @@ class DailySummaryGenerator:
         """
         صنایعی که امروز بیشترین «مشارکت» رو داشتن.
 
-        معیار رتبه‌بندی: درصد مشارکت = (تعداد نماد یکتای هشداردهنده در صنعت)
-        / (تعداد کل نماد اون صنعت، از industry_universe). این عمداً به‌جای
-        عدد خام استفاده می‌شه، چون صنایع بزرگ (سرمایه‌گذاری، دارویی، ...) صرفاً
-        به‌خاطر تعداد زیاد نماد همیشه بالای لیست می‌موندن، حتی روزهای عادی —
-        درصد نشون می‌ده کدوم صنعت *نسبت به اندازه‌ی خودش* امروز داغ بوده.
+        معیار رتبه‌بندی: score = participation_pct × log(universe_count + 1)
+
+        درصد خام مشارکت (alerted/universe) به‌تنهایی به نفع صنایع خیلی
+        کوچیکه: یه صنعت تک‌نمادی که همون یه نمادش امروز هشدار بگیره،
+        فوراً می‌شه ۱۰۰٪ و بالای لیست می‌شینه، بدون اینکه واقعاً یه
+        «روند صنعتی» معنادار باشه. برای رفع این bias، درصد رو در
+        log(universe_count + 1) ضرب می‌کنیم تا صنایع با تعداد نماد
+        بیشتر (که مشارکت بالاشون معنادارتره) وزن بیشتری بگیرن؛ ضرب
+        لگاریتمی (نه خطی) باعث می‌شه صنایع خیلی بزرگ هم دوباره صرفاً
+        به‌خاطر اندازه‌شون حاکم نشن.
+
+        علاوه بر این، حداقل ۲ نماد هشداردهنده (alerted_count >= 2) لازمه
+        تا صنعت اصلاً وارد رتبه‌بندی بشه — این جلوی نوسان بی‌معنی صنایع
+        تک‌نمادی رو می‌گیره.
 
         اگه industry_universe خالی باشه (مثلاً روز اول دیپلوی این ویژگی و
         هنوز main.py چیزی ذخیره نکرده)، برمی‌گرده به رتبه‌بندی بر اساس عدد
@@ -208,8 +218,8 @@ class DailySummaryGenerator:
 
         Returns:
             list: [{"industry_name", "symbol_count", "universe_count",
-                     "participation_pct", "symbols": [...]}]
-                  مرتب‌شده نزولی — اول بر اساس درصد مشارکت (اگه موجود باشه)
+                     "participation_pct", "score", "symbols": [...]}]
+                  مرتب‌شده نزولی — اول بر اساس score (اگه موجود باشه)
         """
         today_alerts = data.get(self.today_jalali, [])
         if not today_alerts:
@@ -231,13 +241,21 @@ class DailySummaryGenerator:
             return []
 
         industry_universe = industry_universe or {}
+        MIN_ALERTED_SYMBOLS = 2  # حداقل نماد هشداردهنده برای ورود به رتبه‌بندی
 
         rows = []
         for industry_name, symbols in industry_symbols.items():
             alerted_count = len(symbols)
+            if alerted_count < MIN_ALERTED_SYMBOLS:
+                continue
             universe_count = industry_universe.get(industry_name)
             participation_pct = (
                 (alerted_count / universe_count * 100) if universe_count else None
+            )
+            score = (
+                participation_pct * math.log(universe_count + 1)
+                if participation_pct is not None
+                else None
             )
             preview_symbols = sorted(
                 symbols, key=lambda s: (-signal_counts.get(s, 0), s)
@@ -247,21 +265,22 @@ class DailySummaryGenerator:
                 "symbol_count": alerted_count,
                 "universe_count": universe_count,
                 "participation_pct": participation_pct,
+                "score": score,
                 "symbols": preview_symbols,
             })
 
-        # صنایعی که درصد مشارکت دارن (معیار بهتر) همیشه قبل از صنایعی که
+        # صنایعی که score دارن (معیار بهتر) همیشه قبل از صنایعی که
         # هنوز universe_count ندارن رتبه‌بندی می‌شن
-        rows_with_pct = sorted(
-            (r for r in rows if r["participation_pct"] is not None),
-            key=lambda r: r["participation_pct"], reverse=True,
+        rows_with_score = sorted(
+            (r for r in rows if r["score"] is not None),
+            key=lambda r: r["score"], reverse=True,
         )
-        rows_without_pct = sorted(
-            (r for r in rows if r["participation_pct"] is None),
+        rows_without_score = sorted(
+            (r for r in rows if r["score"] is None),
             key=lambda r: r["symbol_count"], reverse=True,
         )
 
-        result = (rows_with_pct + rows_without_pct)[:top_n]
+        result = (rows_with_score + rows_without_score)[:top_n]
 
         logger.info(f"🏭 برترین صنایع: {[r['industry_name'] for r in result]}")
         return result
