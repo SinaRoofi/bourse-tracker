@@ -1,6 +1,6 @@
 """
 Entry point برای Daily Summary Reporter
-فقط یک‌بار در روز و فقط بعد از ساعت 12:30 تهران اجرا می‌شود
+فقط یک‌بار در روز و فقط بعد از ساعت 12:31 تهران اجرا می‌شود
 """
 
 import asyncio
@@ -39,11 +39,11 @@ logger = logging.getLogger(__name__)
 
 
 def should_send_summary_by_time() -> bool:
-    """فقط بعد از 12:30 تهران"""
+    """فقط بعد از 12:31 تهران"""
     now = datetime.now(TEHRAN_TZ)
     if now.hour < 12:
         return False
-    if now.hour == 12 and now.minute < 30:
+    if now.hour == 12 and now.minute < 31:
         return False
     return True
 
