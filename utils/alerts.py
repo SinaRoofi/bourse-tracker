@@ -291,18 +291,19 @@ def line_buy_order(row: pd.Series) -> Optional[str]:
 
 
 def line_marubozu(row: pd.Series) -> Optional[str]:
-    """اختصاصی filter_12: نمایش OHLC + درصد بدنه‌ی کندل نسبت به رنج روز"""
-    if "body_to_range_ratio" not in row or pd.isna(row["body_to_range_ratio"]):
+    """اختصاصی filter_12: قیمت پایانی و کف، همراه با درصد هرکدوم"""
+    parts = []
+    if "final_price" in row and not pd.isna(row["final_price"]):
+        pct = row.get("final_price_change_percent")
+        pct_str = f" ({pct:+.2f}%)" if pct is not None and not pd.isna(pct) else ""
+        parts.append(f"💵 قیمت پایانی: {_format_price(row['final_price'])}{pct_str}\n")
+    if "low_price" in row and not pd.isna(row["low_price"]):
+        pct = row.get("low_price_change_percent")
+        pct_str = f" ({pct:+.2f}%)" if pct is not None and not pd.isna(pct) else ""
+        parts.append(f"🔻 کف: {_format_price(row['low_price'])}{pct_str}\n")
+    if not parts:
         return None
-    pct = row["body_to_range_ratio"] * 100
-    line = f"🕯️ <b>بدنه کندل: {pct:.0f}% از رنج روز (بدون سایه)</b>\n"
-    if all(c in row and not pd.isna(row[c]) for c in ["first_price", "high_price", "low_price"]):
-        line += (
-            f"   (اول: {_format_price(row['first_price'])} | "
-            f"سقف: {_format_price(row['high_price'])} | "
-            f"کف: {_format_price(row['low_price'])})\n"
-        )
-    return line
+    return "".join(parts)
 
 
 def line_bubble(row: pd.Series) -> Optional[str]:
