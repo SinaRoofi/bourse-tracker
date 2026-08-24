@@ -60,6 +60,12 @@ FILTER_META = {
         "unit": "M",
         "format": ".0f",
     },
+    "filter_12_bullish_marubozu": {
+        "title": "ماروبوزو صعودی",
+        "emoji": "🕯️",
+        "unit": "%",
+        "format": ".2f",
+    },
 }
 
 
