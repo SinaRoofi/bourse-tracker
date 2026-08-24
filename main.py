@@ -63,6 +63,7 @@ STOCKS_PER_MESSAGE_MAP = {
     "filter_9_first_hour": 5,
     "filter_10_heavy_buy_queue": 5,
     "filter_11_hoghooghi_haghighi_strong_buy": 5,
+    "filter_12_bullish_marubozu": 5,
 }
 
 # ===========================
@@ -76,6 +77,7 @@ FILTER_VALUE_COLUMN = {
     "filter_7_suspicious_volume":              "value_to_avg_monthly_value",
     "filter_10_heavy_buy_queue":               "buy_queue_value",
     "filter_11_hoghooghi_haghighi_strong_buy": "sarane_kharid",
+    "filter_12_bullish_marubozu":               "body_to_range_ratio",
 }
 
 
