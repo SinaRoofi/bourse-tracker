@@ -212,7 +212,7 @@ POL_HAGIGI_FILTER_CONFIG = {
 TICK_FILTER_CONFIG = {
     "first_to_low_ratio": 0.98,
     "last_to_first_ratio": 0.98,
-    "tick_diff_percent": 2.0,
+    "tick_diff_percent": 1.0,
 }
 
 # فیلتر 7: حجم مشکوک
