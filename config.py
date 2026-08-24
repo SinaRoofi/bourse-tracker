@@ -210,8 +210,8 @@ POL_HAGIGI_FILTER_CONFIG = {
 
 # فیلتر 6: تیک و ساعت
 TICK_FILTER_CONFIG = {
-    "first_to_low_ratio": 0.98,
-    "last_to_first_ratio": 0.98,
+    "first_to_low_ratio": 0.99,
+    "last_to_first_ratio": 0.99,
     "tick_diff_percent": 1.0,
 }
 
