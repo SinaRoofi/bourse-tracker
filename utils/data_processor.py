@@ -621,6 +621,107 @@ class BourseDataProcessor:
         return filtered
 
     # ========================================
+    # فیلتر 12: ماروبوزو صعودی با حجم عجیب
+    # ========================================
+    def filter_12_bullish_marubozu_high_volume(
+        self, df: pd.DataFrame, config: dict = None
+    ) -> pd.DataFrame:
+        """
+        ماروبوزو صعودی = کندلی تقریباً بدون سایه: قیمت اول (open) نزدیک به
+        کف روز (سایه پایین نداره) و قیمت آخر (close) نزدیک به سقف روز
+        (سایه بالا نداره) — یعنی خریداران از همون اول کنترل رو دست گرفتن
+        و تا آخر روز ول نکردن.
+
+        معیار عددی: body_to_range_ratio = (last_price - first_price) /
+        (high_price - low_price). هرچی این نسبت به 1 نزدیک‌تر باشه، سایه
+        کمتره. ترکیب با حجم/ارزش غیرعادی (value_to_avg_monthly_value) که
+        نشون می‌ده این حرکت با ورود پول قابل‌توجه همراه بوده.
+
+        معیار «رشد معنادار» عمداً بر پایه‌ی intraday_move_percent =
+        (last_price - first_price) / first_price * 100 حساب می‌شه (یعنی
+        اندازه‌ی خودِ بدنه‌ی کندل امروز نسبت به قیمت باز شدن)، نه
+        last_price_change_percent (که نسبت به قیمت پایانی دیروزه). چون
+        last_price_change_percent به گپ باز شدن (fist_price_change_percent)
+        هم وابسته‌ست، توی بازاری با دامنه‌ی کوچیک (مثلاً ±3%) می‌تونه یه
+        ماروبوزوی واقعی و کامل (بدون هیچ سایه‌ای) رو فقط به‌خاطر اینکه از
+        قیمت دیروز به‌اندازه‌ی کافی فاصله نگرفته رد کنه، یا برعکس، سهمی
+        با گپ باز شدن مثبت رو با یه حرکت intraday خیلی کوچیک قبول کنه.
+        """
+        if df.empty:
+            return df
+
+        if config is None:
+            from config import BULLISH_MARUBOZU_CONFIG
+
+            config = BULLISH_MARUBOZU_CONFIG
+
+        required_cols = [
+            "first_price",
+            "high_price",
+            "low_price",
+            "last_price",
+            "value_to_avg_monthly_value",
+        ]
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            logger.error(f"❌ ستون‌های گمشده در فیلتر 12: {missing_cols}")
+            return pd.DataFrame()
+
+        logger.info("اعمال فیلتر 12: ماروبوزو صعودی با حجم عجیب")
+        logger.info(
+            f"  • شرط 1: body_to_range_ratio >= {config['min_body_to_range_ratio']} (کندل تقریباً بدون سایه)"
+        )
+        logger.info(
+            f"  • شرط 2: intraday_move_percent >= {config['min_intraday_move_percent']}% "
+            f"(اندازه‌ی بدنه نسبت به قیمت باز شدن امروز)"
+        )
+        logger.info(
+            f"  • شرط 3: value_to_avg_monthly_value >= {config['min_value_to_avg_monthly']} (حجم غیرعادی)"
+        )
+
+        df_copy = df.copy()
+        day_range = df_copy["high_price"] - df_copy["low_price"]
+        body = df_copy["last_price"] - df_copy["first_price"]
+
+        # جلوگیری از تقسیم بر صفر برای نمادهایی که کل روز بدون نوسان بودن
+        body_to_range_ratio = pd.Series(0.0, index=df_copy.index)
+        valid_range = day_range > 0
+        body_to_range_ratio[valid_range] = (
+            body[valid_range] / day_range[valid_range]
+        )
+        df_copy["body_to_range_ratio"] = body_to_range_ratio
+
+        # اندازه‌ی بدنه نسبت به قیمت باز شدن امروز (نه دیروز)
+        intraday_move_percent = pd.Series(0.0, index=df_copy.index)
+        valid_open = df_copy["first_price"] > 0
+        intraday_move_percent[valid_open] = (
+            body[valid_open] / df_copy["first_price"][valid_open] * 100
+        )
+        df_copy["intraday_move_percent"] = intraday_move_percent
+
+        filtered = df_copy[
+            (df_copy["body_to_range_ratio"] >= config["min_body_to_range_ratio"])
+            & (
+                df_copy["intraday_move_percent"]
+                >= config["min_intraday_move_percent"]
+            )
+            & (
+                df_copy["value_to_avg_monthly_value"]
+                >= config["min_value_to_avg_monthly"]
+            )
+        ].copy()
+
+        if filtered.empty:
+            logger.info("فیلتر 12: هیچ سهمی یافت نشد")
+            return pd.DataFrame()
+
+        filtered = filtered.sort_values("value_to_avg_monthly_value", ascending=False)
+        logger.info(
+            f"✅ فیلتر 12: {len(filtered)} سهم با کندل ماروبوزو صعودی و حجم غیرعادی"
+        )
+        return filtered
+
+    # ========================================
     # اجرای ایمن یک فیلتر — جلوگیری از سقوط کل pipeline
     # به‌خاطر خطای یک فیلتر (مثلاً ستون گمشده بعد از تغییر schema API)
     # ========================================
@@ -666,10 +767,13 @@ class BourseDataProcessor:
                 "filter_11_hoghooghi_haghighi_strong_buy": self._run_filter_safe(
                     self.filter_11_hoghooghi_haghighi_strong_buy, df
                 ),
+                "filter_12_bullish_marubozu": self._run_filter_safe(
+                    self.filter_12_bullish_marubozu_high_volume, df
+                ),
             }
 
         total = sum(len(v) for v in results.values())
-        logger.info(f"✅ جمع نتایج فیلترها: {total} سهم/صندوق (۱۱ فیلتر)")
+        logger.info(f"✅ جمع نتایج فیلترها: {total} سهم/صندوق (۱۲ فیلتر)")
 
         self.filters_results = results
         return results
