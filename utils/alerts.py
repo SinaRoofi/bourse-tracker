@@ -290,6 +290,21 @@ def line_buy_order(row: pd.Series) -> Optional[str]:
     return f"📋 ارزش هر اردر: {row['buy_order']:.0f} میلیون تومان\n"
 
 
+def line_marubozu(row: pd.Series) -> Optional[str]:
+    """اختصاصی filter_12: نمایش OHLC + درصد بدنه‌ی کندل نسبت به رنج روز"""
+    if "body_to_range_ratio" not in row or pd.isna(row["body_to_range_ratio"]):
+        return None
+    pct = row["body_to_range_ratio"] * 100
+    line = f"🕯️ <b>بدنه کندل: {pct:.0f}% از رنج روز (بدون سایه)</b>\n"
+    if all(c in row and not pd.isna(row[c]) for c in ["first_price", "high_price", "low_price"]):
+        line += (
+            f"   (اول: {_format_price(row['first_price'])} | "
+            f"سقف: {_format_price(row['high_price'])} | "
+            f"کف: {_format_price(row['low_price'])})\n"
+        )
+    return line
+
+
 def line_bubble(row: pd.Series) -> Optional[str]:
     """فقط صندوق‌ها: حباب فعلی + میانگین حباب 1 ماهه (سهام bubble_percent ندارن -> None)"""
     if "bubble_percent" not in row or pd.isna(row["bubble_percent"]):
@@ -483,6 +498,22 @@ FILTER_DISPLAY_CONFIG = {
             line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
         ],
     ),
+    "filter_12_bullish_marubozu": FilterDisplay(
+        hashtag="🕯️#ماروبوزو_صعودی",
+        header_emoji=_static_emoji("🚀"),
+        show_industry=True,
+        lines=[
+            line_price, line_marubozu, line_value, line_value_ratio(bold=True), line_value_5_to_20,
+            line_sarane_kharid(),
+            line_sarane_diff,
+            line_godrat_kharid(),
+            line_pol_hagigi(),
+            line_pol_hagigi_weekly,
+            line_pol_power(),
+            line_diff_buy_sell_order,
+            line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
+        ],
+    ),
 }
 
 DEFAULT_ALERT_TITLES = {
@@ -666,6 +697,9 @@ class TelegramAlert:
 
     def format_filter_11_hoghooghi_haghighi_strong_buy(self, df):
         return self._render(df, "filter_11_hoghooghi_haghighi_strong_buy")
+
+    def format_filter_12_bullish_marubozu(self, df):
+        return self._render(df, "filter_12_bullish_marubozu")
 
     async def send_filter_alert(
         self,
