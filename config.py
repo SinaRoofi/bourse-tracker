@@ -189,8 +189,8 @@ SARANE_CROSS_CONFIG = {
 PERSONAL_WATCHLIST = [
     "شپنا",
     "فملی",
-    "غمایه",
-    "دفارا",
+    "شبریز",
+    "دجابر",
     "فزر",
 ]
 PERSONAL_WATCHLIST_THRESHOLD = 2.5  # درصد تغییر قیمت
