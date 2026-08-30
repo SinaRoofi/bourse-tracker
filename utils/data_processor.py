@@ -270,10 +270,30 @@ class BourseDataProcessor:
             f"اعمال فیلتر 3: بررسی {len(watchlist)} نماد واچ‌لیست (آستانه {threshold}%)"
         )
 
-        filtered = df[
-            df["symbol"].isin(watchlist)
-            & (df["last_price_change_percent"] > threshold)
-        ].copy()
+        mask = df["symbol"].isin(watchlist) & (
+            df["last_price_change_percent"] > threshold
+        )
+
+        from config import PERSONAL_WATCHLIST_SKIP_IF_BUY_QUEUE
+
+        if PERSONAL_WATCHLIST_SKIP_IF_BUY_QUEUE and all(
+            col in df.columns for col in ["ceiling_price", "buy_queue_value"]
+        ):
+            # نماد الان توی صف خریده: قیمت روی سقفه و صف خرید سطح ۱ خالی نیست.
+            # اگه هم‌زمان با عبور از آستانه صف خرید هم شکل گرفته باشه، این
+            # عبور رو نادیده می‌گیریم (توضیح کامل بالای PERSONAL_WATCHLIST_SKIP_IF_BUY_QUEUE).
+            in_buy_queue = (df["last_price"] == df["ceiling_price"]) & (
+                df["buy_queue_value"] > 0
+            )
+            skipped_in_queue = mask & in_buy_queue
+            if skipped_in_queue.any():
+                logger.info(
+                    f"  • {skipped_in_queue.sum()} نماد به‌خاطر صف خرید بودن هم‌زمان "
+                    f"با عبور از آستانه، این دور نادیده گرفته شدن"
+                )
+            mask &= ~in_buy_queue
+
+        filtered = df[mask].copy()
 
         if filtered.empty:
             logger.info("فیلتر 3: هیچ نمادی از آستانه عبور نکرد")
@@ -722,6 +742,61 @@ class BourseDataProcessor:
         return filtered
 
     # ========================================
+    # فیلتر 13: اختلاف سرانه بالا
+    # ========================================
+    def filter_13_sarane_diff_large(
+        self, df: pd.DataFrame, config: dict = None
+    ) -> pd.DataFrame:
+        """
+        اختلاف سرانه = سرانه خرید - سرانه فروش (هر دو میلیون تومان).
+        وقتی این اختلاف از یک آستانه‌ی مشخص (پیش‌فرض ۱۰۰ میلیون تومان)
+        بیشتر بشه یعنی سرانه‌ی خریدارهای حقیقی به‌طور محسوسی از سرانه‌ی
+        فروشنده‌ها بیشتره - نشونه‌ی ورود پول درشت‌تر نسبت به خروج.
+        """
+        if df.empty:
+            return df
+
+        if config is None:
+            from config import SARANE_DIFF_CONFIG
+
+            config = SARANE_DIFF_CONFIG
+
+        required_cols = ["sarane_kharid", "sarane_forosh"]
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            logger.error(f"❌ ستون‌های گمشده در فیلتر 13: {missing_cols}")
+            return pd.DataFrame()
+
+        logger.info("اعمال فیلتر 13: اختلاف سرانه بالا")
+        logger.info(
+            f"  • شرط 1: (سرانه خرید - سرانه فروش) > {config['min_sarane_diff']} میلیون تومان"
+        )
+
+        df_copy = df.copy()
+        df_copy["sarane_diff"] = df_copy["sarane_kharid"] - df_copy["sarane_forosh"]
+
+        mask = df_copy["sarane_diff"] > config["min_sarane_diff"]
+
+        if "buy_queue_value" in df_copy.columns:
+            logger.info(
+                f"  • شرط 2: صف خرید <= {config['max_buy_queue_value']} میلیارد تومان "
+                f"(وگرنه حذف می‌شه)"
+            )
+            mask &= df_copy["buy_queue_value"] <= config["max_buy_queue_value"]
+        else:
+            logger.warning("⚠️ ستون buy_queue_value یافت نشد - شرط صف خرید فیلتر 13 اعمال نشد")
+
+        filtered = df_copy[mask].copy()
+
+        if filtered.empty:
+            logger.info("فیلتر 13: هیچ سهمی یافت نشد")
+            return pd.DataFrame()
+
+        filtered = filtered.sort_values("sarane_diff", ascending=False)
+        logger.info(f"✅ فیلتر 13: {len(filtered)} سهم با اختلاف سرانه بالا")
+        return filtered
+
+    # ========================================
     # اجرای ایمن یک فیلتر — جلوگیری از سقوط کل pipeline
     # به‌خاطر خطای یک فیلتر (مثلاً ستون گمشده بعد از تغییر schema API)
     # ========================================
@@ -742,7 +817,7 @@ class BourseDataProcessor:
     # ========================================
     def apply_all_filters(self, df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         """
-        همه‌ی ۱۱ فیلتر رو روی یک دیتافریم یکپارچه اجرا می‌کنه (دیگه تفکیک
+        همه‌ی ۱۳ فیلتر رو روی یک دیتافریم یکپارچه اجرا می‌کنه (دیگه تفکیک
         api1/api2 وجود نداره - از وقتی BrsApi حذف شد، فیلتر ۱۰ هم دقیقاً
         مثل بقیه‌ی فیلترها مستقیم روی همین df اجرا می‌شه).
         """
@@ -770,10 +845,13 @@ class BourseDataProcessor:
                 "filter_12_bullish_marubozu": self._run_filter_safe(
                     self.filter_12_bullish_marubozu_high_volume, df
                 ),
+                "filter_13_sarane_diff": self._run_filter_safe(
+                    self.filter_13_sarane_diff_large, df
+                ),
             }
 
         total = sum(len(v) for v in results.values())
-        logger.info(f"✅ جمع نتایج فیلترها: {total} سهم/صندوق (۱۲ فیلتر)")
+        logger.info(f"✅ جمع نتایج فیلترها: {total} سهم/صندوق (۱۳ فیلتر)")
 
         self.filters_results = results
         return results
