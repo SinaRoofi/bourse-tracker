@@ -66,6 +66,12 @@ FILTER_META = {
         "unit": "%",
         "format": ".2f",
     },
+    "filter_13_sarane_diff": {
+        "title": "اختلاف سرانه بالا",
+        "emoji": "🟢",
+        "unit": "M",
+        "format": ".0f",
+    },
 }
 
 
