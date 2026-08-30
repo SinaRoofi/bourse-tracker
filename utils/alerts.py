@@ -515,6 +515,26 @@ FILTER_DISPLAY_CONFIG = {
             line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
         ],
     ),
+    "filter_13_sarane_diff": FilterDisplay(
+        hashtag="🟢#اختلاف_سرانه_بالا",
+        header_emoji=lambda row: (
+            "🔥" if row.get("sarane_diff", 0) > 300
+            else "⚡" if row.get("sarane_diff", 0) > 150
+            else "✅"
+        ),
+        show_industry=True,
+        lines=[
+            line_price, line_value, line_value_ratio(bold=True), line_value_5_to_20,
+            line_sarane_kharid(),
+            line_sarane_diff,
+            line_godrat_kharid(),
+            line_pol_hagigi(),
+            line_pol_hagigi_weekly,
+            line_pol_power(),
+            line_diff_buy_sell_order,
+            line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
+        ],
+    ),
 }
 
 DEFAULT_ALERT_TITLES = {
@@ -701,6 +721,9 @@ class TelegramAlert:
 
     def format_filter_12_bullish_marubozu(self, df):
         return self._render(df, "filter_12_bullish_marubozu")
+
+    def format_filter_13_sarane_diff(self, df):
+        return self._render(df, "filter_13_sarane_diff")
 
     async def send_filter_alert(
         self,
