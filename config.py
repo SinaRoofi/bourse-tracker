@@ -188,9 +188,12 @@ SARANE_CROSS_CONFIG = {
 PERSONAL_WATCHLIST = [
     "شپنا",
     "فملی",
-    "شبریز",
+    "رافزا",
     "دجابر",
     "فزر",
+    "حتاید",
+    "هجرت",
+    
 ]
 PERSONAL_WATCHLIST_THRESHOLD = 2.5  # درصد تغییر قیمت
 PERSONAL_WATCHLIST_SKIP_IF_BUY_QUEUE = True
