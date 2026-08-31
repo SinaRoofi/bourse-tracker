@@ -266,7 +266,7 @@ HOGHOOGHI_HAGHIGHI_STRONG_BUY_CONFIG = {
 BULLISH_MARUBOZU_CONFIG = {
     "min_body_to_range_ratio": 0.9,   # نسبت بدنه به کل رنج روز - هرچی به 1 نزدیک‌تر یعنی سایه کمتر
     "min_intraday_move_percent": 1.0,  # حداقل اندازه‌ی بدنه‌ی کندل (نسبت به قیمت باز شدن امروز، نه دیروز)
-    "min_value_to_avg_monthly": 2.0,  # حجم/ارزش غیرعادی نسبت به میانگین ماهانه (مثل فیلتر 7)
+    "min_value_to_avg_monthly": 1.0,  # حجم/ارزش غیرعادی نسبت به میانگین ماهانه (مثل فیلتر 7)
 }
 
 # فیلتر 13: اختلاف سرانه بالا (سرانه خرید - سرانه فروش)
