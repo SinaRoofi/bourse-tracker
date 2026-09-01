@@ -575,6 +575,56 @@ class BourseDataProcessor:
         return filtered
 
     # ========================================
+    # فیلتر 14: صف خرید ساده (بدون شرط اردر سنگین)
+    # ========================================
+    def filter_14_buy_queue_simple(
+        self, df: pd.DataFrame, config: dict = None
+    ) -> pd.DataFrame:
+        """
+        صف خرید ساده - فقط بر اساس ارزش صف خرید سطح ۱ (بدون شرط اردر
+        سنگین). نسخه‌ی سبک‌تر فیلتر ۱۰ که با آستانه‌ی پایین‌تر (پیش‌فرض
+        ۱ میلیارد تومان) کار می‌کنه.
+        """
+        if df.empty:
+            return df
+
+        if config is None:
+            from config import BUY_QUEUE_SIMPLE_CONFIG
+
+            config = BUY_QUEUE_SIMPLE_CONFIG
+
+        logger.info("اعمال فیلتر 14: صف خرید ساده")
+        if config.get("price_at_ceiling", True):
+            logger.info("  • شرط 1: آخرین قیمت = سقف")
+        logger.info(
+            f"  • شرط 2: buy_queue_value >= {config['min_buy_queue_value']} میلیارد تومان"
+        )
+
+        required_cols = ["last_price", "ceiling_price", "buy_queue_value"]
+        missing_cols = [col for col in required_cols if col not in df.columns]
+
+        if missing_cols:
+            logger.error(f"❌ ستون‌های گمشده برای فیلتر 14: {missing_cols}")
+            return pd.DataFrame()
+
+        mask = df["buy_queue_value"] >= config["min_buy_queue_value"]
+
+        if config.get("price_at_ceiling", True):
+            # ceiling_price فقط برای سهام موجوده (صندوق‌ها سقف قیمت ندارن)؛
+            # مقایسه با NaN به‌طور طبیعی False می‌شه و صندوق‌ها از این فیلتر رد می‌شن.
+            mask &= df["last_price"] == df["ceiling_price"]
+
+        filtered = df[mask].copy()
+
+        if filtered.empty:
+            logger.info("فیلتر 14: هیچ نمادی یافت نشد")
+            return pd.DataFrame()
+
+        filtered = filtered.sort_values("buy_queue_value", ascending=False)
+        logger.info(f"✅ فیلتر 14: {len(filtered)} نماد با صف خرید")
+        return filtered
+
+    # ========================================
     # فیلتر 11: خرید حقوقی و حقیقی قوی
     # ========================================
     def filter_11_hoghooghi_haghighi_strong_buy(
@@ -817,9 +867,12 @@ class BourseDataProcessor:
     # ========================================
     def apply_all_filters(self, df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         """
-        همه‌ی ۱۳ فیلتر رو روی یک دیتافریم یکپارچه اجرا می‌کنه (دیگه تفکیک
+        همه‌ی ۱۴ فیلتر رو روی یک دیتافریم یکپارچه اجرا می‌کنه (دیگه تفکیک
         api1/api2 وجود نداره - از وقتی BrsApi حذف شد، فیلتر ۱۰ هم دقیقاً
         مثل بقیه‌ی فیلترها مستقیم روی همین df اجرا می‌شه).
+        فیلتر ۱۴ نسخه‌ی ساده‌ی فیلتر ۱۰ هست (صف خرید بالای ۱ میلیارد،
+        بدون شرط اردر سنگین)؛ فیلتر ۱۰ خودش آستانه‌اش به ۱۰ میلیارد
+        تغییر کرده (همراه با شرط اردر سنگین).
         """
         logger.info("شروع اعمال فیلترها")
         logger.info(f"  • داده: {len(df)} سهم/صندوق")
@@ -848,10 +901,13 @@ class BourseDataProcessor:
                 "filter_13_sarane_diff": self._run_filter_safe(
                     self.filter_13_sarane_diff_large, df
                 ),
+                "filter_14_buy_queue_simple": self._run_filter_safe(
+                    self.filter_14_buy_queue_simple, df
+                ),
             }
 
         total = sum(len(v) for v in results.values())
-        logger.info(f"✅ جمع نتایج فیلترها: {total} سهم/صندوق (۱۳ فیلتر)")
+        logger.info(f"✅ جمع نتایج فیلترها: {total} سهم/صندوق (۱۴ فیلتر)")
 
         self.filters_results = results
         return results
