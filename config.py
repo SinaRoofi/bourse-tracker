@@ -241,9 +241,15 @@ FIRST_HOUR_CONFIG = {
     "end_minute": 30,
 }
 
-# فیلتر 10: صف خرید با اردر سنگین
+# فیلتر 10: صف خرید با اردر سنگین (بالای ۱۰ میلیارد)
 HEAVY_BUY_QUEUE_CONFIG = {
     "min_buy_order": 100,  # میلیون تومان
+    "min_buy_queue_value": 10,  # میلیارد تومان
+    "price_at_ceiling": True,  # آخرین قیمت = سقف
+}
+
+# فیلتر 14: صف خرید ساده (بالای ۱ میلیارد، بدون شرط اردر سنگین)
+BUY_QUEUE_SIMPLE_CONFIG = {
     "min_buy_queue_value": 1,  # میلیارد تومان
     "price_at_ceiling": True,  # آخرین قیمت = سقف
 }
