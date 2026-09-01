@@ -464,11 +464,27 @@ FILTER_DISPLAY_CONFIG = {
     "filter_8_swing_trade": None,
     "filter_9_first_hour": None,
     "filter_10_heavy_buy_queue": FilterDisplay(
-        hashtag="💰#صف_خرید_با_اردر_سنگین",
+        hashtag="💰#صف_خرید_با_اردر_سنگین_بالای_۱۰_میلیارد",
         header_emoji=_static_emoji("📌"),
         show_industry=False,  # نسخه‌ی قبلی هم اینجا industry نداشت (داده از API دوم میاد)
         lines=[
             line_price, line_buy_queue_value, line_buy_order,
+            line_value, line_value_ratio(bold=True), line_value_5_to_20,
+            line_sarane_kharid(),
+            line_sarane_diff,
+            line_godrat_kharid(),
+            line_pol_hagigi(),
+            line_pol_hagigi_weekly,
+            line_pol_power(),
+            line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
+        ],
+    ),
+    "filter_14_buy_queue_simple": FilterDisplay(
+        hashtag="🟡#صف_خرید",
+        header_emoji=_static_emoji("📌"),
+        show_industry=False,
+        lines=[
+            line_price, line_buy_queue_value,
             line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
             line_sarane_diff,
@@ -724,6 +740,9 @@ class TelegramAlert:
 
     def format_filter_13_sarane_diff(self, df):
         return self._render(df, "filter_13_sarane_diff")
+
+    def format_filter_14_buy_queue_simple(self, df):
+        return self._render(df, "filter_14_buy_queue_simple")
 
     async def send_filter_alert(
         self,
