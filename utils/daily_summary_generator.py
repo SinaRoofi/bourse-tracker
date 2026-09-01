@@ -49,8 +49,14 @@ FILTER_META = {
         "multiplier": 100,
     },
     "filter_10_heavy_buy_queue": {
-        "title": "صف خرید با اردر سنگین",
+        "title": "صف خرید با اردر سنگین (بالای ۱۰ میلیارد)",
         "emoji": "💰",
+        "unit": "B",
+        "format": ".2f",
+    },
+    "filter_14_buy_queue_simple": {
+        "title": "صف خرید بالای ۱ میلیارد",
+        "emoji": "🟡",
         "unit": "B",
         "format": ".2f",
     },
