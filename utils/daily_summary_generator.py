@@ -3,8 +3,10 @@
 تحلیل نمادهای پرتکرار از هشدارهای ثبت شده در Gist
 + ارسال Top-5 نمادهای برتر هر فیلتر
 + ارسال برترین صنایع بر اساس تعداد نمادهای فعال هر صنعت
++ ارسال خلاصه بازار صنعتی (industries-csv - جدا از داده‌ی Gist)
 """
 
+import asyncio
 import logging
 from datetime import datetime
 import jdatetime
@@ -12,6 +14,11 @@ import pytz
 from typing import Dict, List, Optional
 
 from utils.gist_alert_manager import WATCHLIST_COPY_SUFFIX
+from utils.industry_market_fetcher import (
+    IndustryMarketFetcher,
+    RIAL_TO_BILLION_TOMAN,
+    RIAL_TO_MILLION_TOMAN,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -404,6 +411,84 @@ class DailySummaryGenerator:
         return message
 
     # ------------------------------------------------------------------
+    # فرمت پیام خلاصه‌ی بازار صنعتی (industries-csv)
+    # ------------------------------------------------------------------
+    def format_industry_market_summary_message(self, analysis: Dict, top_n: int = 8) -> str:
+        """
+        فرمت پیام خلاصه‌ی بازار بر اساس داده‌ی سطح صنعت/صندوق (نه سطح
+        نماد) - خروجی IndustryMarketFetcher.analyze(). صندوق‌های طلا،
+        نقره و درآمد ثابت از قبل (در fetch) کنار گذاشته شدن.
+
+        شامل:
+          ۱. جمع کل بازار: ارزش معاملات، ورود پول (+ نسبت به میانگین
+             ۲۰ روزه)، سرانه خرید وزن‌دار کل بازار
+          ۲. صنایعی که ارزش امروزشون از میانگین ۵ *و* ۲۰ روزه بیشتره
+          ۳. صنایعی که سرانه خرید امروزشون از سرانه خرید ۲۰ روزه‌شون
+             بیشتره
+          ۴. صنایع با بیشترین ورود پول نسبت به میانگین ۲۰ روزه‌ی
+             ارزش معاملاتشون
+        """
+        if not analysis:
+            return ""
+
+        date_str, time_str = self._get_tehran_datetime()
+        totals = analysis.get("totals", {})
+
+        message = "📊 <b>خلاصه بازار صنعتی</b>\n\n"
+
+        # ---- جمع کل بازار ----
+        total_value_b = totals.get("total_value", 0.0) / RIAL_TO_BILLION_TOMAN
+        total_pol_b = totals.get("total_pol_hagigi", 0.0) / RIAL_TO_BILLION_TOMAN
+        market_sarane_m = totals.get("market_sarane_kharid", 0.0) / RIAL_TO_MILLION_TOMAN
+        market_pol_pct = totals.get("market_pol_to_avg20_pct", 0.0)
+        pol_arrow = "▲" if total_pol_b >= 0 else "▼"
+
+        message += "💰 <b>کل بازار</b>\n"
+        message += f"  • ارزش معاملات: {total_value_b:,.0f} B تومان\n"
+        message += (
+            f"  • ورود پول حقیقی: {pol_arrow}{abs(total_pol_b):,.0f} B تومان "
+            f"({market_pol_pct:+.0f}٪ میانگین ۲۰ روزه)\n"
+        )
+        message += f"  • سرانه خرید کل بازار: {market_sarane_m:,.0f} M تومان\n\n"
+
+        # ---- صنایع با ارزش بالای میانگین ۵ و ۲۰ روزه ----
+        value_above_avg = analysis.get("value_above_avg", [])[:top_n]
+        message += "📈 <b>ارزش بالای میانگین ۵ و ۲۰ روزه</b>\n"
+        if value_above_avg:
+            for i, r in enumerate(value_above_avg, 1):
+                name = r["name"].replace(" ", "_")
+                message += f"  {i}. {name} — ۵روزه: +{r['pct5']:.0f}٪ | ۲۰روزه: +{r['pct20']:.0f}٪\n"
+        else:
+            message += "  هیچ صنعتی شرایط رو نداشت\n"
+        message += "\n"
+
+        # ---- صنایع با سرانه خرید بالاتر از ۲۰ روزه ----
+        sarane_above = analysis.get("sarane_above_20d", [])[:top_n]
+        message += "🔁 <b>سرانه خرید بالاتر از ۲۰ روزه</b>\n"
+        if sarane_above:
+            for i, r in enumerate(sarane_above, 1):
+                name = r["name"].replace(" ", "_")
+                message += f"  {i}. {name} — {r['sarane_ratio']:.2f}× میانگین ۲۰ روزه\n"
+        else:
+            message += "  هیچ صنعتی شرایط رو نداشت\n"
+        message += "\n"
+
+        # ---- بیشترین ورود پول نسبت به میانگین ۲۰ روزه ----
+        pol_ratio = [r for r in analysis.get("pol_to_avg20", []) if r["pol_to_avg20_pct"] > 0][:top_n]
+        message += "💧 <b>بیشترین ورود پول به میانگین ۲۰ روزه</b>\n"
+        if pol_ratio:
+            for i, r in enumerate(pol_ratio, 1):
+                name = r["name"].replace(" ", "_")
+                message += f"  {i}. {name} — +{r['pol_to_avg20_pct']:.0f}٪\n"
+        else:
+            message += "  هیچ صنعتی ورود پول مثبت نداشت\n"
+
+        message += f"\n📅 {date_str} | 🕐 {time_str}\n"
+        message += f"📢 {self.telegram.channel_name}"
+
+        return message
+
+    # ------------------------------------------------------------------
     # Utils
     # ------------------------------------------------------------------
     @staticmethod
@@ -436,13 +521,15 @@ class DailySummaryGenerator:
     # ------------------------------------------------------------------
     async def generate_and_send(self, min_count: int = 3, top_n: int = None) -> bool:
         """
-        تولید و ارسال سه پیام:
+        تولید و ارسال چهار پیام:
           ۱. خلاصه نمادهای پرتکرار
           ۲. Top-N برترین نمادهای هر فیلتر
           ۳. برترین صنایع امروز
+          ۴. خلاصه بازار صنعتی (از endpoint جدول صنایع، مستقل از Gist)
 
-        داده‌ی Gist فقط یک‌بار در ابتدا لود می‌شه و بین هر سه محاسبه به
-        اشتراک گذاشته می‌شه (قبلاً هر متد جدا لود می‌کرد).
+        داده‌ی Gist فقط یک‌بار در ابتدا لود می‌شه و بین محاسبات ۱ تا ۳ به
+        اشتراک گذاشته می‌شه (قبلاً هر متد جدا لود می‌کرد). پیام ۴ منبع
+        داده‌ی کاملاً جدایی داره (IndustryMarketFetcher) و مستقل fetch می‌شه.
 
         Returns:
             bool: True اگر همه‌ی پیام‌های قابل‌ارسال موفق باشند
@@ -497,7 +584,28 @@ class DailySummaryGenerator:
             else:
                 logger.info("ℹ️ داده‌ای برای برترین صنایع موجود نیست")
 
-            return success1 and success2 and success3
+            # پیام ۴: خلاصه بازار صنعتی (industries-csv - جدا از داده‌ی Gist)
+            success4 = True
+            try:
+                fetcher = IndustryMarketFetcher()
+                analysis = await asyncio.to_thread(fetcher.fetch_and_analyze)
+            except Exception as e:
+                logger.error(f"❌ خطا در دریافت خلاصه‌ی بازار صنعتی: {e}", exc_info=True)
+                analysis = None
+
+            if analysis:
+                message4 = self.format_industry_market_summary_message(analysis)
+                if message4:
+                    logger.info("📤 ارسال پیام خلاصه بازار صنعتی...")
+                    success4 = await self.telegram.send_message(message4, parse_mode='HTML')
+                    if success4:
+                        logger.info("✅ پیام خلاصه بازار صنعتی ارسال شد")
+                    else:
+                        logger.error("❌ خطا در ارسال پیام خلاصه بازار صنعتی")
+            else:
+                logger.info("ℹ️ داده‌ای برای خلاصه بازار صنعتی موجود نیست")
+
+            return success1 and success2 and success3 and success4
 
         except Exception as e:
             logger.error(f"❌ خطا در تولید گزارش خلاصه: {e}", exc_info=True)
