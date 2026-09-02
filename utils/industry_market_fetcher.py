@@ -1,4 +1,17 @@
-#utils/industry_market_fetcher
+"""
+ماژول دریافت و تحلیل خلاصه‌ی صنایع/صندوق‌ها از endpoint جدول صنایع
+tradersarena (data/industries-csv).
+
+این کاملاً جدا از per-symbol snapshot (utils/data_fetcher.py) هست: هر
+ردیف اینجا یک صنعت یا یک نوع صندوقه (نه یک نماد)، با معیارهای تجمیعی
+مثل ارزش کل معاملات، ورود پول، سرانه خرید/فروش و قدرت خرید، به همراه
+مقایسه‌ی هرکدوم با میانگین ۵ و ۲۰ روزه‌ی خودشون.
+
+طبق درخواست کاربر، صندوق‌های طلا/نقره/درآمد ثابت/زعفران/انرژی/املاک و
+مستغلات همیشه از خروجی حذف
+می‌شن (ارزش و ورود پولشون آنقدر بزرگه که میانگین‌های کل بازار رو
+منحرف می‌کنه، و اصلاً "صنعت" واقعی هم نیستن).
+"""
 
 import csv
 import io
@@ -23,7 +36,10 @@ RIAL_TO_MILLION_TOMAN = 10_000_000
 RIAL_TO_TRILLION_TOMAN = RIAL_TO_BILLION_TOMAN * 1000  # هزار میلیارد تومان
 
 # صندوق‌هایی که طبق درخواست کاربر همیشه از خلاصه‌ی بازار کنار گذاشته می‌شن
-EXCLUDED_CODES = {"gold-funds", "silver-funds", "fixed-income-funds"}
+EXCLUDED_CODES = {
+    "gold-funds", "silver-funds", "fixed-income-funds",
+    "saffron-funds", "energy-funds", "real-state-funds",
+}
 
 # ترتیب ستون‌ها دقیقاً مطابق خروجی endpoint
 COLUMNS = [
@@ -99,7 +115,7 @@ class IndustryMarketFetcher:
         """
         Returns:
             list[dict]: هر دیکشنری یک صنعت/صندوق با کلیدهای COLUMNS،
-            به‌جز سه صندوق مستثنا (طلا/نقره/درآمد ثابت).
+            به‌جز شش صندوق مستثنا (طلا/نقره/درآمد ثابت/زعفران/انرژی/املاک).
         """
         response = self._get_with_retry()
         if response is None:
@@ -169,7 +185,9 @@ class IndustryMarketFetcher:
             بازدهی هم‌وزن گروه
           - breadth: تعداد/سهم صنایع فعالی که هرکدوم از شرط‌های بالا رو
             داشتن (نبض بازار) - از روی همون صنایع فعال (حجم>۰) حساب می‌شه
-          - totals: جمع/میانگین وزن‌دار کل بازار
+          - totals: جمع کل بازار - ارزش و ورود پول کل، و سرانه خرید/فروش
+            کل بازار (میانگین ساده‌ی سرانه‌ی صنایع فعال - نه وزن‌دار) به
+            همراه نسبتشون (ratio) به میانگین ماهانه‌ی خودشون
         """
         value_above_avg: List[Dict] = []
         sarane_above_month: List[Dict] = []
@@ -178,30 +196,36 @@ class IndustryMarketFetcher:
         total_value = 0.0
         total_pol_hagigi = 0.0
         total_value_avg_month = 0.0
-        total_value_buy_real = 0.0
-        total_buyer_count = 0.0  # مخرج سرانه‌ی خرید وزن‌دار کل بازار (امروز)
 
-        # مخرج/صورت سرانه‌ی خرید ماهانه‌ی وزن‌دار کل بازار - وزن‌دهی بر
-        # اساس ارزش معاملات ماهانه‌ی هر صنعت (تنها معیار فعالیتی که برای
-        # بازه‌ی ماهانه در دسترسه)
-        weighted_sarane_month_num = 0.0
-        weighted_sarane_month_den = 0.0
+        # میانگین ساده‌ی سرانه‌ی خرید/فروش کل بازار - فقط روی صنایعی که
+        # سرانه‌ی معتبر (>۰) دارن حساب می‌شه (صنایع بدون معامله وارد
+        # میانگین نمی‌شن)
+        sarane_kharid_sum = 0.0
+        sarane_kharid_count = 0
+        sarane_forosh_sum = 0.0
+        sarane_forosh_count = 0
+        sarane_kharid_month_sum = 0.0
+        sarane_kharid_month_count = 0
+        sarane_forosh_month_sum = 0.0
+        sarane_forosh_month_count = 0
 
         for r in records:
             total_value += r["value"]
             total_pol_hagigi += r["pol_hagigi"]
             total_value_avg_month += r["value_avg20"]
-            total_value_buy_real += r["value_buy_real"]
 
-            # سرانه‌ی خرید هر صنعت یعنی ارزش‌خرید‌حقیقی/تعداد کد خریدار؛
-            # از همین رابطه تعداد کد خریدار رو استخراج می‌کنیم تا بشه
-            # سرانه‌ی وزن‌دار کل بازار رو درست حساب کرد (نه میانگین ساده).
             if r["sarane_kharid"] > 0:
-                total_buyer_count += r["value_buy_real"] / r["sarane_kharid"]
-
-            if r["sarane_kharid_20d"] > 0 and r["value_avg20"] > 0:
-                weighted_sarane_month_num += r["sarane_kharid_20d"] * r["value_avg20"]
-                weighted_sarane_month_den += r["value_avg20"]
+                sarane_kharid_sum += r["sarane_kharid"]
+                sarane_kharid_count += 1
+            if r["sarane_forosh"] > 0:
+                sarane_forosh_sum += r["sarane_forosh"]
+                sarane_forosh_count += 1
+            if r["sarane_kharid_20d"] > 0:
+                sarane_kharid_month_sum += r["sarane_kharid_20d"]
+                sarane_kharid_month_count += 1
+            if r["sarane_forosh_20d"] > 0:
+                sarane_forosh_month_sum += r["sarane_forosh_20d"]
+                sarane_forosh_month_count += 1
 
             if r["value_vs_avg5_pct"] > 0 and r["value_vs_avg20_pct"] > 0:
                 value_above_avg.append({
@@ -253,16 +277,29 @@ class IndustryMarketFetcher:
         }
 
         market_sarane_kharid = (
-            total_value_buy_real / total_buyer_count if total_buyer_count > 0 else 0.0
+            sarane_kharid_sum / sarane_kharid_count if sarane_kharid_count > 0 else 0.0
         )
         market_sarane_kharid_month = (
-            weighted_sarane_month_num / weighted_sarane_month_den
-            if weighted_sarane_month_den > 0 else 0.0
+            sarane_kharid_month_sum / sarane_kharid_month_count
+            if sarane_kharid_month_count > 0 else 0.0
         )
-        market_sarane_vs_month_pct = (
-            (market_sarane_kharid / market_sarane_kharid_month - 1) * 100
+        market_sarane_kharid_ratio = (
+            market_sarane_kharid / market_sarane_kharid_month
             if market_sarane_kharid_month > 0 else 0.0
         )
+
+        market_sarane_forosh = (
+            sarane_forosh_sum / sarane_forosh_count if sarane_forosh_count > 0 else 0.0
+        )
+        market_sarane_forosh_month = (
+            sarane_forosh_month_sum / sarane_forosh_month_count
+            if sarane_forosh_month_count > 0 else 0.0
+        )
+        market_sarane_forosh_ratio = (
+            market_sarane_forosh / market_sarane_forosh_month
+            if market_sarane_forosh_month > 0 else 0.0
+        )
+
         market_pol_to_avg_month_pct = (
             total_pol_hagigi / total_value_avg_month * 100 if total_value_avg_month > 0 else 0.0
         )
@@ -278,7 +315,10 @@ class IndustryMarketFetcher:
                 "total_pol_hagigi": total_pol_hagigi,
                 "market_sarane_kharid": market_sarane_kharid,
                 "market_sarane_kharid_month": market_sarane_kharid_month,
-                "market_sarane_vs_month_pct": market_sarane_vs_month_pct,
+                "market_sarane_kharid_ratio": market_sarane_kharid_ratio,
+                "market_sarane_forosh": market_sarane_forosh,
+                "market_sarane_forosh_month": market_sarane_forosh_month,
+                "market_sarane_forosh_ratio": market_sarane_forosh_ratio,
                 "market_pol_to_avg_month_pct": market_pol_to_avg_month_pct,
             },
         }
