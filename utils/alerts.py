@@ -464,7 +464,7 @@ FILTER_DISPLAY_CONFIG = {
     "filter_8_swing_trade": None,
     "filter_9_first_hour": None,
     "filter_10_heavy_buy_queue": FilterDisplay(
-        hashtag="💰#صف_خرید_با_اردر_سنگین_بالای_۱۰_میلیارد",
+        hashtag="💰#صف_خرید_با_اردر_سنگین",
         header_emoji=_static_emoji("📌"),
         show_industry=False,  # نسخه‌ی قبلی هم اینجا industry نداشت (داده از API دوم میاد)
         lines=[
