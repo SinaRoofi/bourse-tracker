@@ -480,7 +480,7 @@ FILTER_DISPLAY_CONFIG = {
         ],
     ),
     "filter_14_buy_queue_simple": FilterDisplay(
-        hashtag="🟡#صف_خرید",
+        hashtag="🟢#صف_خرید",
         header_emoji=_static_emoji("📌"),
         show_industry=False,
         lines=[
