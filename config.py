@@ -169,7 +169,7 @@ FUND_TYPES = {
 
 # فیلتر 1: قدرت خرید قوی
 STRONG_BUYING_CONFIG = {
-    "min_value_to_avg_monthly": 3,
+    "min_value_to_avg_monthly": 1,
     "min_sarane_kharid": 100,  # میلیون تومان
     "min_godrat_kharid": 2,
     "godrat_greater_than_5day": True,  # قدرت خرید > میانگین 5 روز
