@@ -175,6 +175,24 @@ class UnifiedDataFetcher:
             }
 
     # ========================================
+    # مدیریت چرخه‌ی عمر session (context manager)
+    # ========================================
+    def close(self) -> None:
+        """session رو صریحاً می‌بنده - چون فقط یک‌بار در main.py ساخته می‌شه
+        و اسکریپت بعدش خارج می‌شه اهمیت عملیاتی زیادی نداره، ولی تمیزتره
+        و از warning‌های احتمالی urllib3 درباره‌ی unclosed connection جلوگیری می‌کنه."""
+        try:
+            self.session_api1.close()
+        except Exception:
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    # ========================================
     # هلپر: GET با retry
     # ========================================
 
