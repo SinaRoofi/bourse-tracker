@@ -9,9 +9,6 @@ aiohttp==3.8.6
 # Telegram bot
 python-telegram-bot==20.3
 
-# python-telegram-bot 20.3 -> httpx~=0.24.1 -> httpcore<0.18 -> نیازمند anyio<4.
-# چون اینجا پین نشده، pip آخرین anyio (4.x) رو می‌گیره که با اون httpcore
-# ناسازگاره و باعث AttributeError: module 'anyio' has no attribute 'abc' می‌شه.
 anyio<4.0.0
 
 # Persian date handling
