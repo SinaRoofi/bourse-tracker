@@ -1,20 +1,5 @@
-"""
-ماژول دریافت و تحلیل خلاصه‌ی صنایع/صندوق‌ها از endpoint جدول صنایع
-tradersarena (data/industries-csv).
 
-این کاملاً جدا از per-symbol snapshot (utils/data_fetcher.py) هست: هر
-ردیف اینجا یک صنعت یا یک نوع صندوقه (نه یک نماد)، با معیارهای تجمیعی
-مثل ارزش کل معاملات، ورود پول، سرانه خرید/فروش و قدرت خرید، به همراه
-مقایسه‌ی هرکدوم با میانگین ۵ و ۲۰ روزه‌ی خودشون.
-
-طبق درخواست کاربر، صندوق‌های طلا/نقره/درآمد ثابت/زعفران/انرژی/املاک و
-مستغلات همیشه از خروجی حذف
-می‌شن (ارزش و ورود پولشون آنقدر بزرگه که میانگین‌های کل بازار رو
-منحرف می‌کنه، و اصلاً "صنعت" واقعی هم نیستن).
-"""
-
-import csv
-import io
+import ast
 import logging
 import time
 from typing import Dict, List, Optional
@@ -62,8 +47,10 @@ COLUMNS = [
 TEXT_COLUMNS = {"code", "name"}
 
 
-def _to_number(raw: str) -> float:
-    raw = (raw or "").strip()
+def _to_number(raw) -> float:
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    raw = (str(raw) or "").strip()
     if raw == "":
         return 0.0
     try:
@@ -72,15 +59,55 @@ def _to_number(raw: str) -> float:
         return 0.0
 
 
-def _looks_like_header(first_row: List[str]) -> bool:
-    """اگه ستون سوم (حجم) عدد نباشه، یعنی ردیف اول هدره نه داده."""
-    if len(first_row) < 3:
-        return True
+def parse_industries_response(text: str) -> List[Dict]:
+    """
+    پارس متن خام endpoint. تأیید شده که خروجی واقعی یه رشته‌ی تک‌خطی
+    شبیه JSON (کوتیشن دوتایی، اعداد به فرمت علمی) هست که ast.literal_eval
+    مستقیم پارسش می‌کنه - چون از نظر syntax با لیست پایتون یکیه.
+
+    Returns:
+        list[dict]: هر دیکشنری یک صنعت/صندوق با کلیدهای COLUMNS، به‌جز
+        شش صندوق مستثنا. اگه پارس شکست بخوره لیست خالی برمی‌گردونه.
+    """
+    stripped = text.strip().lstrip("\ufeff")
+
     try:
-        float(first_row[2])
-        return False
-    except ValueError:
-        return True
+        data = ast.literal_eval(stripped)
+    except (ValueError, SyntaxError) as e:
+        logger.error(f"❌ پارس خروجی صنایع شکست خورد - فرمت endpoint عوض شده: {e}")
+        return []
+
+    if not isinstance(data, (list, tuple)) or not data or not isinstance(data[0], (list, tuple)):
+        logger.error("❌ خروجی صنایع لیست/تاپل نبود - فرمت endpoint عوض شده")
+        return []
+
+    records: List[Dict] = []
+    excluded_found = 0
+    skipped_short = 0
+
+    for row in data:
+        if len(row) < len(COLUMNS):
+            skipped_short += 1
+            continue
+
+        record = {
+            col: (str(row[i]).strip() if col in TEXT_COLUMNS else _to_number(row[i]))
+            for i, col in enumerate(COLUMNS)
+        }
+
+        if record["code"] in EXCLUDED_CODES:
+            excluded_found += 1
+            continue
+
+        records.append(record)
+
+    if skipped_short:
+        logger.warning(f"⚠️ {skipped_short} ردیف به‌خاطر تعداد ستون کم رد شدن")
+    logger.info(
+        f"✅ {len(records)} صنعت/صندوق دریافت شد "
+        f"(بعد از حذف {excluded_found} صندوق مستثنا)"
+    )
+    return records
 
 
 class IndustryMarketFetcher:
@@ -136,42 +163,38 @@ class IndustryMarketFetcher:
             return []
 
         response.encoding = response.encoding or "utf-8"
+        records = parse_industries_response(response.text)
 
-        try:
-            rows = list(csv.reader(io.StringIO(response.text)))
-        except Exception as e:
-            logger.error(f"❌ خطا در parse CSV صنایع: {e}")
-            return []
+        # چک سلامت: اگه به‌طرز مشکوکی کم صنعت برگشت، احتمالاً فرمت
+        # endpoint دوباره عوض شده - متن خام رو ذخیره می‌کنیم تا بشه بعداً
+        # دقیقاً دید چی برگشته (به‌جای اینکه دوباره حدس بزنیم).
+        if 0 < len(records) < 10:
+            logger.warning(
+                f"⚠️ فقط {len(records)} صنعت/صندوق پارس شد (انتظار ~۵۰-۶۰ تا می‌رفت) - "
+                f"احتمالاً فرمت خروجی endpoint عوض شده. صنایع برگشته: "
+                f"{[r['name'] for r in records]}"
+            )
+            self._dump_raw_response_for_debug(response.text)
 
-        if not rows:
-            return []
-
-        if _looks_like_header(rows[0]):
-            rows = rows[1:]
-
-        records: List[Dict] = []
-        excluded_found = 0
-
-        for row in rows:
-            if len(row) < len(COLUMNS):
-                continue
-
-            record = {
-                col: (row[i].strip() if col in TEXT_COLUMNS else _to_number(row[i]))
-                for i, col in enumerate(COLUMNS)
-            }
-
-            if record["code"] in EXCLUDED_CODES:
-                excluded_found += 1
-                continue
-
-            records.append(record)
-
-        logger.info(
-            f"✅ {len(records)} صنعت/صندوق دریافت شد "
-            f"(بعد از حذف {excluded_found} صندوق مستثنا)"
-        )
         return records
+
+    @staticmethod
+    def _dump_raw_response_for_debug(text: str) -> None:
+        """
+        متن خام response رو تو یه فایل لوکال ذخیره می‌کنه تا اگه workflow
+        این فایل رو به‌عنوان artifact آپلود کنه، دفعه‌ی بعد که چک سلامت
+        بالا فعال شد، بتونیم دقیقاً ببینیم endpoint چه فرمتی برگردونده -
+        به‌جای اینکه دوباره حدس بزنیم.
+        """
+        try:
+            with open("industries_csv_raw_debug.txt", "w", encoding="utf-8") as f:
+                f.write(text)
+            logger.warning(
+                "📝 متن خام در industries_csv_raw_debug.txt ذخیره شد "
+                "(اگه workflow این فایل رو آپلود کنه، از artifact قابل دانلوده)"
+            )
+        except Exception as e:
+            logger.error(f"❌ نتونستم متن خام رو برای دیباگ ذخیره کنم: {e}")
 
     # ------------------------------------------------------------------
     # تحلیل
