@@ -146,6 +146,35 @@ class GistAlertManager:
                     return False
 
     # ------------------------------------------------------------------
+    # پاکسازی داده‌ی قدیمی (روزهای هشدار + روزهای داخل _industry_universe)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _prune_old_days(data: dict, keep_days: int = 3) -> None:
+        """
+        هر ساختاری که کلیدش تاریخ جلالی روزانه باشه رو به آخرین keep_days
+        روز محدود می‌کنه - هم سطح بالای data (روزهای هشدار)، هم داخل
+        _industry_universe (که قبلاً هیچ‌وقت پاک نمی‌شد و هر روز فقط
+        بزرگ‌تر می‌شد). in-place تغییر می‌ده.
+        """
+        cutoff = (jdatetime.date.today() - jdatetime.timedelta(days=keep_days)).strftime("%Y-%m-%d")
+
+        top_level_keys = [
+            k for k in list(data.keys())
+            if k not in ("_daily_summary_sent", "_industry_universe") and k < cutoff
+        ]
+        for k in top_level_keys:
+            del data[k]
+            logger.info(f"🗑️ روز قدیمی پاک شد: {k}")
+
+        universe = data.get("_industry_universe")
+        if isinstance(universe, dict):
+            universe_keys = [k for k in list(universe.keys()) if k < cutoff]
+            for k in universe_keys:
+                del universe[k]
+            if universe_keys:
+                logger.info(f"🗑️ {len(universe_keys)} روز قدیمی از _industry_universe پاک شد")
+
+    # ------------------------------------------------------------------
     # Daily Summary Lock
     # ------------------------------------------------------------------
     async def is_today_summary_sent(self) -> bool:
@@ -186,6 +215,7 @@ class GistAlertManager:
             return True  # امروز قبلاً ذخیره شده
 
         existing[self.today_jalali] = mapping
+        self._prune_old_days(data)
         return await self._save_to_gist(data)
 
     # ------------------------------------------------------------------
@@ -224,15 +254,9 @@ class GistAlertManager:
         data = await self._load_gist_content(use_cache=False)
         data.setdefault(self.today_jalali, [])
 
-        # پاکسازی روزهای قدیمی (نگه داشتن فقط ۳ روز اخیر)
-        cutoff = (jdatetime.date.today() - jdatetime.timedelta(days=3)).strftime("%Y-%m-%d")
-        keys_to_delete = [
-            k for k in list(data.keys())
-            if k not in ("_daily_summary_sent", "_industry_universe") and k < cutoff
-        ]
-        for k in keys_to_delete:
-            del data[k]
-            logger.info(f"🗑️ روز قدیمی پاک شد: {k}")
+        # پاکسازی روزهای قدیمی (نگه داشتن فقط ۳ روز اخیر) - هم سطح بالا
+        # هم داخل _industry_universe
+        self._prune_old_days(data)
 
         existing = {(a["symbol"], a["alert_type"]) for a in data[self.today_jalali]}
 
