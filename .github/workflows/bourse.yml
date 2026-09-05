@@ -42,6 +42,7 @@ jobs:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
 
       - name: Send Daily Summary
+        if: always()
         run: python daily_summary_main.py
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
