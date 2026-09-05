@@ -94,6 +94,20 @@ class IndustryMarketFetcher:
             "Accept": "text/csv, text/plain, */*",
         })
 
+    def close(self) -> None:
+        """session رو صریحاً می‌بنده - این fetcher عمرش کوتاهه (یک fetch_and_analyze
+        در هر اجرا)، پس بستنش تمیزتره و از warning‌های unclosed connection جلوگیری می‌کنه."""
+        try:
+            self.session.close()
+        except Exception:
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
     # ------------------------------------------------------------------
     # دریافت
     # ------------------------------------------------------------------
