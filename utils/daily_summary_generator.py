@@ -469,24 +469,59 @@ class DailySummaryGenerator:
         buy_queue_industries: Optional[List[dict]] = None,
         top_n: int = 8,
     ) -> str:
+        """پیام خلاصه‌ی معاملات صنایع (نه صندوق‌ها) - شامل بخش «صنایع
+        پیشرو صف خرید» که از داده‌ی Gist میاد. برای صندوق‌ها از
+        format_funds_market_summary_message استفاده کن."""
+        return self._build_market_summary_message(
+            analysis,
+            title="خلاصه معاملات صنایع",
+            unit_label="صنعت",
+            header_emoji="📊",
+            buy_queue_industries=buy_queue_industries,
+            top_n=top_n,
+        )
+
+    def format_funds_market_summary_message(self, analysis: Dict, top_n: int = 8) -> str:
+        """پیام خلاصه‌ی معاملات صندوق‌ها - جدا از صنایع، چون رفتار
+        معاملاتی صندوق‌ها (نقدشوندگی، حجم، سرانه) خیلی متفاوت از صنایعه
+        و قاطی کردنشون میانگین‌های کل بازار رو منحرف می‌کنه. بخش «صف
+        خرید» نداره چون اون فقط برای صنایع (Gist) معنا داره."""
+        return self._build_market_summary_message(
+            analysis,
+            title="خلاصه معاملات صندوق‌ها",
+            unit_label="صندوق",
+            header_emoji="🏦",
+            buy_queue_industries=None,
+            top_n=top_n,
+        )
+
+    def _build_market_summary_message(
+        self,
+        analysis: Dict,
+        title: str,
+        unit_label: str,
+        header_emoji: str,
+        buy_queue_industries: Optional[List[dict]] = None,
+        top_n: int = 8,
+    ) -> str:
         """
         فرمت پیام خلاصه‌ی بازار بر اساس داده‌ی سطح صنعت/صندوق (نه سطح
         نماد) - خروجی IndustryMarketFetcher.analyze(). صندوق‌های طلا،
-        نقره و درآمد ثابت از قبل (در fetch) کنار گذاشته شدن.
-        «هفتگی» = ۵ روزه و «ماهانه» = ۲۰ روزه.
+        نقره، درآمد ثابت، زعفران، انرژی و املاک از قبل (در fetch) کنار
+        گذاشته شدن. W = هفتگی (۵ روزه)، M = ماهانه (۲۰ روزه).
 
         شامل:
           ۱. جمع کل بازار: ارزش معاملات و ورود پول (هزار میلیارد تومان)،
              سرانه خرید کل بازار (میلیون تومان + نسبت به میانگین ماهانه)
-          ۲. نبض بازار: چند صنعت فعال هرکدوم از شرط‌های زیر رو داشتن
-          ۳. صنایعی که ارزش امروزشون از میانگین هفتگی *و* ماهانه بیشتره
-          ۴. صنایعی که سرانه خرید امروزشون از میانگین ماهانه بیشتره
-          ۵. قدرت پول صنایع (ورود پول امروز نسبت به میانگین ماهانه‌ی
-             ارزش معاملات هر صنعت؛ سورت هم بر همین اساسه)
-          ۶. صنایع با بیشترین بازدهی امروز
-          ۷. صنایع پیشرو صف خرید (از داده‌ی Gist - buy_queue_industries،
-             خروجی get_top_buy_queue_industries؛ اختیاریه، اگه داده
-             نشه این بخش رد می‌شه)
+          ۲. نبض بازار: چند مورد فعال هرکدوم از شرط‌های زیر رو داشتن
+          ۳. مواردی که ارزش امروزشون از میانگین هفتگی *و* ماهانه بیشتره
+             (آستانه ۱۰۰٪ یعنی حداقل دو برابر میانگین)
+          ۴. مواردی که سرانه خرید امروزشون از میانگین ماهانه بیشتره
+          ۵. قدرت پول (ورود پول امروز نسبت به میانگین ماهانه‌ی ارزش
+             معاملات؛ سورت هم بر همین اساسه)
+          ۶. بیشترین بازدهی امروز
+          ۷. فقط برای صنایع: صنایع پیشرو صف خرید (از داده‌ی Gist -
+             buy_queue_industries، خروجی get_top_buy_queue_industries)
         """
         if not analysis:
             return ""
@@ -495,7 +530,7 @@ class DailySummaryGenerator:
         totals = analysis.get("totals", {})
         breadth = analysis.get("breadth", {})
 
-        message = "📊 <b>خلاصه معاملات صنایع</b>\n\n"
+        message = f"{header_emoji} <b>{title}</b>\n\n"
 
         # ---- جمع کل بازار ----
         total_value_t = totals.get("total_value", 0.0) / RIAL_TO_TRILLION_TOMAN
@@ -519,27 +554,27 @@ class DailySummaryGenerator:
         # ---- نبض بازار (breadth) ----
         total_active = breadth.get("total_active", 0)
         if total_active:
-            message += "🌡️ <b>نبض بازار</b> (از {} صنعت فعال)\n".format(total_active)
-            message += f"  • ارزش بالای میانگین: {breadth.get('value_above_count', 0)} صنعت\n"
-            message += f"  • ورود پول مثبت: {breadth.get('pol_positive_count', 0)} صنعت\n"
-            message += f"  • سرانه خرید بالای ماهانه: {breadth.get('sarane_above_count', 0)} صنعت\n"
-            message += f"  • بازدهی مثبت: {breadth.get('return_positive_count', 0)} صنعت\n\n"
+            message += f"🌡️ <b>نبض بازار</b> (از {total_active} {unit_label} فعال)\n"
+            message += f"  • ارزش بالای میانگین: {breadth.get('value_above_count', 0)} {unit_label}\n"
+            message += f"  • ورود پول مثبت: {breadth.get('pol_positive_count', 0)} {unit_label}\n"
+            message += f"  • سرانه خرید بالای ماهانه: {breadth.get('sarane_above_count', 0)} {unit_label}\n"
+            message += f"  • بازدهی مثبت: {breadth.get('return_positive_count', 0)} {unit_label}\n\n"
 
-        # ---- صنایع با ارزش معاملات نسبی بالا (هفتگی و ماهانه) ----
+        # ---- ارزش معاملات نسبی بالا (W=هفتگی, M=ماهانه) ----
         value_above_avg = analysis.get("value_above_avg", [])[:top_n]
-        message += "📈 <b>ارزش معاملات نسبی بالا (هفتگی و ماهانه)</b>\n"
+        message += "📈 <b>ارزش معاملات نسبی بالا</b>\n"
         if value_above_avg:
             for i, r in enumerate(value_above_avg, 1):
                 name = r["name"].replace(" ", "_")
                 message += (
-                    f"  {i}. {name} — هفتگی: +{r['pct_week']:.0f}٪ | "
-                    f"ماهانه: +{r['pct_month']:.0f}٪\n"
+                    f"  {i}. {name} — W: +{r['pct_week']:.0f}٪ | "
+                    f"M: +{r['pct_month']:.0f}٪\n"
                 )
         else:
-            message += "  هیچ صنعتی شرایط رو نداشت\n"
+            message += f"  هیچ {unit_label}ی شرایط رو نداشت\n"
         message += "\n"
 
-        # ---- صنایع با سرانه خرید بالاتر از میانگین ماهانه ----
+        # ---- سرانه خرید بالاتر از میانگین ماهانه ----
         sarane_above = analysis.get("sarane_above_month", [])[:top_n]
         message += "🛒 <b>سرانه خرید بالاتر از میانگین ماهانه</b>\n"
         if sarane_above:
@@ -547,13 +582,13 @@ class DailySummaryGenerator:
                 name = r["name"].replace(" ", "_")
                 message += f"  {i}. {name} — {r['sarane_ratio']:.2f}× میانگین ماهانه\n"
         else:
-            message += "  هیچ صنعتی شرایط رو نداشت\n"
+            message += f"  هیچ {unit_label}ی شرایط رو نداشت\n"
         message += "\n"
 
-        # ---- قدرت پول صنایع: ورود پول امروز نسبت به میانگین ماهانه‌ی
-        # ارزش معاملات هر صنعت (سورت هم بر همین اساسه) ----
+        # ---- قدرت پول: ورود پول امروز نسبت به میانگین ماهانه‌ی ارزش
+        # معاملات (سورت هم بر همین اساسه) ----
         pol_top = analysis.get("pol_to_avg_month", [])[:top_n]
-        message += "⚡ <b>قدرت پول صنایع</b>\n"
+        message += f"⚡ <b>قدرت پول {unit_label}‌ها</b>\n"
         if pol_top:
             for i, r in enumerate(pol_top, 1):
                 name = r["name"].replace(" ", "_")
@@ -572,7 +607,7 @@ class DailySummaryGenerator:
         else:
             message += "  داده‌ای موجود نیست\n"
 
-        # ---- صنایع پیشرو صف خرید (داده‌ی Gist، جدا از industries-csv) ----
+        # ---- فقط برای صنایع: صنایع پیشرو صف خرید (داده‌ی Gist) ----
         if buy_queue_industries:
             message += "\n\n🎯 <b>صنایع پیشرو صف خرید</b>\n"
             for i, ind in enumerate(buy_queue_industries[:top_n], 1):
@@ -622,16 +657,20 @@ class DailySummaryGenerator:
     # ------------------------------------------------------------------
     async def generate_and_send(self, min_count: int = 3, top_n: int = None) -> bool:
         """
-        تولید و ارسال چهار پیام:
+        تولید و ارسال پنج پیام:
           ۱. خلاصه نمادهای پرتکرار
           ۲. Top-N برترین نمادهای هر فیلتر
           ۳. برترین صنایع امروز
           ۴. خلاصه معاملات صنایع (از endpoint جدول صنایع + بخش «صنایع
              پیشرو صف خرید» از همون data ی Gist)
+          ۵. خلاصه معاملات صندوق‌ها (همون endpoint، جدا از صنایع - چون
+             رفتار معاملاتی صندوق‌ها خیلی متفاوته و قاطی کردنشون
+             میانگین‌های کل بازار رو منحرف می‌کنه)
 
         داده‌ی Gist فقط یک‌بار در ابتدا لود می‌شه و بین محاسبات ۱ تا ۳ به
-        اشتراک گذاشته می‌شه (قبلاً هر متد جدا لود می‌کرد). پیام ۴ منبع
-        داده‌ی کاملاً جدایی داره (IndustryMarketFetcher) و مستقل fetch می‌شه.
+        اشتراک گذاشته می‌شه (قبلاً هر متد جدا لود می‌کرد). پیام‌های ۴ و ۵
+        منبع داده‌ی کاملاً جدایی دارن (IndustryMarketFetcher) و با یک fetch
+        مستقل، بعد split شدن به صنایع/صندوق‌ها، تولید می‌شن.
 
         Returns:
             bool: True اگر همه‌ی پیام‌های قابل‌ارسال موفق باشند
@@ -686,21 +725,26 @@ class DailySummaryGenerator:
             else:
                 logger.info("ℹ️ داده‌ای برای برترین صنایع موجود نیست")
 
-            # پیام ۴: خلاصه معاملات صنایع (industries-csv - جدا از داده‌ی
-            # Gist، به‌جز بخش «صنایع پیشرو صف خرید» که از همون data میاد)
+            # پیام ۴: خلاصه معاملات صنایع + پیام ۵: خلاصه معاملات صندوق‌ها
+            # (industries-csv - جدا از داده‌ی Gist، به‌جز بخش «صنایع پیشرو
+            # صف خرید» که از همون data میاد و فقط تو پیام صنایع هست)
             success4 = True
+            success5 = True
             fetcher = IndustryMarketFetcher()
             try:
-                analysis = await asyncio.to_thread(fetcher.fetch_and_analyze)
+                split_analysis = await asyncio.to_thread(fetcher.fetch_and_analyze_split)
             except Exception as e:
-                logger.error(f"❌ خطا در دریافت خلاصه‌ی معاملات صنایع: {e}", exc_info=True)
-                analysis = None
+                logger.error(f"❌ خطا در دریافت خلاصه‌ی معاملات صنایع/صندوق‌ها: {e}", exc_info=True)
+                split_analysis = None
             finally:
                 fetcher.close()
 
-            if analysis:
+            industries_analysis = split_analysis.get("industries") if split_analysis else None
+            funds_analysis = split_analysis.get("funds") if split_analysis else None
+
+            if industries_analysis:
                 buy_queue_industries = self.get_top_buy_queue_industries(data, top_n=5)
-                message4 = self.format_industry_market_summary_message(analysis, buy_queue_industries)
+                message4 = self.format_industry_market_summary_message(industries_analysis, buy_queue_industries)
                 if message4:
                     logger.info("📤 ارسال پیام خلاصه معاملات صنایع...")
                     success4 = await self.telegram.send_message(message4, parse_mode='HTML')
@@ -711,7 +755,19 @@ class DailySummaryGenerator:
             else:
                 logger.info("ℹ️ داده‌ای برای خلاصه معاملات صنایع موجود نیست")
 
-            return success1 and success2 and success3 and success4
+            if funds_analysis:
+                message5 = self.format_funds_market_summary_message(funds_analysis)
+                if message5:
+                    logger.info("📤 ارسال پیام خلاصه معاملات صندوق‌ها...")
+                    success5 = await self.telegram.send_message(message5, parse_mode='HTML')
+                    if success5:
+                        logger.info("✅ پیام خلاصه معاملات صندوق‌ها ارسال شد")
+                    else:
+                        logger.error("❌ خطا در ارسال پیام خلاصه معاملات صندوق‌ها")
+            else:
+                logger.info("ℹ️ داده‌ای برای خلاصه معاملات صندوق‌ها موجود نیست")
+
+            return success1 and success2 and success3 and success4 and success5
 
         except Exception as e:
             logger.error(f"❌ خطا در تولید گزارش خلاصه: {e}", exc_info=True)
