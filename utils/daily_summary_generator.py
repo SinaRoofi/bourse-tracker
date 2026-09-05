@@ -689,12 +689,14 @@ class DailySummaryGenerator:
             # پیام ۴: خلاصه معاملات صنایع (industries-csv - جدا از داده‌ی
             # Gist، به‌جز بخش «صنایع پیشرو صف خرید» که از همون data میاد)
             success4 = True
+            fetcher = IndustryMarketFetcher()
             try:
-                fetcher = IndustryMarketFetcher()
                 analysis = await asyncio.to_thread(fetcher.fetch_and_analyze)
             except Exception as e:
                 logger.error(f"❌ خطا در دریافت خلاصه‌ی معاملات صنایع: {e}", exc_info=True)
                 analysis = None
+            finally:
+                fetcher.close()
 
             if analysis:
                 buy_queue_industries = self.get_top_buy_queue_industries(data, top_n=5)
