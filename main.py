@@ -328,7 +328,10 @@ async def main_async():
 
         logger.info("\n📥 شروع دریافت داده از API...")
         fetcher = UnifiedDataFetcher(api1_base_url=API_BASE_URL)
-        df_raw = fetcher.fetch_all_data()
+        try:
+            df_raw = fetcher.fetch_all_data()
+        finally:
+            fetcher.close()
 
         alert = TelegramAlert()
 
