@@ -1,3 +1,23 @@
+"""
+ماژول دریافت و تحلیل خلاصه‌ی صنایع/صندوق‌ها از endpoint جدول صنایع
+tradersarena (data/industries-csv).
+
+این کاملاً جدا از per-symbol snapshot (utils/data_fetcher.py) هست: هر
+ردیف اینجا یک صنعت یا یک نوع صندوقه (نه یک نماد)، با معیارهای تجمیعی
+مثل ارزش کل معاملات، ورود پول، سرانه خرید/فروش و قدرت خرید، به همراه
+مقایسه‌ی هرکدوم با میانگین ۵ و ۲۰ روزه‌ی خودشون.
+
+با متن خام واقعی endpoint تأیید شد که با اسم "csv" برخلاف انتظار، یه
+CSV واقعی برنمی‌گردونه - یه رشته‌ی تک‌خطی شبیه JSON برمی‌گردونه (کوتیشن
+دوتایی، اعداد به فرمت علمی مثل 6.057986196309E12) که چون از نظر syntax
+با لیست پایتون یکیه، مستقیم با ast.literal_eval پارس می‌شه. دیگه اصلاً
+پارس CSV امتحان نمی‌شه (نه fallback، نه delimiter detection) - چون
+دیگه نیازی نیست و فقط وقت تلف می‌کرد.
+
+طبق درخواست کاربر، صندوق‌های طلا/نقره/درآمد ثابت/زعفران/انرژی/املاک و
+مستغلات همیشه از خروجی حذف می‌شن (ارزش و ورود پولشون آنقدر بزرگه که
+میانگین‌های کل بازار رو منحرف می‌کنه، و اصلاً "صنعت" واقعی هم نیستن).
+"""
 
 import ast
 import logging
@@ -110,6 +130,21 @@ def parse_industries_response(text: str) -> List[Dict]:
     return records
 
 
+def split_industries_and_funds(records: List[Dict]):
+    """
+    رکوردها رو به دو گروه تفکیک می‌کنه: صنایع واقعی (کدشون عددیه، مثل
+    '01', '10') و صندوق‌ها (کدشون رشته‌ی متنیه، مثل 'stock-funds',
+    'index-funds' - شش‌تا از صندوق‌ها هم که از قبل توی EXCLUDED_CODES
+    بودن اینجا اصلاً وجود ندارن چون تو parse_industries_response حذف شدن).
+
+    Returns:
+        (industries, funds): دو لیست جدا
+    """
+    industries = [r for r in records if r["code"].isdigit()]
+    funds = [r for r in records if not r["code"].isdigit()]
+    return industries, funds
+
+
 class IndustryMarketFetcher:
     """دریافت، پارس و تحلیل خلاصه‌ی صنایع/صندوق‌ها از tradersarena."""
 
@@ -208,7 +243,9 @@ class IndustryMarketFetcher:
 
         خروجی:
           - value_above_avg: صنایعی که ارزش امروزشون از میانگین هفتگی
-            *و* ماهانه بیشتره (مرتب‌شده بر اساس pct_month، هر رکورد
+            *و* ماهانه بیشتره - آستانه‌ش ۱۰۰٪ (یعنی امروز حداقل دو
+            برابر میانگین) نه فقط بیشتر از صفر، وگرنه صنایعی با فاصله‌ی
+            جزئی هم قاطی می‌شدن (مرتب‌شده بر اساس pct_month، هر رکورد
             کلیدهای اضافه‌ی pct_week/pct_month داره)
           - sarane_above_month: صنایعی که سرانه خرید امروزشون از سرانه
             خرید ماهانه‌شون بیشتره (کلید اضافه‌ی sarane_ratio - نسبت
@@ -264,7 +301,7 @@ class IndustryMarketFetcher:
                 sarane_forosh_month_sum += r["sarane_forosh_20d"]
                 sarane_forosh_month_count += 1
 
-            if r["value_vs_avg5_pct"] > 0 and r["value_vs_avg20_pct"] > 0:
+            if r["value_vs_avg5_pct"] > 100 and r["value_vs_avg20_pct"] > 100:
                 value_above_avg.append({
                     **r,
                     "pct_week": r["value_vs_avg5_pct"],
@@ -298,7 +335,7 @@ class IndustryMarketFetcher:
             "total_active": total_active,
             "value_above_count": sum(
                 1 for r in active_records
-                if r["value_vs_avg5_pct"] > 0 and r["value_vs_avg20_pct"] > 0
+                if r["value_vs_avg5_pct"] > 100 and r["value_vs_avg20_pct"] > 100
             ),
             "pol_positive_count": sum(
                 1 for r in active_records
@@ -361,8 +398,32 @@ class IndustryMarketFetcher:
         }
 
     def fetch_and_analyze(self) -> Optional[Dict]:
-        """میان‌بر: fetch() + analyze() با هم؛ اگه fetch شکست بخوره None برمی‌گردونه."""
+        """میان‌بر: fetch() + analyze() با هم روی همه‌ی رکوردها (صنایع +
+        صندوق‌ها با هم قاطی)؛ اگه fetch شکست بخوره None برمی‌گردونه.
+        برای پیام‌های جدا (صنایع/صندوق‌ها) از fetch_and_analyze_split
+        استفاده کن."""
         records = self.fetch()
         if not records:
             return None
         return self.analyze(records)
+
+    def fetch_and_analyze_split(self) -> Optional[Dict]:
+        """
+        مثل fetch_and_analyze ولی صنایع و صندوق‌ها رو جدا تحلیل می‌کنه -
+        چون صندوق‌ها رفتار معاملاتی خیلی متفاوتی از صنایع دارن (نقدشوندگی،
+        حجم، سرانه) و قاطی کردنشون میانگین‌های کل بازار رو منحرف می‌کنه.
+
+        Returns:
+            dict یا None (اگه fetch شکست بخوره):
+                {"industries": analyze(industries) یا None اگه خالی بود,
+                 "funds": analyze(funds) یا None اگه خالی بود}
+        """
+        records = self.fetch()
+        if not records:
+            return None
+
+        industries, funds = split_industries_and_funds(records)
+        return {
+            "industries": self.analyze(industries) if industries else None,
+            "funds": self.analyze(funds) if funds else None,
+        }
