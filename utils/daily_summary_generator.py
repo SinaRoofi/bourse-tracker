@@ -465,32 +465,38 @@ class DailySummaryGenerator:
     # ------------------------------------------------------------------
     def format_industry_market_summary_message(
         self,
-        analysis: Dict,
+        industries_analysis: Dict,
+        combined_totals: Optional[Dict] = None,
         buy_queue_industries: Optional[List[dict]] = None,
         top_n: int = 8,
     ) -> str:
-        """پیام خلاصه‌ی معاملات صنایع (نه صندوق‌ها) - شامل بخش «صنایع
-        پیشرو صف خرید» که از داده‌ی Gist میاد. برای صندوق‌ها از
-        format_funds_market_summary_message استفاده کن."""
+        """پیام خلاصه‌ی معاملات صنایع - تنها جایی که «کل بازار» (ارزش/
+        ورود پول/سرانه خرید صنایع+صندوق‌ها با هم، یک‌بار محاسبه‌شده)
+        نمایش داده می‌شه، به‌همراه بخش «صنایع پیشرو صف خرید» از Gist.
+        برای صندوق‌ها از format_funds_market_summary_message استفاده کن."""
         return self._build_market_summary_message(
-            analysis,
+            industries_analysis,
             title="خلاصه معاملات صنایع",
             unit_label="صنعت",
             header_emoji="📊",
+            combined_totals=combined_totals,
+            show_breadth=True,
             buy_queue_industries=buy_queue_industries,
             top_n=top_n,
         )
 
-    def format_funds_market_summary_message(self, analysis: Dict, top_n: int = 8) -> str:
+    def format_funds_market_summary_message(self, funds_analysis: Dict, top_n: int = 8) -> str:
         """پیام خلاصه‌ی معاملات صندوق‌ها - جدا از صنایع، چون رفتار
-        معاملاتی صندوق‌ها (نقدشوندگی، حجم، سرانه) خیلی متفاوت از صنایعه
-        و قاطی کردنشون میانگین‌های کل بازار رو منحرف می‌کنه. بخش «صف
-        خرید» نداره چون اون فقط برای صنایع (Gist) معنا داره."""
+        معاملاتی صندوق‌ها (نقدشوندگی، حجم، سرانه) خیلی متفاوت از صنایعه.
+        «کل بازار» و «نبض بازار» نداره (اون‌ها فقط تو پیام صنایع میان،
+        یک‌بار برای کل بازار)، فقط رتبه‌بندی‌های صندوق‌ها."""
         return self._build_market_summary_message(
-            analysis,
+            funds_analysis,
             title="خلاصه معاملات صندوق‌ها",
             unit_label="صندوق",
             header_emoji="🏦",
+            combined_totals=None,
+            show_breadth=False,
             buy_queue_industries=None,
             top_n=top_n,
         )
@@ -501,6 +507,8 @@ class DailySummaryGenerator:
         title: str,
         unit_label: str,
         header_emoji: str,
+        combined_totals: Optional[Dict] = None,
+        show_breadth: bool = True,
         buy_queue_industries: Optional[List[dict]] = None,
         top_n: int = 8,
     ) -> str:
@@ -510,106 +518,101 @@ class DailySummaryGenerator:
         نقره، درآمد ثابت، زعفران، انرژی و املاک از قبل (در fetch) کنار
         گذاشته شدن. W = هفتگی (۵ روزه)، M = ماهانه (۲۰ روزه).
 
+        هر بخشی که چیزی برای نمایش نداشته باشه (لیست خالی) کلاً از پیام
+        حذف می‌شه - نه فقط یه پیام‌جای‌خالی.
+
         شامل:
-          ۱. جمع کل بازار: ارزش معاملات و ورود پول (هزار میلیارد تومان)،
-             سرانه خرید کل بازار (میلیون تومان + نسبت به میانگین ماهانه)
-          ۲. نبض بازار: چند مورد فعال هرکدوم از شرط‌های زیر رو داشتن
-          ۳. مواردی که ارزش امروزشون از میانگین هفتگی *و* ماهانه بیشتره
-             (آستانه ۱۰۰٪ یعنی حداقل دو برابر میانگین)
-          ۴. مواردی که سرانه خرید امروزشون از میانگین ماهانه بیشتره
+          ۱. کل بازار - فقط اگه combined_totals داده بشه (یعنی فقط تو
+             پیام صنایع؛ روی صنایع+صندوق‌ها با هم یک‌بار حساب شده)
+          ۲. نبض بازار - فقط اگه موردی فعال بود
+          ۳. ارزش معاملات نسبی بالا (آستانه ۱۰۰٪ یعنی حداقل دو برابر
+             میانگین) - اگه خالی بود، کل بخش رد می‌شه
+          ۴. سرانه خرید بالاتر از میانگین ماهانه - اگه خالی بود رد می‌شه
           ۵. قدرت پول (ورود پول امروز نسبت به میانگین ماهانه‌ی ارزش
              معاملات؛ سورت هم بر همین اساسه)
           ۶. بیشترین بازدهی امروز
-          ۷. فقط برای صنایع: صنایع پیشرو صف خرید (از داده‌ی Gist -
-             buy_queue_industries، خروجی get_top_buy_queue_industries)
+          ۷. فقط برای صنایع: صنایع پیشرو صف خرید (از داده‌ی Gist)
         """
         if not analysis:
             return ""
 
         date_str, time_str = self._get_tehran_datetime()
-        totals = analysis.get("totals", {})
         breadth = analysis.get("breadth", {})
 
         message = f"{header_emoji} <b>{title}</b>\n\n"
 
-        # ---- جمع کل بازار ----
-        total_value_t = totals.get("total_value", 0.0) / RIAL_TO_TRILLION_TOMAN
-        total_pol_t = totals.get("total_pol_hagigi", 0.0) / RIAL_TO_TRILLION_TOMAN
-        market_sarane_m = totals.get("market_sarane_kharid", 0.0) / RIAL_TO_MILLION_TOMAN
-        market_sarane_vs_month_pct = totals.get("market_sarane_vs_month_pct", 0.0)
-        market_pol_pct = totals.get("market_pol_to_avg_month_pct", 0.0)
-        pol_arrow = "▲" if total_pol_t >= 0 else "▼"
+        # ---- کل بازار - فقط تو پیام صنایع (combined_totals داده شده) ----
+        if combined_totals:
+            total_value_hemat = combined_totals.get("total_value", 0.0) / RIAL_TO_TRILLION_TOMAN
+            total_pol_hemat = combined_totals.get("total_pol_hagigi", 0.0) / RIAL_TO_TRILLION_TOMAN
+            market_sarane_m = combined_totals.get("market_sarane_kharid", 0.0) / RIAL_TO_MILLION_TOMAN
+            market_sarane_ratio = combined_totals.get("market_sarane_kharid_ratio", 0.0)
+            market_sarane_pct = (market_sarane_ratio - 1) * 100 if market_sarane_ratio > 0 else 0.0
+            market_pol_pct = combined_totals.get("market_pol_to_avg_month_pct", 0.0)
+            pol_arrow = "▲" if total_pol_hemat >= 0 else "▼"
 
-        message += "💰 <b>کل بازار</b>\n"
-        message += f"  • ارزش معاملات: {total_value_t:,.2f} هزار میلیارد تومان\n"
-        message += (
-            f"  • ورود پول حقیقی: {pol_arrow}{abs(total_pol_t):,.2f} هزار میلیارد تومان "
-            f"({market_pol_pct:+.0f}٪ میانگین ماهانه)\n"
-        )
-        message += (
-            f"  • سرانه خرید کل بازار: {market_sarane_m:,.0f} M تومان "
-            f"({market_sarane_vs_month_pct:+.0f}٪ نسبت به میانگین ماهانه)\n\n"
-        )
+            message += "💰 <b>کل بازار</b>\n"
+            message += f"  • ارزش معاملات: {total_value_hemat:,.2f} همت\n"
+            message += (
+                f"  • ورود پول حقیقی: {pol_arrow}{abs(total_pol_hemat):,.2f} همت "
+                f"({market_pol_pct:+.0f}٪ میانگین ماهانه)\n"
+            )
+            message += (
+                f"  • سرانه خرید: {market_sarane_m:,.0f} میلیون تومان "
+                f"({market_sarane_pct:+.0f}٪ نسبت به میانگین ماهانه)\n\n"
+            )
 
-        # ---- نبض بازار (breadth) ----
+        # ---- نبض بازار (breadth) - فقط پیام صنایع ----
         total_active = breadth.get("total_active", 0)
-        if total_active:
+        if show_breadth and total_active:
             message += f"🌡️ <b>نبض بازار</b> (از {total_active} {unit_label} فعال)\n"
-            message += f"  • ارزش بالای میانگین: {breadth.get('value_above_count', 0)} {unit_label}\n"
             message += f"  • ورود پول مثبت: {breadth.get('pol_positive_count', 0)} {unit_label}\n"
             message += f"  • سرانه خرید بالای ماهانه: {breadth.get('sarane_above_count', 0)} {unit_label}\n"
             message += f"  • بازدهی مثبت: {breadth.get('return_positive_count', 0)} {unit_label}\n\n"
 
         # ---- ارزش معاملات نسبی بالا (W=هفتگی, M=ماهانه) ----
         value_above_avg = analysis.get("value_above_avg", [])[:top_n]
-        message += "📈 <b>ارزش معاملات نسبی بالا</b>\n"
         if value_above_avg:
+            message += "📈 <b>ارزش معاملات نسبی بالا</b>\n"
             for i, r in enumerate(value_above_avg, 1):
                 name = r["name"].replace(" ", "_")
                 message += (
                     f"  {i}. {name} — W: +{r['pct_week']:.0f}٪ | "
                     f"M: +{r['pct_month']:.0f}٪\n"
                 )
-        else:
-            message += f"  هیچ {unit_label}ی شرایط رو نداشت\n"
-        message += "\n"
+            message += "\n"
 
         # ---- سرانه خرید بالاتر از میانگین ماهانه ----
         sarane_above = analysis.get("sarane_above_month", [])[:top_n]
-        message += "🛒 <b>سرانه خرید بالاتر از میانگین ماهانه</b>\n"
         if sarane_above:
+            message += "🛒 <b>سرانه خرید بالاتر از میانگین ماهانه</b>\n"
             for i, r in enumerate(sarane_above, 1):
                 name = r["name"].replace(" ", "_")
                 message += f"  {i}. {name} — {r['sarane_ratio']:.2f}× میانگین ماهانه\n"
-        else:
-            message += f"  هیچ {unit_label}ی شرایط رو نداشت\n"
-        message += "\n"
+            message += "\n"
 
         # ---- قدرت پول: ورود پول امروز نسبت به میانگین ماهانه‌ی ارزش
         # معاملات (سورت هم بر همین اساسه) ----
         pol_top = analysis.get("pol_to_avg_month", [])[:top_n]
-        message += f"⚡ <b>قدرت پول {unit_label}‌ها</b>\n"
         if pol_top:
+            message += f"⚡ <b>قدرت پول {unit_label}‌ها</b>\n"
             for i, r in enumerate(pol_top, 1):
                 name = r["name"].replace(" ", "_")
                 message += f"  {i}. {name} — {r['pol_to_avg_month_pct']:+.0f}٪\n"
-        else:
-            message += "  داده‌ای موجود نیست\n"
-        message += "\n"
+            message += "\n"
 
         # ---- بیشترین بازدهی امروز ----
         return_top = analysis.get("return_ranked", [])[:top_n]
-        message += "🏆 <b>بیشترین بازدهی امروز</b>\n"
         if return_top:
+            message += "🏆 <b>بیشترین بازدهی امروز</b>\n"
             for i, r in enumerate(return_top, 1):
                 name = r["name"].replace(" ", "_")
                 message += f"  {i}. {name} — {r['group_return_equal_weight']:+.2f}٪\n"
-        else:
-            message += "  داده‌ای موجود نیست\n"
+            message += "\n"
 
         # ---- فقط برای صنایع: صنایع پیشرو صف خرید (داده‌ی Gist) ----
         if buy_queue_industries:
-            message += "\n\n🎯 <b>صنایع پیشرو صف خرید</b>\n"
+            message += "🎯 <b>صنایع پیشرو صف خرید</b>\n"
             for i, ind in enumerate(buy_queue_industries[:top_n], 1):
                 name = ind["industry_name"].replace(" ", "_")
                 count = ind["symbol_count"]
@@ -618,8 +621,9 @@ class DailySummaryGenerator:
                 if symbols:
                     hashtags = " ".join(f"#{self._format_symbol_hashtag(s)}" for s in symbols)
                     message += f"     {hashtags}\n"
+            message += "\n"
 
-        message += f"\n📅 {date_str} | 🕐 {time_str}\n"
+        message += f"📅 {date_str} | 🕐 {time_str}\n"
         message += f"📢 {self.telegram.channel_name}"
 
         return message
@@ -741,10 +745,13 @@ class DailySummaryGenerator:
 
             industries_analysis = split_analysis.get("industries") if split_analysis else None
             funds_analysis = split_analysis.get("funds") if split_analysis else None
+            combined_totals = split_analysis.get("combined_totals") if split_analysis else None
 
             if industries_analysis:
                 buy_queue_industries = self.get_top_buy_queue_industries(data, top_n=5)
-                message4 = self.format_industry_market_summary_message(industries_analysis, buy_queue_industries)
+                message4 = self.format_industry_market_summary_message(
+                    industries_analysis, combined_totals, buy_queue_industries
+                )
                 if message4:
                     logger.info("📤 ارسال پیام خلاصه معاملات صنایع...")
                     success4 = await self.telegram.send_message(message4, parse_mode='HTML')
