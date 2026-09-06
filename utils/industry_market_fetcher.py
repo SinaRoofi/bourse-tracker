@@ -232,6 +232,60 @@ class IndustryMarketFetcher:
             logger.error(f"❌ نتونستم متن خام رو برای دیباگ ذخیره کنم: {e}")
 
     # ------------------------------------------------------------------
+    # محاسبه‌ی جمع کل بازار (روی هر لیستی از رکورد که بدی - صنایع تنها،
+    # صندوق‌ها تنها، یا صنایع+صندوق‌ها با هم)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _compute_totals(records: List[Dict]) -> Dict:
+        """
+        ارزش کل، ورود پول کل، و سرانه خرید کل (میانگین ساده‌ی سرانه‌ی
+        رکوردهای با سرانه‌ی معتبر - نه وزن‌دار) به‌همراه نسبتش به
+        میانگین ماهانه‌ی خودش.
+        """
+        total_value = 0.0
+        total_pol_hagigi = 0.0
+        total_value_avg_month = 0.0
+        sarane_kharid_sum = 0.0
+        sarane_kharid_count = 0
+        sarane_kharid_month_sum = 0.0
+        sarane_kharid_month_count = 0
+
+        for r in records:
+            total_value += r["value"]
+            total_pol_hagigi += r["pol_hagigi"]
+            total_value_avg_month += r["value_avg20"]
+            if r["sarane_kharid"] > 0:
+                sarane_kharid_sum += r["sarane_kharid"]
+                sarane_kharid_count += 1
+            if r["sarane_kharid_20d"] > 0:
+                sarane_kharid_month_sum += r["sarane_kharid_20d"]
+                sarane_kharid_month_count += 1
+
+        market_sarane_kharid = (
+            sarane_kharid_sum / sarane_kharid_count if sarane_kharid_count > 0 else 0.0
+        )
+        market_sarane_kharid_month = (
+            sarane_kharid_month_sum / sarane_kharid_month_count
+            if sarane_kharid_month_count > 0 else 0.0
+        )
+        market_sarane_kharid_ratio = (
+            market_sarane_kharid / market_sarane_kharid_month
+            if market_sarane_kharid_month > 0 else 0.0
+        )
+        market_pol_to_avg_month_pct = (
+            total_pol_hagigi / total_value_avg_month * 100 if total_value_avg_month > 0 else 0.0
+        )
+
+        return {
+            "total_value": total_value,
+            "total_pol_hagigi": total_pol_hagigi,
+            "market_sarane_kharid": market_sarane_kharid,
+            "market_sarane_kharid_month": market_sarane_kharid_month,
+            "market_sarane_kharid_ratio": market_sarane_kharid_ratio,
+            "market_pol_to_avg_month_pct": market_pol_to_avg_month_pct,
+        }
+
+    # ------------------------------------------------------------------
     # تحلیل
     # ------------------------------------------------------------------
     @staticmethod
@@ -259,48 +313,15 @@ class IndustryMarketFetcher:
             بازدهی هم‌وزن گروه
           - breadth: تعداد/سهم صنایع فعالی که هرکدوم از شرط‌های بالا رو
             داشتن (نبض بازار) - از روی همون صنایع فعال (حجم>۰) حساب می‌شه
-          - totals: جمع کل بازار - ارزش و ورود پول کل، و سرانه خرید/فروش
-            کل بازار (میانگین ساده‌ی سرانه‌ی صنایع فعال - نه وزن‌دار) به
-            همراه نسبتشون (ratio) به میانگین ماهانه‌ی خودشون
+          - totals: جمع همین زیرمجموعه (برای وقتی که کل بازار به‌طور
+            جدا لازم نیست - برای هدر مشترک «کل بازار» از _compute_totals
+            روی رکوردهای ترکیبی صنایع+صندوق استفاده کن، نه از اینجا)
         """
         value_above_avg: List[Dict] = []
         sarane_above_month: List[Dict] = []
         pol_to_avg_month: List[Dict] = []
 
-        total_value = 0.0
-        total_pol_hagigi = 0.0
-        total_value_avg_month = 0.0
-
-        # میانگین ساده‌ی سرانه‌ی خرید/فروش کل بازار - فقط روی صنایعی که
-        # سرانه‌ی معتبر (>۰) دارن حساب می‌شه (صنایع بدون معامله وارد
-        # میانگین نمی‌شن)
-        sarane_kharid_sum = 0.0
-        sarane_kharid_count = 0
-        sarane_forosh_sum = 0.0
-        sarane_forosh_count = 0
-        sarane_kharid_month_sum = 0.0
-        sarane_kharid_month_count = 0
-        sarane_forosh_month_sum = 0.0
-        sarane_forosh_month_count = 0
-
         for r in records:
-            total_value += r["value"]
-            total_pol_hagigi += r["pol_hagigi"]
-            total_value_avg_month += r["value_avg20"]
-
-            if r["sarane_kharid"] > 0:
-                sarane_kharid_sum += r["sarane_kharid"]
-                sarane_kharid_count += 1
-            if r["sarane_forosh"] > 0:
-                sarane_forosh_sum += r["sarane_forosh"]
-                sarane_forosh_count += 1
-            if r["sarane_kharid_20d"] > 0:
-                sarane_kharid_month_sum += r["sarane_kharid_20d"]
-                sarane_kharid_month_count += 1
-            if r["sarane_forosh_20d"] > 0:
-                sarane_forosh_month_sum += r["sarane_forosh_20d"]
-                sarane_forosh_month_count += 1
-
             if r["value_vs_avg5_pct"] > 100 and r["value_vs_avg20_pct"] > 100:
                 value_above_avg.append({
                     **r,
@@ -333,10 +354,6 @@ class IndustryMarketFetcher:
         total_active = len(active_records)
         breadth = {
             "total_active": total_active,
-            "value_above_count": sum(
-                1 for r in active_records
-                if r["value_vs_avg5_pct"] > 100 and r["value_vs_avg20_pct"] > 100
-            ),
             "pol_positive_count": sum(
                 1 for r in active_records
                 if r["value_avg20"] > 0 and r["pol_hagigi"] > 0
@@ -350,51 +367,13 @@ class IndustryMarketFetcher:
             ),
         }
 
-        market_sarane_kharid = (
-            sarane_kharid_sum / sarane_kharid_count if sarane_kharid_count > 0 else 0.0
-        )
-        market_sarane_kharid_month = (
-            sarane_kharid_month_sum / sarane_kharid_month_count
-            if sarane_kharid_month_count > 0 else 0.0
-        )
-        market_sarane_kharid_ratio = (
-            market_sarane_kharid / market_sarane_kharid_month
-            if market_sarane_kharid_month > 0 else 0.0
-        )
-
-        market_sarane_forosh = (
-            sarane_forosh_sum / sarane_forosh_count if sarane_forosh_count > 0 else 0.0
-        )
-        market_sarane_forosh_month = (
-            sarane_forosh_month_sum / sarane_forosh_month_count
-            if sarane_forosh_month_count > 0 else 0.0
-        )
-        market_sarane_forosh_ratio = (
-            market_sarane_forosh / market_sarane_forosh_month
-            if market_sarane_forosh_month > 0 else 0.0
-        )
-
-        market_pol_to_avg_month_pct = (
-            total_pol_hagigi / total_value_avg_month * 100 if total_value_avg_month > 0 else 0.0
-        )
-
         return {
             "value_above_avg": value_above_avg,
             "sarane_above_month": sarane_above_month,
             "pol_to_avg_month": pol_to_avg_month,
             "return_ranked": return_ranked,
             "breadth": breadth,
-            "totals": {
-                "total_value": total_value,
-                "total_pol_hagigi": total_pol_hagigi,
-                "market_sarane_kharid": market_sarane_kharid,
-                "market_sarane_kharid_month": market_sarane_kharid_month,
-                "market_sarane_kharid_ratio": market_sarane_kharid_ratio,
-                "market_sarane_forosh": market_sarane_forosh,
-                "market_sarane_forosh_month": market_sarane_forosh_month,
-                "market_sarane_forosh_ratio": market_sarane_forosh_ratio,
-                "market_pol_to_avg_month_pct": market_pol_to_avg_month_pct,
-            },
+            "totals": IndustryMarketFetcher._compute_totals(records),
         }
 
     def fetch_and_analyze(self) -> Optional[Dict]:
@@ -411,11 +390,15 @@ class IndustryMarketFetcher:
         """
         مثل fetch_and_analyze ولی صنایع و صندوق‌ها رو جدا تحلیل می‌کنه -
         چون صندوق‌ها رفتار معاملاتی خیلی متفاوتی از صنایع دارن (نقدشوندگی،
-        حجم، سرانه) و قاطی کردنشون میانگین‌های کل بازار رو منحرف می‌کنه.
+        حجم، سرانه) و قاطی کردنشون رتبه‌بندی‌ها رو منحرف می‌کنه. با این
+        حال «کل بازار» (ارزش/ورود پول/سرانه خرید) فقط یک‌بار روی مجموع
+        صنایع+صندوق‌ها حساب می‌شه (combined_totals) - نه جدا برای هرکدوم،
+        چون این عدد باید فقط یک‌بار تو کل پیام‌ها نمایش داده بشه.
 
         Returns:
             dict یا None (اگه fetch شکست بخوره):
-                {"industries": analyze(industries) یا None اگه خالی بود,
+                {"combined_totals": _compute_totals(همه‌ی رکوردها),
+                 "industries": analyze(industries) یا None اگه خالی بود,
                  "funds": analyze(funds) یا None اگه خالی بود}
         """
         records = self.fetch()
@@ -424,6 +407,7 @@ class IndustryMarketFetcher:
 
         industries, funds = split_industries_and_funds(records)
         return {
+            "combined_totals": self._compute_totals(records),
             "industries": self.analyze(industries) if industries else None,
             "funds": self.analyze(funds) if funds else None,
         }
