@@ -27,6 +27,23 @@ TEHRAN_TZ = pytz.timezone("Asia/Tehran")
 # مدال برای سه رتبه‌ی اول نمادهای پرتکرار (زیباتر از عدد خشک)
 RANK_MEDALS = {1: "🥇", 2: "🥈", 3: "🥉"}
 
+# ایزوله‌ی دوطرفه (Unicode Bidi Isolate) برای برچسب‌های لاتین کوتاه مثل
+# "MA20" وسط متن فارسی راست‌چین. بدون این، الگوریتم Bidi ممکنه ترتیب
+# کاراکترهای عددی/علامت٪ کنارش رو به‌هم بریزه (مثلاً پرانتز جابه‌جا بشه)
+# چون حروف لاتین یه ران قوی چپ‌به‌راست وسط جمله‌ی راست‌به‌چپ ایجاد می‌کنن.
+# FSI...PDI کل توکن رو مثل یه واحد مستقل ایزوله می‌کنه و به بقیه‌ی جمله
+# کاری نداره.
+_LATIN_ISOLATE_START = "\u2068"  # First Strong Isolate (FSI)
+_LATIN_ISOLATE_END = "\u2069"    # Pop Directional Isolate (PDI)
+
+
+def _iso(text: str) -> str:
+    """ایزوله کردن یه برچسب لاتین کوتاه برای نمایش درست وسط متن راست‌چین."""
+    return f"{_LATIN_ISOLATE_START}{text}{_LATIN_ISOLATE_END}"
+
+
+MA20 = _iso("MA20")
+
 # عنوان فارسی و واحد هر فیلتر برای نمایش در پیام
 FILTER_META = {
     "filter_1_strong_buying": {
@@ -61,12 +78,11 @@ FILTER_META = {
         "unit": "B",
         "format": ".2f",
     },
-    "filter_14_buy_queue_simple": {
-        "title": "صف خرید بالای ۱ میلیارد",
-        "emoji": "🟢",
-        "unit": "B",
-        "format": ".2f",
-    },
+    # filter_14_buy_queue_simple عمداً اینجا نیست: نسخه‌ی ساده‌تر همون
+    # filter_10 هست و توی پیام Top-5 (message2) کاملاً تکراری نشون داده
+    # می‌شد. توجه: هنوز توی BUY_QUEUE_FILTERS (بخش «صنایع پیشرو صف خرید»)
+    # و FILTER_DISPLAY_CONFIG (هشدارهای لحظه‌ای) فعاله - فقط از این
+    # گزارش خلاصه حذف شده.
     "filter_11_hoghooghi_haghighi_strong_buy": {
         "title": "خرید حقوقی و حقیقی قوی",
         "emoji": "🏦",
@@ -296,7 +312,12 @@ class DailySummaryGenerator:
     # فقط ارزش صف خرید>۱ میلیارد) - با هم یک صنعت واحد گزارش می‌شن
     BUY_QUEUE_FILTERS = {"filter_10_heavy_buy_queue", "filter_14_buy_queue_simple"}
 
-    def get_top_buy_queue_industries(self, data: dict, top_n: int = 5) -> List[dict]:
+    def get_top_buy_queue_industries(
+        self,
+        data: dict,
+        industry_universe: Optional[dict] = None,
+        top_n: int = 5,
+    ) -> List[dict]:
         """
         صنایعی که امروز بیشترین تعداد نماد رو در فیلترهای صف خرید (۱۰ و
         ۱۴) داشتن - برخلاف get_top_industries که همه‌ی فیلترها رو با هم
@@ -304,8 +325,12 @@ class DailySummaryGenerator:
         تعداد نماد یکتا رتبه‌بندی می‌کنه (نمادی که هم فیلتر ۱۰ و هم ۱۴
         رو زده، فقط یک‌بار حساب می‌شه).
 
+        اگه industry_universe داده بشه، درصد مشارکت (تعداد نماد صف‌خریدی
+        از کل نمادهای اون صنعت) هم محاسبه و برگردونده می‌شه.
+
         Returns:
-            list: [{"industry_name", "symbol_count", "symbols": [...]}]
+            list: [{"industry_name", "symbol_count", "universe_count",
+                     "participation_pct", "symbols": [...]}]
                   مرتب‌شده نزولی بر اساس symbol_count
         """
         today_alerts = data.get(self.today_jalali, [])
@@ -328,14 +353,21 @@ class DailySummaryGenerator:
         if not industry_symbols:
             return []
 
-        rows = [
-            {
+        industry_universe = industry_universe or {}
+        rows = []
+        for industry_name, symbols in industry_symbols.items():
+            symbol_count = len(symbols)
+            universe_count = industry_universe.get(industry_name)
+            participation_pct = (
+                (symbol_count / universe_count * 100) if universe_count else None
+            )
+            rows.append({
                 "industry_name": industry_name,
-                "symbol_count": len(symbols),
+                "symbol_count": symbol_count,
+                "universe_count": universe_count,
+                "participation_pct": participation_pct,
                 "symbols": sorted(symbols)[:6],
-            }
-            for industry_name, symbols in industry_symbols.items()
-        ]
+            })
 
         result = sorted(rows, key=lambda r: r["symbol_count"], reverse=True)[:top_n]
         logger.info(f"🎯 صنایع پیشرو صف خرید: {[r['industry_name'] for r in result]}")
@@ -548,18 +580,28 @@ class DailySummaryGenerator:
             market_sarane_m = combined_totals.get("market_sarane_kharid", 0.0) / RIAL_TO_MILLION_TOMAN
             market_sarane_ratio = combined_totals.get("market_sarane_kharid_ratio", 0.0)
             market_sarane_pct = (market_sarane_ratio - 1) * 100 if market_sarane_ratio > 0 else 0.0
+            market_sarane_forosh_m = combined_totals.get("market_sarane_forosh", 0.0) / RIAL_TO_MILLION_TOMAN
+            market_sarane_forosh_ratio = combined_totals.get("market_sarane_forosh_ratio", 0.0)
+            market_sarane_forosh_pct = (
+                (market_sarane_forosh_ratio - 1) * 100 if market_sarane_forosh_ratio > 0 else 0.0
+            )
             market_pol_pct = combined_totals.get("market_pol_to_avg_month_pct", 0.0)
             pol_arrow = "▲" if total_pol_hemat >= 0 else "▼"
+            pol_emoji = "🟢" if total_pol_hemat >= 0 else "🔴"
 
-            message += "💰 <b>کل بازار</b>\n"
+            message += "📊 <b>خلاصه معاملات بازار</b>\n\n"
             message += f"  • ارزش معاملات: {total_value_hemat:,.2f} همت\n"
             message += (
-                f"  • ورود پول حقیقی: {pol_arrow}{abs(total_pol_hemat):,.2f} همت "
-                f"({market_pol_pct:+.0f}٪ میانگین ماهانه)\n"
+                f"  {pol_emoji} ورود پول حقیقی: {pol_arrow}{abs(total_pol_hemat):,.2f} همت "
+                f"({market_pol_pct:+.0f}٪ {MA20})\n"
             )
             message += (
                 f"  • سرانه خرید: {market_sarane_m:,.0f} میلیون تومان "
-                f"({market_sarane_pct:+.0f}٪ نسبت به میانگین ماهانه)\n\n"
+                f"({market_sarane_pct:+.0f}٪ {MA20})\n"
+            )
+            message += (
+                f"  • سرانه فروش: {market_sarane_forosh_m:,.0f} میلیون تومان "
+                f"({market_sarane_forosh_pct:+.0f}٪ {MA20})\n\n"
             )
 
         # ---- نبض بازار (breadth) - فقط پیام صنایع ----
@@ -588,7 +630,8 @@ class DailySummaryGenerator:
             message += "🛒 <b>سرانه خرید بالاتر از میانگین ماهانه</b>\n"
             for i, r in enumerate(sarane_above, 1):
                 name = r["name"].replace(" ", "_")
-                message += f"  {i}. {name} — {r['sarane_ratio']:.2f}× میانگین ماهانه\n"
+                ratio_str = f"{r['sarane_ratio']:>6.2f}"
+                message += f"  {i}. {name} — <code>{ratio_str}</code>× میانگین ماهانه\n"
             message += "\n"
 
         # ---- قدرت پول: ورود پول امروز نسبت به میانگین ماهانه‌ی ارزش
@@ -616,8 +659,14 @@ class DailySummaryGenerator:
             for i, ind in enumerate(buy_queue_industries[:top_n], 1):
                 name = ind["industry_name"].replace(" ", "_")
                 count = ind["symbol_count"]
+                participation_pct = ind.get("participation_pct")
+                universe_count = ind.get("universe_count")
                 symbols = ind.get("symbols", [])
-                message += f"  {i}. {name} — {count} نماد\n"
+                if participation_pct is not None and universe_count:
+                    count_str = f"{count}/{universe_count} نماد ({participation_pct:.0f}٪)"
+                else:
+                    count_str = f"{count} نماد"
+                message += f"  {i}. {name} — {count_str}\n"
                 if symbols:
                     hashtags = " ".join(f"#{self._format_symbol_hashtag(s)}" for s in symbols)
                     message += f"     {hashtags}\n"
@@ -748,7 +797,9 @@ class DailySummaryGenerator:
             combined_totals = split_analysis.get("combined_totals") if split_analysis else None
 
             if industries_analysis:
-                buy_queue_industries = self.get_top_buy_queue_industries(data, top_n=5)
+                buy_queue_industries = self.get_top_buy_queue_industries(
+                    data, industry_universe=industry_universe, top_n=5
+                )
                 message4 = self.format_industry_market_summary_message(
                     industries_analysis, combined_totals, buy_queue_industries
                 )
