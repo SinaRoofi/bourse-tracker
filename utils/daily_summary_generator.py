@@ -579,11 +579,11 @@ class DailySummaryGenerator:
             total_pol_hemat = combined_totals.get("total_pol_hagigi", 0.0) / RIAL_TO_TRILLION_TOMAN
             market_sarane_m = combined_totals.get("market_sarane_kharid", 0.0) / RIAL_TO_MILLION_TOMAN
             market_sarane_ratio = combined_totals.get("market_sarane_kharid_ratio", 0.0)
-            market_sarane_pct = (market_sarane_ratio - 1) * 100 if market_sarane_ratio > 0 else 0.0
+            market_sarane_pct = market_sarane_ratio * 100 if market_sarane_ratio > 0 else 0.0
             market_sarane_forosh_m = combined_totals.get("market_sarane_forosh", 0.0) / RIAL_TO_MILLION_TOMAN
             market_sarane_forosh_ratio = combined_totals.get("market_sarane_forosh_ratio", 0.0)
             market_sarane_forosh_pct = (
-                (market_sarane_forosh_ratio - 1) * 100 if market_sarane_forosh_ratio > 0 else 0.0
+                market_sarane_forosh_ratio * 100 if market_sarane_forosh_ratio > 0 else 0.0
             )
             market_pol_pct = combined_totals.get("market_pol_to_avg_month_pct", 0.0)
             pol_emoji = "🟢" if total_pol_hemat >= 0 else "🔴"
@@ -596,11 +596,11 @@ class DailySummaryGenerator:
             )
             message += (
                 f"  • سرانه خرید: {market_sarane_m:,.0f} میلیون تومان "
-                f"({market_sarane_pct:+.0f}٪ {MA20})\n"
+                f"({market_sarane_pct:.0f}٪ {MA20})\n"
             )
             message += (
                 f"  • سرانه فروش: {market_sarane_forosh_m:,.0f} میلیون تومان "
-                f"({market_sarane_forosh_pct:+.0f}٪ {MA20})\n\n"
+                f"({market_sarane_forosh_pct:.0f}٪ {MA20})\n\n"
             )
 
         # ---- نبض بازار (breadth) - فقط پیام صنایع ----
