@@ -249,6 +249,10 @@ class IndustryMarketFetcher:
         sarane_kharid_count = 0
         sarane_kharid_month_sum = 0.0
         sarane_kharid_month_count = 0
+        sarane_forosh_sum = 0.0
+        sarane_forosh_count = 0
+        sarane_forosh_month_sum = 0.0
+        sarane_forosh_month_count = 0
 
         for r in records:
             total_value += r["value"]
@@ -260,6 +264,12 @@ class IndustryMarketFetcher:
             if r["sarane_kharid_20d"] > 0:
                 sarane_kharid_month_sum += r["sarane_kharid_20d"]
                 sarane_kharid_month_count += 1
+            if r["sarane_forosh"] > 0:
+                sarane_forosh_sum += r["sarane_forosh"]
+                sarane_forosh_count += 1
+            if r["sarane_forosh_20d"] > 0:
+                sarane_forosh_month_sum += r["sarane_forosh_20d"]
+                sarane_forosh_month_count += 1
 
         market_sarane_kharid = (
             sarane_kharid_sum / sarane_kharid_count if sarane_kharid_count > 0 else 0.0
@@ -272,6 +282,17 @@ class IndustryMarketFetcher:
             market_sarane_kharid / market_sarane_kharid_month
             if market_sarane_kharid_month > 0 else 0.0
         )
+        market_sarane_forosh = (
+            sarane_forosh_sum / sarane_forosh_count if sarane_forosh_count > 0 else 0.0
+        )
+        market_sarane_forosh_month = (
+            sarane_forosh_month_sum / sarane_forosh_month_count
+            if sarane_forosh_month_count > 0 else 0.0
+        )
+        market_sarane_forosh_ratio = (
+            market_sarane_forosh / market_sarane_forosh_month
+            if market_sarane_forosh_month > 0 else 0.0
+        )
         market_pol_to_avg_month_pct = (
             total_pol_hagigi / total_value_avg_month * 100 if total_value_avg_month > 0 else 0.0
         )
@@ -282,6 +303,9 @@ class IndustryMarketFetcher:
             "market_sarane_kharid": market_sarane_kharid,
             "market_sarane_kharid_month": market_sarane_kharid_month,
             "market_sarane_kharid_ratio": market_sarane_kharid_ratio,
+            "market_sarane_forosh": market_sarane_forosh,
+            "market_sarane_forosh_month": market_sarane_forosh_month,
+            "market_sarane_forosh_ratio": market_sarane_forosh_ratio,
             "market_pol_to_avg_month_pct": market_pol_to_avg_month_pct,
         }
 
