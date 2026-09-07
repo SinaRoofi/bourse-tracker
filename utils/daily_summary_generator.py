@@ -629,8 +629,8 @@ class DailySummaryGenerator:
             message += "🛒 <b>سرانه خرید بالاتر از میانگین ماهانه</b>\n"
             for i, r in enumerate(sarane_above, 1):
                 name = r["name"].replace(" ", "_")
-                ratio_str = f"{r['sarane_ratio']:>6.2f}"
-                message += f"  {i}. {name} — <code>{ratio_str}</code>×\n"
+                ratio_str = f"{r['sarane_ratio']:.2f}"
+                message += f"  {i}. {name} — {ratio_str}×\n"
             message += "\n"
 
         # ---- قدرت پول: ورود پول امروز نسبت به میانگین ماهانه‌ی ارزش
