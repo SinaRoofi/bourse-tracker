@@ -906,6 +906,21 @@ class BourseDataProcessor:
                 ),
             }
 
+            # فیلتر ۱۴ (صف خرید ساده) نسخه‌ی سبک‌تر فیلتر ۱۰ (صف خرید با
+            # اردر سنگین) هست - هر نمادی که شرط فیلتر ۱۰ رو داشته باشه،
+            # همیشه شرط فیلتر ۱۴ رو هم داره (چون آستانه‌ی فیلتر ۱۰
+            # سخت‌گیرانه‌تره). برای جلوگیری از دو هشدار جدا برای یک وضعیت
+            # واحد، نمادهایی که همین الان توی فیلتر ۱۰ افتادن از نتیجه‌ی
+            # فیلتر ۱۴ حذف می‌شن؛ فقط نمادهایی که «صف خرید» دارن ولی به
+            # آستانه‌ی اردر سنگین نرسیدن با فیلتر ۱۴ هشدار می‌گیرن.
+            filter_10_result = results["filter_10_heavy_buy_queue"]
+            filter_14_result = results["filter_14_buy_queue_simple"]
+            if not filter_10_result.empty and not filter_14_result.empty:
+                heavy_symbols = set(filter_10_result["symbol"])
+                results["filter_14_buy_queue_simple"] = filter_14_result[
+                    ~filter_14_result["symbol"].isin(heavy_symbols)
+                ]
+
         total = sum(len(v) for v in results.values())
         logger.info(f"✅ جمع نتایج فیلترها: {total} سهم/صندوق (۱۴ فیلتر)")
 
