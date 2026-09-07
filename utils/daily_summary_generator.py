@@ -586,13 +586,12 @@ class DailySummaryGenerator:
                 (market_sarane_forosh_ratio - 1) * 100 if market_sarane_forosh_ratio > 0 else 0.0
             )
             market_pol_pct = combined_totals.get("market_pol_to_avg_month_pct", 0.0)
-            pol_arrow = "▲" if total_pol_hemat >= 0 else "▼"
             pol_emoji = "🟢" if total_pol_hemat >= 0 else "🔴"
 
             message += "📊 <b>خلاصه معاملات بازار</b>\n\n"
             message += f"  • ارزش معاملات: {total_value_hemat:,.2f} همت\n"
             message += (
-                f"  {pol_emoji} ورود پول حقیقی: {pol_arrow}{abs(total_pol_hemat):,.2f} همت "
+                f"  {pol_emoji} ورود پول حقیقی: {abs(total_pol_hemat):,.2f} همت "
                 f"({market_pol_pct:+.0f}٪ {MA20})\n"
             )
             message += (
@@ -631,7 +630,7 @@ class DailySummaryGenerator:
             for i, r in enumerate(sarane_above, 1):
                 name = r["name"].replace(" ", "_")
                 ratio_str = f"{r['sarane_ratio']:>6.2f}"
-                message += f"  {i}. {name} — <code>{ratio_str}</code>× میانگین ماهانه\n"
+                message += f"  {i}. {name} — <code>{ratio_str}</code>×\n"
             message += "\n"
 
         # ---- قدرت پول: ورود پول امروز نسبت به میانگین ماهانه‌ی ارزش
