@@ -338,6 +338,7 @@ class DailySummaryGenerator:
             return []
 
         industry_symbols: Dict[str, set] = {}
+        symbol_value: Dict[str, float] = {}
         for alert in today_alerts:
             if alert.get("is_fund"):
                 continue
@@ -349,6 +350,12 @@ class DailySummaryGenerator:
             if not industry_name or not symbol:
                 continue
             industry_symbols.setdefault(industry_name, set()).add(symbol)
+            # ارزش صف خرید نماد رو نگه می‌داریم تا بشه نمادها رو بر اساس
+            # قدرت صف (نه الفبا) مرتب کرد؛ اگه نمادی چندبار (مثلاً هم
+            # فیلتر ۱۰ هم ۱۴) هشدار گرفته، بزرگ‌ترین ارزش ثبت‌شده رو نگه می‌داریم.
+            value = alert.get("value")
+            if value is not None:
+                symbol_value[symbol] = max(symbol_value.get(symbol, 0), value)
 
         if not industry_symbols:
             return []
@@ -361,12 +368,15 @@ class DailySummaryGenerator:
             participation_pct = (
                 (symbol_count / universe_count * 100) if universe_count else None
             )
+            ranked_symbols = sorted(
+                symbols, key=lambda s: symbol_value.get(s, 0), reverse=True
+            )
             rows.append({
                 "industry_name": industry_name,
                 "symbol_count": symbol_count,
                 "universe_count": universe_count,
                 "participation_pct": participation_pct,
-                "symbols": sorted(symbols)[:6],
+                "symbols": ranked_symbols[:6],
             })
 
         result = sorted(rows, key=lambda r: r["symbol_count"], reverse=True)[:top_n]
@@ -383,7 +393,7 @@ class DailySummaryGenerator:
     ) -> str:
         date_str, time_str = self._get_tehran_datetime()
 
-        message = "📊 <b>خلاصه هشدارهای امروز</b>\n\n"
+        message = "📊 <b>خلاصه هشدارها</b>\n\n"
 
         if frequent_symbols:
             count_groups = {}
@@ -420,7 +430,7 @@ class DailySummaryGenerator:
 
         date_str, time_str = self._get_tehran_datetime()
 
-        message = "🏆 <b>برترین نمادها — امروز</b>\n\n"
+        message = "🏆 <b>برترین نمادها</b>\n\n"
 
         for filter_name, items in top_per_filter.items():
             meta = FILTER_META.get(filter_name, {})
@@ -465,7 +475,7 @@ class DailySummaryGenerator:
 
         date_str, time_str = self._get_tehran_datetime()
 
-        message = "🏭 <b>برترین صنایع امروز</b>\n\n"
+        message = "🏭 <b>برترین صنایع</b>\n\n"
 
         for i, industry in enumerate(top_industries, 1):
             name = industry["industry_name"].replace(" ", "_")
@@ -508,7 +518,7 @@ class DailySummaryGenerator:
         برای صندوق‌ها از format_funds_market_summary_message استفاده کن."""
         return self._build_market_summary_message(
             industries_analysis,
-            title="خلاصه معاملات صنایع",
+            title="خلاصه معاملات بازار",
             unit_label="صنعت",
             header_emoji="📊",
             combined_totals=combined_totals,
@@ -576,6 +586,11 @@ class DailySummaryGenerator:
         # ---- کل بازار - فقط تو پیام صنایع (combined_totals داده شده) ----
         if combined_totals:
             total_value_hemat = combined_totals.get("total_value", 0.0) / RIAL_TO_TRILLION_TOMAN
+            total_value_avg_month = combined_totals.get("total_value_avg_month", 0.0)
+            total_value_ratio_pct = (
+                combined_totals.get("total_value", 0.0) / total_value_avg_month * 100
+                if total_value_avg_month > 0 else 0.0
+            )
             total_pol_hemat = combined_totals.get("total_pol_hagigi", 0.0) / RIAL_TO_TRILLION_TOMAN
             market_sarane_m = combined_totals.get("market_sarane_kharid", 0.0) / RIAL_TO_MILLION_TOMAN
             market_sarane_ratio = combined_totals.get("market_sarane_kharid_ratio", 0.0)
@@ -588,8 +603,10 @@ class DailySummaryGenerator:
             market_pol_pct = combined_totals.get("market_pol_to_avg_month_pct", 0.0)
             pol_emoji = "🟢" if total_pol_hemat >= 0 else "🔴"
 
-            message += "📊 <b>خلاصه معاملات بازار</b>\n\n"
-            message += f"  • ارزش معاملات: {total_value_hemat:,.2f} همت\n"
+            message += (
+                f"  • ارزش معاملات: {total_value_hemat:,.2f} همت "
+                f"({total_value_ratio_pct:.0f}٪ {MA20})\n"
+            )
             message += (
                 f"  {pol_emoji} ورود پول حقیقی: {abs(total_pol_hemat):,.2f} همت "
                 f"({market_pol_pct:+.0f}٪ {MA20})\n"
@@ -646,7 +663,7 @@ class DailySummaryGenerator:
         # ---- بیشترین بازدهی امروز ----
         return_top = analysis.get("return_ranked", [])[:top_n]
         if return_top:
-            message += "🏆 <b>بیشترین بازدهی امروز</b>\n"
+            message += "🏆 <b>بیشترین بازدهی</b>\n"
             for i, r in enumerate(return_top, 1):
                 name = r["name"].replace(" ", "_")
                 message += f"  {i}. {name} — {r['group_return_equal_weight']:+.2f}٪\n"
@@ -709,20 +726,21 @@ class DailySummaryGenerator:
     # ------------------------------------------------------------------
     async def generate_and_send(self, min_count: int = 3, top_n: int = None) -> bool:
         """
-        تولید و ارسال پنج پیام:
-          ۱. خلاصه نمادهای پرتکرار
-          ۲. Top-N برترین نمادهای هر فیلتر
-          ۳. برترین صنایع امروز
-          ۴. خلاصه معاملات صنایع (از endpoint جدول صنایع + بخش «صنایع
-             پیشرو صف خرید» از همون data ی Gist)
-          ۵. خلاصه معاملات صندوق‌ها (همون endpoint، جدا از صنایع - چون
+        تولید و ارسال پنج پیام، به این ترتیب:
+          ۱. خلاصه معاملات بازار (از endpoint جدول صنایع + بخش «صنایع
+             پیشرو صف خرید» از داده‌ی Gist)
+          ۲. خلاصه معاملات صندوق‌ها (همون endpoint، جدا از صنایع - چون
              رفتار معاملاتی صندوق‌ها خیلی متفاوته و قاطی کردنشون
              میانگین‌های کل بازار رو منحرف می‌کنه)
+          ۳. برترین صنایع
+          ۴. Top-N برترین نمادهای هر فیلتر
+          ۵. خلاصه نمادهای پرتکرار (خلاصه هشدارها)
 
-        داده‌ی Gist فقط یک‌بار در ابتدا لود می‌شه و بین محاسبات ۱ تا ۳ به
-        اشتراک گذاشته می‌شه (قبلاً هر متد جدا لود می‌کرد). پیام‌های ۴ و ۵
-        منبع داده‌ی کاملاً جدایی دارن (IndustryMarketFetcher) و با یک fetch
-        مستقل، بعد split شدن به صنایع/صندوق‌ها، تولید می‌شن.
+        داده‌ی Gist فقط یک‌بار در ابتدا لود می‌شه و بین محاسبات ۱، ۳، ۴، ۵
+        به اشتراک گذاشته می‌شه. industry_universe هم یک‌بار لود می‌شه و
+        بین پیام‌های ۱ و ۳ مشترکه. پیام‌های ۱ و ۲ منبع داده‌ی کاملاً
+        جدایی دارن (IndustryMarketFetcher) و با یک fetch مستقل، بعد
+        split شدن به صنایع/صندوق‌ها، تولید می‌شن.
 
         Returns:
             bool: True اگر همه‌ی پیام‌های قابل‌ارسال موفق باشند
@@ -733,55 +751,13 @@ class DailySummaryGenerator:
             total_unique_symbols = len(set(
                 alert["symbol"] for alert in today_alerts if alert.get("symbol")
             ))
-
-            # پیام ۱: نمادهای پرتکرار
-            frequent_symbols = self.get_frequent_symbols(data, min_count, top_n)
-            message1 = self.format_summary_message(frequent_symbols, total_unique_symbols)
-
-            logger.info("📤 ارسال پیام خلاصه نمادهای پرتکرار...")
-            success1 = await self.telegram.send_message(message1, parse_mode='HTML')
-
-            if success1:
-                logger.info("✅ پیام خلاصه ارسال شد")
-            else:
-                logger.error("❌ خطا در ارسال پیام خلاصه")
-
-            # پیام ۲: Top-5 هر فیلتر
-            top_per_filter = self.get_top_symbols_per_filter(data, top_n=5)
-            message2 = self.format_top_filter_message(top_per_filter)
-
-            success2 = True
-            if message2:
-                logger.info("📤 ارسال پیام Top-5 فیلترها...")
-                success2 = await self.telegram.send_message(message2, parse_mode='HTML')
-                if success2:
-                    logger.info("✅ پیام Top-5 ارسال شد")
-                else:
-                    logger.error("❌ خطا در ارسال پیام Top-5")
-            else:
-                logger.info("ℹ️ داده‌ای برای Top-5 موجود نیست")
-
-            # پیام ۳: برترین صنایع
             industry_universe = await self.alert_manager.get_industry_universe()
-            top_industries = self.get_top_industries(data, industry_universe, top_n=5)
-            message3 = self.format_top_industries_message(top_industries)
 
-            success3 = True
-            if message3:
-                logger.info("📤 ارسال پیام برترین صنایع...")
-                success3 = await self.telegram.send_message(message3, parse_mode='HTML')
-                if success3:
-                    logger.info("✅ پیام برترین صنایع ارسال شد")
-                else:
-                    logger.error("❌ خطا در ارسال پیام برترین صنایع")
-            else:
-                logger.info("ℹ️ داده‌ای برای برترین صنایع موجود نیست")
-
-            # پیام ۴: خلاصه معاملات صنایع + پیام ۵: خلاصه معاملات صندوق‌ها
+            # پیام ۱: خلاصه معاملات بازار + پیام ۲: خلاصه معاملات صندوق‌ها
             # (industries-csv - جدا از داده‌ی Gist، به‌جز بخش «صنایع پیشرو
-            # صف خرید» که از همون data میاد و فقط تو پیام صنایع هست)
-            success4 = True
-            success5 = True
+            # صف خرید» که از همون data میاد و فقط تو پیام بازار هست)
+            success1 = True
+            success2 = True
             fetcher = IndustryMarketFetcher()
             try:
                 split_analysis = await asyncio.to_thread(fetcher.fetch_and_analyze_split)
@@ -799,30 +775,72 @@ class DailySummaryGenerator:
                 buy_queue_industries = self.get_top_buy_queue_industries(
                     data, industry_universe=industry_universe, top_n=5
                 )
-                message4 = self.format_industry_market_summary_message(
+                message1 = self.format_industry_market_summary_message(
                     industries_analysis, combined_totals, buy_queue_industries
                 )
-                if message4:
-                    logger.info("📤 ارسال پیام خلاصه معاملات صنایع...")
-                    success4 = await self.telegram.send_message(message4, parse_mode='HTML')
-                    if success4:
-                        logger.info("✅ پیام خلاصه معاملات صنایع ارسال شد")
+                if message1:
+                    logger.info("📤 ارسال پیام خلاصه معاملات بازار...")
+                    success1 = await self.telegram.send_message(message1, parse_mode='HTML')
+                    if success1:
+                        logger.info("✅ پیام خلاصه معاملات بازار ارسال شد")
                     else:
-                        logger.error("❌ خطا در ارسال پیام خلاصه معاملات صنایع")
+                        logger.error("❌ خطا در ارسال پیام خلاصه معاملات بازار")
             else:
-                logger.info("ℹ️ داده‌ای برای خلاصه معاملات صنایع موجود نیست")
+                logger.info("ℹ️ داده‌ای برای خلاصه معاملات بازار موجود نیست")
 
             if funds_analysis:
-                message5 = self.format_funds_market_summary_message(funds_analysis)
-                if message5:
+                message2 = self.format_funds_market_summary_message(funds_analysis)
+                if message2:
                     logger.info("📤 ارسال پیام خلاصه معاملات صندوق‌ها...")
-                    success5 = await self.telegram.send_message(message5, parse_mode='HTML')
-                    if success5:
+                    success2 = await self.telegram.send_message(message2, parse_mode='HTML')
+                    if success2:
                         logger.info("✅ پیام خلاصه معاملات صندوق‌ها ارسال شد")
                     else:
                         logger.error("❌ خطا در ارسال پیام خلاصه معاملات صندوق‌ها")
             else:
                 logger.info("ℹ️ داده‌ای برای خلاصه معاملات صندوق‌ها موجود نیست")
+
+            # پیام ۳: برترین صنایع
+            top_industries = self.get_top_industries(data, industry_universe, top_n=5)
+            message3 = self.format_top_industries_message(top_industries)
+
+            success3 = True
+            if message3:
+                logger.info("📤 ارسال پیام برترین صنایع...")
+                success3 = await self.telegram.send_message(message3, parse_mode='HTML')
+                if success3:
+                    logger.info("✅ پیام برترین صنایع ارسال شد")
+                else:
+                    logger.error("❌ خطا در ارسال پیام برترین صنایع")
+            else:
+                logger.info("ℹ️ داده‌ای برای برترین صنایع موجود نیست")
+
+            # پیام ۴: Top-5 هر فیلتر
+            top_per_filter = self.get_top_symbols_per_filter(data, top_n=5)
+            message4 = self.format_top_filter_message(top_per_filter)
+
+            success4 = True
+            if message4:
+                logger.info("📤 ارسال پیام Top-5 فیلترها...")
+                success4 = await self.telegram.send_message(message4, parse_mode='HTML')
+                if success4:
+                    logger.info("✅ پیام Top-5 ارسال شد")
+                else:
+                    logger.error("❌ خطا در ارسال پیام Top-5")
+            else:
+                logger.info("ℹ️ داده‌ای برای Top-5 موجود نیست")
+
+            # پیام ۵: نمادهای پرتکرار (خلاصه هشدارها)
+            frequent_symbols = self.get_frequent_symbols(data, min_count, top_n)
+            message5 = self.format_summary_message(frequent_symbols, total_unique_symbols)
+
+            logger.info("📤 ارسال پیام خلاصه نمادهای پرتکرار...")
+            success5 = await self.telegram.send_message(message5, parse_mode='HTML')
+
+            if success5:
+                logger.info("✅ پیام خلاصه ارسال شد")
+            else:
+                logger.error("❌ خطا در ارسال پیام خلاصه")
 
             return success1 and success2 and success3 and success4 and success5
 
