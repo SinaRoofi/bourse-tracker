@@ -62,6 +62,7 @@ def map_snapshot_row_to_old_schema(row: dict) -> dict:
     bid_price = lvl1.get("bidPrice")
     bid_volume = lvl1.get("bidVolume")
     bid_count = lvl1.get("bidCount")
+    ask_volume = lvl1.get("askVolume")  # تعداد سهم سمت عرضه سطح ۱ - صفر یعنی صف واقعاً قفله
 
     if bid_price and bid_volume:
         buy_queue_value = bid_price * bid_volume  # خام (ریال) - ارزش کل صف خرید سطح ۱
@@ -139,6 +140,9 @@ def map_snapshot_row_to_old_schema(row: dict) -> dict:
         "buy_order": buy_order,              # خام (ریال) - سرانه‌ی هر سفارش صف خرید سطح ۱
         "buy_queue_value": buy_queue_value,   # خام (ریال) - ارزش کل صف خرید سطح ۱
         "ceiling_price": get_path(row, "static.fundamentals.highThreshold"),  # فقط سهام
+
+        # --- برای فیلتر ۱۴: تشخیص واقعی قفل‌بودن صف (سمت عرضه خالیه) ---
+        "ask_volume": ask_volume,  # تعداد سهم سمت عرضه سطح ۱ - None اگه داده‌ای نبود
     }
 
 
