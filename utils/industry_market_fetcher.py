@@ -1,24 +1,3 @@
-"""
-ماژول دریافت و تحلیل خلاصه‌ی صنایع/صندوق‌ها از endpoint جدول صنایع
-tradersarena (data/industries-csv).
-
-این کاملاً جدا از per-symbol snapshot (utils/data_fetcher.py) هست: هر
-ردیف اینجا یک صنعت یا یک نوع صندوقه (نه یک نماد)، با معیارهای تجمیعی
-مثل ارزش کل معاملات، ورود پول، سرانه خرید/فروش و قدرت خرید، به همراه
-مقایسه‌ی هرکدوم با میانگین ۵ و ۲۰ روزه‌ی خودشون.
-
-با متن خام واقعی endpoint تأیید شد که با اسم "csv" برخلاف انتظار، یه
-CSV واقعی برنمی‌گردونه - یه رشته‌ی تک‌خطی شبیه JSON برمی‌گردونه (کوتیشن
-دوتایی، اعداد به فرمت علمی مثل 6.057986196309E12) که چون از نظر syntax
-با لیست پایتون یکیه، مستقیم با ast.literal_eval پارس می‌شه. دیگه اصلاً
-پارس CSV امتحان نمی‌شه (نه fallback، نه delimiter detection) - چون
-دیگه نیازی نیست و فقط وقت تلف می‌کرد.
-
-طبق درخواست کاربر، صندوق‌های طلا/نقره/درآمد ثابت/زعفران/انرژی/املاک و
-مستغلات همیشه از خروجی حذف می‌شن (ارزش و ورود پولشون آنقدر بزرگه که
-میانگین‌های کل بازار رو منحرف می‌کنه، و اصلاً "صنعت" واقعی هم نیستن).
-"""
-
 import ast
 import logging
 import time
@@ -299,6 +278,7 @@ class IndustryMarketFetcher:
 
         return {
             "total_value": total_value,
+            "total_value_avg_month": total_value_avg_month,
             "total_pol_hagigi": total_pol_hagigi,
             "market_sarane_kharid": market_sarane_kharid,
             "market_sarane_kharid_month": market_sarane_kharid_month,
