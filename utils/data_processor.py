@@ -82,6 +82,7 @@ class BourseDataProcessor:
             "buy_order",
             "buy_queue_value",
             "ceiling_price",
+            "ask_volume",
         ]
 
         for col in numeric_columns:
@@ -581,9 +582,17 @@ class BourseDataProcessor:
         self, df: pd.DataFrame, config: dict = None
     ) -> pd.DataFrame:
         """
-        صف خرید ساده - فقط بر اساس ارزش صف خرید سطح ۱ (بدون شرط اردر
-        سنگین). نسخه‌ی سبک‌تر فیلتر ۱۰ که با آستانه‌ی پایین‌تر (پیش‌فرض
-        ۱ میلیارد تومان) کار می‌کنه.
+        صف خرید تازه - سه شرط با هم:
+        ۱) قیمت روی سقفه و عرضه سطح ۱ صفره (ask_volume == 0) → صف واقعاً قفله.
+        ۲) کف قیمت امروز پایین‌تر از سقفه (low_price < ceiling_price) → یعنی
+           نماد یه جایی امروز زیر سقف هم معامله شده، پس همین الان تازه قفل
+           شده؛ اگه از اول صبح صف بود، کف روزش هم برابر سقف می‌شد و اینجا رد
+           می‌شه. این شرط باعث می‌شه صف‌های "از قبل قفل" (چه از باز شدن بازار،
+           چه ساعت‌ها پیش) اصلاً وارد فیلتر نشن - بدون نیاز به نگه‌داشتن هیچ
+           state بین اجراها، چون از داده‌ی خودِ همین اسنپ‌شات استفاده می‌کنه.
+        ۳) ارزش صف خرید بین min و max (پیش‌فرض ۰.۱ تا ۱ میلیارد تومان) →
+           صف هنوز سبکه؛ صف‌های سنگین/بزرگ (پوشش فیلتر ۱۰) کنار گذاشته می‌شن.
+        دیداپ روزانه‌ی موجود هم تضمین می‌کنه هر نماد فقط یک‌بار در روز هشدار بگیره.
         """
         if df.empty:
             return df
@@ -593,26 +602,37 @@ class BourseDataProcessor:
 
             config = BUY_QUEUE_SIMPLE_CONFIG
 
-        logger.info("اعمال فیلتر 14: صف خرید ساده")
-        if config.get("price_at_ceiling", True):
-            logger.info("  • شرط 1: آخرین قیمت = سقف")
-        logger.info(
-            f"  • شرط 2: buy_queue_value >= {config['min_buy_queue_value']} میلیارد تومان"
-        )
+        min_value = config["min_buy_queue_value"]
+        max_value = config.get("max_buy_queue_value")
 
-        required_cols = ["last_price", "ceiling_price", "buy_queue_value"]
+        logger.info("اعمال فیلتر 14: صف خرید تازه (قفل واقعی + تازه‌قفل‌شده)")
+        logger.info("  • شرط 1: آخرین قیمت = سقف و عرضه سطح ۱ خالیه (ask_volume == 0)")
+        logger.info("  • شرط 2: کف قیمت امروز < سقف (یعنی از اول صبح صف نبوده)")
+        if max_value is not None:
+            logger.info(
+                f"  • شرط 3: {min_value} <= buy_queue_value < {max_value} میلیارد تومان"
+            )
+        else:
+            logger.info(f"  • شرط 3: buy_queue_value >= {min_value} میلیارد تومان")
+
+        required_cols = [
+            "last_price", "ceiling_price", "buy_queue_value", "ask_volume", "low_price",
+        ]
         missing_cols = [col for col in required_cols if col not in df.columns]
 
         if missing_cols:
             logger.error(f"❌ ستون‌های گمشده برای فیلتر 14: {missing_cols}")
             return pd.DataFrame()
 
-        mask = df["buy_queue_value"] >= config["min_buy_queue_value"]
+        # ask_volume ممکنه NaN باشه (داده‌ای نبوده) - در اون حالت مطمئن
+        # نیستیم صف قفله یا نه، پس محتاطانه نماد رو رد می‌کنیم (فقط == 0
+        # صریح رو قفل حساب می‌کنیم، نه NaN).
+        is_locked = (df["last_price"] == df["ceiling_price"]) & (df["ask_volume"] == 0)
+        is_fresh = df["low_price"] < df["ceiling_price"]
 
-        if config.get("price_at_ceiling", True):
-            # ceiling_price فقط برای سهام موجوده (صندوق‌ها سقف قیمت ندارن)؛
-            # مقایسه با NaN به‌طور طبیعی False می‌شه و صندوق‌ها از این فیلتر رد می‌شن.
-            mask &= df["last_price"] == df["ceiling_price"]
+        mask = is_locked & is_fresh & (df["buy_queue_value"] >= min_value)
+        if max_value is not None:
+            mask &= df["buy_queue_value"] < max_value
 
         filtered = df[mask].copy()
 
@@ -621,7 +641,7 @@ class BourseDataProcessor:
             return pd.DataFrame()
 
         filtered = filtered.sort_values("buy_queue_value", ascending=False)
-        logger.info(f"✅ فیلتر 14: {len(filtered)} نماد با صف خرید")
+        logger.info(f"✅ فیلتر 14: {len(filtered)} نماد با صف خرید تازه")
         return filtered
 
     # ========================================
