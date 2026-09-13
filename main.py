@@ -16,6 +16,7 @@ from config import (
     GIST_TOKEN,
     PERSONAL_WATCHLIST,
     WATCHLIST_CHAT_ID,
+    BUY_QUEUE_SIMPLE_CONFIG,
     validate_config,
 )
 from utils.holidays import is_trading_day
@@ -112,6 +113,52 @@ def chunk_dataframe(df, filter_name):
     chunk_size = STOCKS_PER_MESSAGE_MAP.get(filter_name, 5)
     for i in range(0, len(df), chunk_size):
         yield df.iloc[i : i + chunk_size]
+
+
+async def _consume_heavy_locked_dedup(df: pd.DataFrame, alert_manager: GistAlertManager) -> None:
+    """
+    جلوگیری از هشدار اشتباه «صف تازه‌ی سبک» برای نمادی که در واقع از همون
+    لحظه‌ی اولِ قفل‌شدن، صفش سنگین بوده (>= سقف فیلتر ۱۴).
+
+    چون فیلتر ۱۴ state نداره و فقط اسنپ‌شات لحظه‌ای رو می‌بینه، اگه چنین
+    نمادی بعداً (مثلاً به‌خاطر خوردن بخشی از صف) ارزشش موقتاً بیاد داخل
+    بازه‌ی ۰.۱-۱ میلیارد در حالی که هنوز قفله، دیداپ روزانه چون چیزی برای
+    این نماد/فیلتر ثبت نشده، اون لحظه رو «اولین‌بار» حساب می‌کنه و اشتباهاً
+    هشدار می‌فرسته. برای جلوگیری، همین الان (بدون ارسال پیام) نمادهایی که
+    قفل و سنگین‌ان رو تو Gist به‌عنوان «امروز دیده‌شده برای فیلتر ۱۴» علامت
+    می‌زنیم تا اون لحظه‌ی بعدی دیگه «اولین‌بار» حساب نشه.
+
+    فقط وقتی حداقل یک نماد جدید برای علامت‌زدن باشه یک Gist write اضافه
+    اتفاق می‌افته (نه هر اجرا)، پس هزینه‌ی زمانی معمولاً صفره.
+    """
+    required_cols = {"symbol", "last_price", "ceiling_price", "ask_volume", "buy_queue_value"}
+    if not required_cols.issubset(df.columns):
+        return
+
+    max_value = BUY_QUEUE_SIMPLE_CONFIG.get("max_buy_queue_value")
+    if max_value is None:
+        return
+
+    heavy_locked = df[
+        (df["last_price"] == df["ceiling_price"])
+        & (df["ask_volume"] == 0)
+        & (df["buy_queue_value"] >= max_value)
+    ]
+
+    if heavy_locked.empty:
+        return
+
+    to_mark = []
+    for symbol in heavy_locked["symbol"]:
+        if await alert_manager.should_send_alert(symbol, "filter_14_buy_queue_simple"):
+            to_mark.append((symbol, "filter_14_buy_queue_simple"))
+
+    if to_mark:
+        logger.info(
+            f"🔒 {len(to_mark)} نماد با صف سنگین از همون اول قفل - بدون ارسال، "
+            f"برای فیلتر ۱۴ دیده‌شده علامت خوردن (جلوگیری از هشدار اشتباه بعدی)"
+        )
+        await alert_manager.mark_multiple_as_sent(to_mark)
 
 
 # ===========================
@@ -403,6 +450,10 @@ async def main_async():
             logger.warning(
                 "⚠️ WATCHLIST_CHAT_ID تنظیم نشده — فیلتر 3 و کپی واچ‌لیست شخصی غیرفعال می‌مونن"
             )
+
+        # جلوگیری از هشدار اشتباه فیلتر ۱۴ برای نمادی که از همون اول صف
+        # سنگین بوده (توضیح کامل در docstring تابع)
+        await _consume_heavy_locked_dedup(df, alert_manager)
 
         total_sent = 0
         total_skipped = 0
