@@ -186,10 +186,6 @@ def line_godrat_kharid(label: str = "قدرت خرید", bold: bool = False) -> 
         if "godrat_kharid" not in row or pd.isna(row["godrat_kharid"]):
             return None
         text = f"{label}: {row['godrat_kharid']:.2f}"
-        weekly = row.get("5_day_godrat_kharid")
-        if weekly is not None and pd.notna(weekly) and weekly > 0:
-            weekly_pct = row["godrat_kharid"] / weekly * 100
-            text += f" ({weekly_pct:.0f}٪ هفتگی)"
         if bold:
             text = f"<b>{text}</b>"
         return f"💪 {text}\n"
@@ -331,11 +327,13 @@ def line_bubble(row: pd.Series) -> Optional[str]:
     return line
 
 
-def line_godrat_5day_avg(row: pd.Series) -> Optional[str]:
-    """اختصاصی filter_1"""
+def line_godrat_kharid_weekly(row: pd.Series) -> Optional[str]:
+    """قدرت خرید هفتگی (میانگین قدرت خرید 5 روز اخیر) - سبز/قرمز بر اساس علامت"""
     if "5_day_godrat_kharid" not in row or pd.isna(row["5_day_godrat_kharid"]):
         return None
-    return f"📉 میانگین قدرت خرید 5 روز: {row['5_day_godrat_kharid']:.2f}\n"
+    value = row["5_day_godrat_kharid"]
+    emoji = "🟢" if value > 0 else "🔴" if value < 0 else "⚪"
+    return f"{emoji} قدرت خرید هفتگی: {value:.2f}\n"
 
 
 # ============================================================
@@ -367,6 +365,7 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_kharid(bold=False),
             line_sarane_diff,
             line_godrat_kharid(bold=True),
+            line_godrat_kharid_weekly,
             line_pol_hagigi(),
             line_pol_hagigi_weekly,
             line_pol_power(),
@@ -384,6 +383,7 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_kharid(label="سرانه خرید"),
             line_sarane_diff,
             line_godrat_kharid(label="قدرت خرید"),  # FIX: قبلاً "قدرت خریدار" بود
+            line_godrat_kharid_weekly,
             line_pol_hagigi(),
             line_pol_hagigi_weekly,
             line_pol_power(),
@@ -420,6 +420,7 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_kharid(),
             line_sarane_diff,
             line_godrat_kharid(),  # FIX: خط قدرت خرید جا افتاده بود
+            line_godrat_kharid_weekly,
             line_pol_hagigi(),
             line_pol_hagigi_weekly,
             line_pol_power(),
@@ -440,6 +441,7 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_kharid(),
             line_sarane_diff,
             line_godrat_kharid(),  # FIX: قبلاً "قدرت خریدار" بود
+            line_godrat_kharid_weekly,
             line_pol_hagigi(),
             line_pol_hagigi_weekly,
             line_pol_power(),
@@ -456,6 +458,7 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_kharid(),
             line_sarane_diff,
             line_godrat_kharid(),
+            line_godrat_kharid_weekly,
             line_pol_hagigi(),
             line_pol_hagigi_weekly,
             line_pol_power(),
@@ -476,6 +479,7 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_kharid(),
             line_sarane_diff,
             line_godrat_kharid(),
+            line_godrat_kharid_weekly,
             line_pol_hagigi(),
             line_pol_hagigi_weekly,
             line_pol_power(),
@@ -492,6 +496,7 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_kharid(),
             line_sarane_diff,
             line_godrat_kharid(),
+            line_godrat_kharid_weekly,
             line_pol_hagigi(),
             line_pol_hagigi_weekly,
             line_pol_power(),
@@ -511,6 +516,7 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_kharid(),  # FIX: قبلاً بولد بود، حالا یکسان با بقیه
             line_sarane_diff,
             line_godrat_kharid(),
+            line_godrat_kharid_weekly,
             line_pol_hagigi(always_negative_abs=True),
             line_pol_hagigi_weekly,
             line_pol_power_negative(),
@@ -527,6 +533,7 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_kharid(),
             line_sarane_diff,
             line_godrat_kharid(),
+            line_godrat_kharid_weekly,
             line_pol_hagigi(),
             line_pol_hagigi_weekly,
             line_pol_power(),
@@ -547,6 +554,7 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_kharid(),
             line_sarane_diff,
             line_godrat_kharid(),
+            line_godrat_kharid_weekly,
             line_pol_hagigi(),
             line_pol_hagigi_weekly,
             line_pol_power(),
@@ -563,7 +571,8 @@ DEFAULT_ALERT_TITLES = {
 }
 DEFAULT_ALERT_LINES = [
     line_price, line_value, line_value_ratio(bold=True), line_value_5_to_20,
-    line_sarane_kharid(), line_sarane_diff, line_godrat_kharid(), line_pol_hagigi(),
+    line_sarane_kharid(), line_sarane_diff, line_godrat_kharid(), line_godrat_kharid_weekly,
+    line_pol_hagigi(),
     line_pol_hagigi_weekly,
     line_pol_power(),
     line_diff_buy_sell_order,
