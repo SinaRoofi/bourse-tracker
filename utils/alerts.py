@@ -186,6 +186,10 @@ def line_godrat_kharid(label: str = "قدرت خرید", bold: bool = False) -> 
         if "godrat_kharid" not in row or pd.isna(row["godrat_kharid"]):
             return None
         text = f"{label}: {row['godrat_kharid']:.2f}"
+        weekly = row.get("5_day_godrat_kharid")
+        if weekly is not None and pd.notna(weekly) and weekly > 0:
+            weekly_pct = row["godrat_kharid"] / weekly * 100
+            text += f" ({weekly_pct:.0f}٪ هفتگی)"
         if bold:
             text = f"<b>{text}</b>"
         return f"💪 {text}\n"
@@ -363,7 +367,6 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_kharid(bold=False),
             line_sarane_diff,
             line_godrat_kharid(bold=True),
-            line_godrat_5day_avg,
             line_pol_hagigi(),
             line_pol_hagigi_weekly,
             line_pol_power(),
