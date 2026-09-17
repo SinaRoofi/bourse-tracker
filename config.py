@@ -223,6 +223,13 @@ SUSPICIOUS_VOLUME_CONFIG = {
     "min_value_to_avg_ratio": 2.0,
 }
 
+# فیلتر 15: حجم مشکوک هفتگی (میانگین ارزش معاملات ۵ روز اخیر نسبت به
+# میانگین ماهانه - برخلاف فیلتر ۷ که فقط یک روزِ جهنده رو می‌گیره، این
+# فیلتر یک هفته‌ی کامل با حجم پیوسته بالا رو نشون می‌ده)
+SUSPICIOUS_VOLUME_WEEKLY_CONFIG = {
+    "min_value_5_to_20_ratio": 3.0,
+}
+
 # فیلتر 8: نوسان‌ گیری
 SWING_TRADE_CONFIG = {
     "min_allowed_price": -2.8,
