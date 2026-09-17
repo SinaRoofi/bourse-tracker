@@ -431,6 +431,43 @@ class BourseDataProcessor:
         return filtered
 
     # ========================================
+    # فیلتر 15: حجم مشکوک هفتگی
+    # ========================================
+    def filter_15_suspicious_volume_weekly(
+        self, df: pd.DataFrame, config: dict = None
+    ) -> pd.DataFrame:
+        """
+        حجم مشکوک هفتگی - برخلاف فیلتر ۷ که یک روزِ تکی رو با میانگین
+        ماهانه مقایسه می‌کنه، اینجا میانگین ارزش معاملات ۵ روز اخیر
+        (value_5_to_20_ratio) با میانگین ماهانه مقایسه می‌شه؛ یعنی یک
+        هفته‌ی کامل با حجم پیوسته بالا، نه صرفاً یک روز جهنده.
+        """
+        if df.empty:
+            return df
+
+        if config is None:
+            from config import SUSPICIOUS_VOLUME_WEEKLY_CONFIG
+
+            config = SUSPICIOUS_VOLUME_WEEKLY_CONFIG
+
+        min_ratio = config.get("min_value_5_to_20_ratio", 3.0)
+        logger.info(f"اعمال فیلتر 15: حجم مشکوک هفتگی (آستانه: {min_ratio}x)")
+
+        if "value_5_to_20_ratio" not in df.columns:
+            logger.error("❌ ستون گمشده برای فیلتر 15: value_5_to_20_ratio")
+            return pd.DataFrame()
+
+        filtered = df[df["value_5_to_20_ratio"] > min_ratio].copy()
+
+        if filtered.empty:
+            logger.info("فیلتر 15: هیچ سهمی یافت نشد")
+            return pd.DataFrame()
+
+        filtered = filtered.sort_values("value_5_to_20_ratio", ascending=False)
+        logger.info(f"✅ فیلتر 15: {len(filtered)} سهم با حجم مشکوک هفتگی")
+        return filtered
+
+    # ========================================
     # فیلتر 8: نوسان‌گیری
     # ========================================
     def filter_8_swing_trade(
@@ -923,6 +960,9 @@ class BourseDataProcessor:
                 ),
                 "filter_14_buy_queue_simple": self._run_filter_safe(
                     self.filter_14_buy_queue_simple, df
+                ),
+                "filter_15_suspicious_volume_weekly": self._run_filter_safe(
+                    self.filter_15_suspicious_volume_weekly, df
                 ),
             }
 
