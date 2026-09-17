@@ -562,6 +562,23 @@ FILTER_DISPLAY_CONFIG = {
             line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
         ],
     ),
+    "filter_15_suspicious_volume_weekly": FilterDisplay(
+        hashtag="📈#حجم_مشکوک_هفتگی",
+        header_emoji=_static_emoji("📈"),
+        show_industry=True,
+        lines=[
+            line_price, line_value, line_value_ratio(bold=True),
+            line_value_5_to_20,
+            line_sarane_kharid(),
+            line_sarane_diff,
+            line_godrat_kharid(),
+            line_godrat_kharid_weekly,
+            line_pol_hagigi(),
+            line_pol_hagigi_weekly,
+            line_pol_power(),
+            line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
+        ],
+    ),
 }
 
 DEFAULT_ALERT_TITLES = {
@@ -755,6 +772,9 @@ class TelegramAlert:
 
     def format_filter_14_buy_queue_simple(self, df):
         return self._render(df, "filter_14_buy_queue_simple")
+
+    def format_filter_15_suspicious_volume_weekly(self, df):
+        return self._render(df, "filter_15_suspicious_volume_weekly")
 
     async def send_filter_alert(
         self,
