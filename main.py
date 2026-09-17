@@ -67,6 +67,7 @@ STOCKS_PER_MESSAGE_MAP = {
     "filter_12_bullish_marubozu": 5,
     "filter_13_sarane_diff": 5,
     "filter_14_buy_queue_simple": 5,
+    "filter_15_suspicious_volume_weekly": 5,
 }
 
 # ===========================
@@ -83,6 +84,7 @@ FILTER_VALUE_COLUMN = {
     "filter_12_bullish_marubozu":               "intraday_move_percent",
     "filter_13_sarane_diff":                    "sarane_diff",
     "filter_14_buy_queue_simple":               "buy_queue_value",
+    "filter_15_suspicious_volume_weekly":       "value_5_to_20_ratio",
 }
 
 
@@ -461,7 +463,7 @@ async def main_async():
 
         if all_results:
             sent, skipped = await send_alerts_for_filters_async(
-                alert, alert_manager, all_results, "همه‌ی فیلترها (1-11)",
+                alert, alert_manager, all_results, "همه‌ی فیلترها (1-15)",
                 personal_watchlist, WATCHLIST_CHAT_ID,
             )
             total_sent += sent
