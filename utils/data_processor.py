@@ -83,6 +83,10 @@ class BourseDataProcessor:
             "buy_queue_value",
             "ceiling_price",
             "ask_volume",
+            "bid_volume",
+            "ask_price",
+            "sell_queue_value",
+            "floor_price",
         ]
 
         for col in numeric_columns:
@@ -116,6 +120,7 @@ class BourseDataProcessor:
             "avg_3_month_value",
             "marketcap",
             "buy_queue_value",
+            "sell_queue_value",
             "avg_5_day_value",
         ]
         for col in columns_to_divide:
@@ -904,6 +909,72 @@ class BourseDataProcessor:
         return filtered
 
     # ========================================
+    # فیلتر 16: کراس قیمت (شکست قیمت مارک‌شده به بالا/پایین)
+    # ========================================
+    @staticmethod
+    def _to_price_or_none(value):
+        """مقدار قیمت مارک رو به float تبدیل می‌کنه؛ خالی/نامعتبر/غیرمثبت -> None"""
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            price = float(str(value).replace(",", "").strip())
+        except (ValueError, TypeError):
+            return None
+        if pd.isna(price) or price <= 0:
+            return None
+        return price
+
+    def _price_cross_side(self, df: pd.DataFrame, side: str) -> pd.DataFrame:
+        """
+        side: "upper" (آخرین قیمت >= قیمت مارک) یا "lower" (آخرین قیمت <= قیمت مارک)
+        نمادی که قیمت اون سمتش پر نشده باشه ساده رد می‌شه (بدون خطا).
+        """
+        from config import PRICE_CROSS_WATCHLIST
+
+        if df.empty or not PRICE_CROSS_WATCHLIST:
+            return pd.DataFrame()
+
+        if not {"symbol", "last_price"}.issubset(df.columns):
+            return pd.DataFrame()
+
+        marks = {}
+        for symbol, levels in PRICE_CROSS_WATCHLIST.items():
+            if not isinstance(levels, dict):
+                continue
+            price = self._to_price_or_none(levels.get(side))
+            if price is not None:
+                marks[symbol] = price
+
+        if not marks:
+            return pd.DataFrame()
+
+        filtered = df[df["symbol"].isin(marks)].copy()
+        if filtered.empty:
+            return pd.DataFrame()
+
+        filtered["mark_price"] = filtered["symbol"].map(marks)
+        if side == "upper":
+            mask = filtered["last_price"] >= filtered["mark_price"]
+        else:
+            mask = filtered["last_price"] <= filtered["mark_price"]
+
+        # last_price نال (مثلاً نماد بدون معامله) -> مقایسه False می‌شه و رد می‌شه
+        filtered = filtered[mask.fillna(False)]
+        if filtered.empty:
+            return pd.DataFrame()
+
+        logger.info(
+            f"✅ فیلتر 16 ({side}): {len(filtered)} نماد قیمت مارک رو شکست"
+        )
+        return filtered.sort_values("symbol")
+
+    def filter_16_price_cross_up(self, df: pd.DataFrame) -> pd.DataFrame:
+        return self._price_cross_side(df, "upper")
+
+    def filter_16_price_cross_down(self, df: pd.DataFrame) -> pd.DataFrame:
+        return self._price_cross_side(df, "lower")
+
+    # ========================================
     # اجرای ایمن یک فیلتر — جلوگیری از سقوط کل pipeline
     # به‌خاطر خطای یک فیلتر (مثلاً ستون گمشده بعد از تغییر schema API)
     # ========================================
@@ -963,6 +1034,14 @@ class BourseDataProcessor:
                 ),
                 "filter_15_suspicious_volume_weekly": self._run_filter_safe(
                     self.filter_15_suspicious_volume_weekly, df
+                ),
+                # فیلتر ۱۶: کراس قیمت - دو کلید جدا تا شکست بالا و پایین در
+                # یک روز dedup مستقل داشته باشن (هر دو با عنوان «کراس قیمت»)
+                "filter_16_price_cross_up": self._run_filter_safe(
+                    self.filter_16_price_cross_up, df
+                ),
+                "filter_16_price_cross_down": self._run_filter_safe(
+                    self.filter_16_price_cross_down, df
                 ),
             }
 
