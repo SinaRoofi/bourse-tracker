@@ -17,6 +17,7 @@ from config import (
     PERSONAL_WATCHLIST,
     WATCHLIST_CHAT_ID,
     BUY_QUEUE_SIMPLE_CONFIG,
+    QUEUE_TRACKER_CONFIG,
     validate_config,
 )
 from utils.holidays import is_trading_day
@@ -24,6 +25,11 @@ from utils.data_fetcher import UnifiedDataFetcher
 from utils.data_processor import BourseDataProcessor
 from utils.alerts import TelegramAlert
 from utils.gist_alert_manager import GistAlertManager, WATCHLIST_COPY_SUFFIX
+from utils.queue_tracker import (
+    evaluate_queues,
+    BUY_SUPPLY_FILTER,
+    SELL_COLLECT_FILTER,
+)
 
 # ===========================
 # تنظیم timezone تهران
@@ -68,6 +74,18 @@ STOCKS_PER_MESSAGE_MAP = {
     "filter_13_sarane_diff": 5,
     "filter_14_buy_queue_simple": 5,
     "filter_15_suspicious_volume_weekly": 5,
+    "filter_16_price_cross_up": 5,
+    "filter_16_price_cross_down": 5,
+    "filter_17_buy_queue_supply": 5,
+    "filter_18_sell_queue_collect": 5,
+}
+
+# فیلترهایی که فقط به کانال واچ‌لیست می‌رن (نه کانال اصلی):
+# فیلتر ۳ (عبور از آستانه‌ی درصدی) و فیلتر ۱۶ (کراس قیمت، شکست بالا/پایین)
+WATCHLIST_ONLY_FILTERS = {
+    "filter_3_watchlist",
+    "filter_16_price_cross_up",
+    "filter_16_price_cross_down",
 }
 
 # ===========================
@@ -263,11 +281,11 @@ async def send_alerts_for_filters_async(
         logger.info(f"\n🔍 پردازش فیلتر {filter_name}: {len(filtered_df)} سهم")
         value_col = FILTER_VALUE_COLUMN.get(filter_name)
 
-        if filter_name == "filter_3_watchlist":
+        if filter_name in WATCHLIST_ONLY_FILTERS:
             # فقط کانال دوم - هرگز کانال اصلی
             if not watchlist_chat_id:
                 logger.warning(
-                    "⚠️ WATCHLIST_CHAT_ID تنظیم نشده - نتایج فیلتر 3 نادیده گرفته شد"
+                    f"⚠️ WATCHLIST_CHAT_ID تنظیم نشده - نتایج {filter_name} نادیده گرفته شد"
                 )
                 continue
             skipped_count = await _queue_filter_tasks(
@@ -457,13 +475,42 @@ async def main_async():
         # سنگین بوده (توضیح کامل در docstring تابع)
         await _consume_heavy_locked_dedup(df, alert_manager)
 
+        # ردیاب صف‌های سنگین (فیلتر ۱۷ و ۱۸): مقایسه با اسنپ‌شات اجرای قبلی
+        # که تو فایل جدای queue_snapshot.json تو Gist نگه‌داری می‌شه.
+        new_queue_snapshot = None
+        if QUEUE_TRACKER_CONFIG.get("enabled"):
+            try:
+                queue_snapshot = await alert_manager.load_queue_snapshot()
+                if queue_snapshot is None:
+                    logger.warning("⚠️ اسنپ‌شات صف خونده نشد - ردیاب صف این دور رد شد")
+                else:
+                    now_tehran = datetime.now(TEHRAN_TZ)
+                    buy_supply_df, sell_collect_df, new_queue_snapshot = evaluate_queues(
+                        df,
+                        queue_snapshot,
+                        QUEUE_TRACKER_CONFIG,
+                        now_str=now_tehran.strftime("%H:%M"),
+                        today=alert_manager.today_jalali,
+                    )
+                    all_results = dict(all_results) if all_results else {}
+                    all_results[BUY_SUPPLY_FILTER] = buy_supply_df
+                    all_results[SELL_COLLECT_FILTER] = sell_collect_df
+            except Exception as e:
+                new_queue_snapshot = None
+                logger.error(f"❌ خطا در ردیاب صف (بقیه‌ی هشدارها ادامه پیدا می‌کنن): {e}", exc_info=True)
+                if ERROR_CHAT_ID:
+                    await alert.send_message(
+                        f"⚠️ <b>خطا در ردیاب صف</b>\n<code>{e}</code>",
+                        chat_id=ERROR_CHAT_ID,
+                    )
+
         total_sent = 0
         total_skipped = 0
         t_send_start = time.time()
 
         if all_results:
             sent, skipped = await send_alerts_for_filters_async(
-                alert, alert_manager, all_results, "همه‌ی فیلترها (1-15)",
+                alert, alert_manager, all_results, "همه‌ی فیلترها (1-18)",
                 personal_watchlist, WATCHLIST_CHAT_ID,
             )
             total_sent += sent
@@ -471,6 +518,14 @@ async def main_async():
 
         t_send_end = time.time()
         logger.info(f"⏱️ فاز ارسال هشدارها: {t_send_end - t_send_start:.1f}s")
+
+        # ذخیره‌ی اسنپ‌شات صف (بعد از ارسال، تا اگه اجرا وسط کار خطا خورد،
+        # دور بعد همون هشدارها دوباره بررسی بشن)
+        if new_queue_snapshot is not None:
+            if await alert_manager.save_queue_snapshot(new_queue_snapshot):
+                logger.info("💾 اسنپ‌شات صف ذخیره شد")
+            else:
+                logger.warning("⚠️ ذخیره‌ی اسنپ‌شات صف شکست خورد")
 
         stats = await alert_manager.get_today_stats()
         logger.info("\n" + "=" * 80)
