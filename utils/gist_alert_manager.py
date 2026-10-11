@@ -23,6 +23,11 @@ logger = logging.getLogger(__name__)
 # بین دو فایل جلوگیری می‌کنه.
 WATCHLIST_COPY_SUFFIX = "__watchlist_copy"
 
+# فایل جدای اسنپ‌شات صف‌ها (فیلتر ۱۷/۱۸ + نمایش آخرین ارزش صف خرید در خلاصه‌ی
+# بازار) تو همون Gist؛ عمداً از alert_cache.json جداست تا حجم/منطق هشدارها
+# و پاکسازی روزهای قدیمی دست نخوره.
+QUEUE_SNAPSHOT_FILE = "queue_snapshot.json"
+
 
 class GistAlertManager:
     """مدیریت هشدارها با ذخیره مستقیم در GitHub Gist - نسخه Async"""
@@ -297,6 +302,71 @@ class GistAlertManager:
 
         data[self.today_jalali].extend(new_items)
         return await self._save_to_gist(data)
+
+    # ------------------------------------------------------------------
+    # Queue Snapshot (فایل جدا: queue_snapshot.json)
+    # ------------------------------------------------------------------
+    def _empty_queue_snapshot(self) -> dict:
+        return {"date": self.today_jalali, "updated": None, "buy": {}, "sell": {}}
+
+    async def load_queue_snapshot(self) -> Optional[dict]:
+        """
+        اسنپ‌شات امروز صف‌ها. اگه فایل نباشه یا مال روز قبل باشه، اسنپ‌شات
+        خالیِ امروز برمی‌گرده. اگه خوندن Gist شکست بخوره None برمی‌گرده تا
+        فراخوان این دور رو بی‌صدا رد کنه (نه اینکه با اسنپ‌شات خالی بازنویسی کنه).
+        """
+        if not self.gist_id:
+            return None
+
+        url = f"{self.api_url}/{self.gist_id}"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=self.headers, timeout=10) as r:
+                    if r.status != 200:
+                        logger.error(f"❌ Failed to load queue snapshot: {r.status}")
+                        return None
+                    gist = await r.json()
+        except Exception as e:
+            logger.error(f"❌ خطا در خواندن اسنپ‌شات صف: {e}")
+            return None
+
+        file_info = (gist.get("files") or {}).get(QUEUE_SNAPSHOT_FILE)
+        if not file_info:
+            return self._empty_queue_snapshot()
+
+        try:
+            data = json.loads(file_info.get("content") or "")
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ JSON خراب در queue_snapshot - ریست می‌شود: {e}")
+            return self._empty_queue_snapshot()
+
+        if not isinstance(data, dict) or data.get("date") != self.today_jalali:
+            return self._empty_queue_snapshot()
+
+        data.setdefault("buy", {})
+        data.setdefault("sell", {})
+        return data
+
+    async def save_queue_snapshot(self, snapshot: dict) -> bool:
+        payload = {
+            "files": {
+                QUEUE_SNAPSHOT_FILE: {
+                    "content": json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"))
+                }
+            }
+        }
+        url = f"{self.api_url}/{self.gist_id}"
+        async with self._lock:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.patch(url, headers=self.headers, json=payload, timeout=10) as r:
+                        if r.status == 200:
+                            return True
+                        logger.error(f"❌ Failed to save queue snapshot: {r.status}")
+                        return False
+            except Exception as e:
+                logger.error(f"❌ خطا در ذخیره‌ی اسنپ‌شات صف: {e}")
+                return False
 
     # ------------------------------------------------------------------
     # Stats / Utils
