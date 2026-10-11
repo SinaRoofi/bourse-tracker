@@ -317,6 +317,7 @@ class DailySummaryGenerator:
         data: dict,
         industry_universe: Optional[dict] = None,
         top_n: int = 5,
+        queue_snapshot: Optional[dict] = None,
     ) -> List[dict]:
         """
         صنایعی که امروز بیشترین تعداد نماد رو در فیلترهای صف خرید (۱۰ و
@@ -327,6 +328,11 @@ class DailySummaryGenerator:
 
         اگه industry_universe داده بشه، درصد مشارکت (تعداد نماد صف‌خریدی
         از کل نمادهای اون صنعت) هم محاسبه و برگردونده می‌شه.
+
+        اگه queue_snapshot (فایل queue_snapshot.json تو Gist) داده بشه،
+        آخرین ارزش صف خرید هر نماد از اون خونده می‌شه (نه ارزش لحظه‌ی
+        هشدار) و در "symbol_values" برمی‌گرده؛ نمادها هم بر اساس همون
+        مرتب می‌شن. مقدار 0 یعنی نماد تا آخر روز از سقف خارج شده.
 
         Returns:
             list: [{"industry_name", "symbol_count", "universe_count",
@@ -361,6 +367,7 @@ class DailySummaryGenerator:
             return []
 
         industry_universe = industry_universe or {}
+        latest_buy = (queue_snapshot or {}).get("buy", {}) or {}
         rows = []
         for industry_name, symbols in industry_symbols.items():
             symbol_count = len(symbols)
@@ -368,15 +375,24 @@ class DailySummaryGenerator:
             participation_pct = (
                 (symbol_count / universe_count * 100) if universe_count else None
             )
-            ranked_symbols = sorted(
-                symbols, key=lambda s: symbol_value.get(s, 0), reverse=True
-            )
+            def _rank_value(sym, _snap=latest_buy):
+                if sym in _snap:
+                    return _snap[sym].get("v", 0)
+                return symbol_value.get(sym, 0)
+
+            ranked_symbols = sorted(symbols, key=_rank_value, reverse=True)[:6]
             rows.append({
                 "industry_name": industry_name,
                 "symbol_count": symbol_count,
                 "universe_count": universe_count,
                 "participation_pct": participation_pct,
-                "symbols": ranked_symbols[:6],
+                "symbols": ranked_symbols,
+                # آخرین ارزش صف خرید (میلیارد تومان) - فقط نمادهایی که تو اسنپ‌شات هستن
+                "symbol_values": {
+                    sym: latest_buy[sym].get("v", 0)
+                    for sym in ranked_symbols
+                    if sym in latest_buy
+                },
             })
 
         result = sorted(rows, key=lambda r: r["symbol_count"], reverse=True)[:top_n]
@@ -684,8 +700,14 @@ class DailySummaryGenerator:
                     count_str = f"{count} نماد"
                 message += f"  {i}. {name} — {count_str}\n"
                 if symbols:
-                    hashtags = " ".join(f"#{self._format_symbol_hashtag(s)}" for s in symbols)
-                    message += f"     {hashtags}\n"
+                    symbol_values = ind.get("symbol_values", {})
+                    parts = []
+                    for sym in symbols:
+                        tag = f"#{self._format_symbol_hashtag(sym)}"
+                        if sym in symbol_values:
+                            tag += f" ({self._format_queue_value(symbol_values[sym])})"
+                        parts.append(tag)
+                    message += "     " + " ".join(parts) + "\n"
             message += "\n"
 
         message += f"📅 {date_str} | 🕐 {time_str}\n"
@@ -696,6 +718,17 @@ class DailySummaryGenerator:
     # ------------------------------------------------------------------
     # Utils
     # ------------------------------------------------------------------
+    @staticmethod
+    def _format_queue_value(value: Optional[float]) -> str:
+        """آخرین ارزش صف خرید (میلیارد تومان) به متن خوانا؛ 0 = خارج از سقف"""
+        if value is None:
+            return "؟"
+        if value <= 0:
+            return "خارج از سقف"
+        if value < 1:
+            return f"{value * 1000:.0f} میلیون"
+        return f"{value:.1f} میلیارد" if value < 10 else f"{value:.0f} میلیارد"
+
     @staticmethod
     def _format_symbol_hashtag(symbol: str) -> str:
         if not symbol:
@@ -772,8 +805,10 @@ class DailySummaryGenerator:
             combined_totals = split_analysis.get("combined_totals") if split_analysis else None
 
             if industries_analysis:
+                queue_snapshot = await self.alert_manager.load_queue_snapshot()
                 buy_queue_industries = self.get_top_buy_queue_industries(
-                    data, industry_universe=industry_universe, top_n=5
+                    data, industry_universe=industry_universe, top_n=5,
+                    queue_snapshot=queue_snapshot,
                 )
                 message1 = self.format_industry_market_summary_message(
                     industries_analysis, combined_totals, buy_queue_industries
