@@ -263,6 +263,41 @@ def line_final_price(row: pd.Series) -> Optional[str]:
     return f"💵 قیمت پایانی: {_format_price(row['final_price'])}\n"
 
 
+def line_mark_price_up(row: pd.Series) -> Optional[str]:
+    """اختصاصی filter_16: قیمت مارک شکسته‌شده (رو به بالا)"""
+    if "mark_price" not in row or pd.isna(row["mark_price"]):
+        return None
+    return f"🔺 شکست قیمت مارک (بالا): {_format_price(row['mark_price'])}\n"
+
+
+def line_mark_price_down(row: pd.Series) -> Optional[str]:
+    """اختصاصی filter_16: قیمت مارک شکسته‌شده (رو به پایین)"""
+    if "mark_price" not in row or pd.isna(row["mark_price"]):
+        return None
+    return f"🔻 شکست قیمت مارک (پایین): {_format_price(row['mark_price'])}\n"
+
+
+def _format_queue_amount(value: float) -> str:
+    text, unit = _format_smart_toman(value)
+    return f"{text} {unit}"
+
+
+def line_queue_supply(row: pd.Series) -> Optional[str]:
+    """اختصاصی filter_17: ارزش صف خرید سنگینی که کامل عرضه شد"""
+    if "queue_ref" not in row or pd.isna(row["queue_ref"]):
+        return None
+    ref = _format_queue_amount(row["queue_ref"])
+    return f"📉 <b>صف خرید عرضه شده: {ref}</b>\n"
+
+
+def line_queue_collect(row: pd.Series) -> Optional[str]:
+    """اختصاصی filter_18: ارزش صف فروش سنگینی که کامل جمع شد"""
+    if "queue_ref" not in row or pd.isna(row["queue_ref"]):
+        return None
+    ref = _format_queue_amount(row["queue_ref"])
+    return f"🧹 <b>صف فروش جمع شده: {ref}</b>\n"
+
+
 def line_tick_diff(row: pd.Series) -> Optional[str]:
     """اختصاصی filter_6"""
     if "tick_diff" not in row or pd.isna(row["tick_diff"]):
@@ -404,6 +439,74 @@ FILTER_DISPLAY_CONFIG = {
             line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
             line_sarane_diff,
+            line_pol_hagigi(),
+            line_pol_hagigi_weekly,
+            line_pol_power(),
+            line_diff_buy_sell_order,
+            line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
+        ],
+    ),
+    "filter_16_price_cross_up": FilterDisplay(
+        hashtag="🎯#کراس_قیمت",
+        header_emoji=_static_emoji("🟢"),
+        show_industry=True,
+        lines=[
+            line_price, line_mark_price_up, line_final_price, line_value,
+            line_value_ratio(bold=True), line_value_5_to_20,
+            line_sarane_kharid(),
+            line_sarane_diff,
+            line_pol_hagigi(),
+            line_pol_hagigi_weekly,
+            line_pol_power(),
+            line_diff_buy_sell_order,
+            line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
+        ],
+    ),
+    "filter_16_price_cross_down": FilterDisplay(
+        hashtag="🎯#کراس_قیمت",
+        header_emoji=_static_emoji("🔴"),
+        show_industry=True,
+        lines=[
+            line_price, line_mark_price_down, line_final_price, line_value,
+            line_value_ratio(bold=True), line_value_5_to_20,
+            line_sarane_kharid(),
+            line_sarane_diff,
+            line_pol_hagigi(),
+            line_pol_hagigi_weekly,
+            line_pol_power(),
+            line_diff_buy_sell_order,
+            line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
+        ],
+    ),
+    "filter_17_buy_queue_supply": FilterDisplay(
+        hashtag="⚠️#عرضه_صف_خرید",
+        header_emoji=_static_emoji("🔴"),
+        show_industry=True,
+        lines=[
+            line_price, line_queue_supply,
+            line_value, line_value_ratio(bold=True), line_value_5_to_20,
+            line_sarane_kharid(),
+            line_sarane_diff,
+            line_godrat_kharid(),
+            line_godrat_kharid_weekly,
+            line_pol_hagigi(),
+            line_pol_hagigi_weekly,
+            line_pol_power(),
+            line_diff_buy_sell_order,
+            line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
+        ],
+    ),
+    "filter_18_sell_queue_collect": FilterDisplay(
+        hashtag="🧲#جمع_آوری_صف_فروش",
+        header_emoji=_static_emoji("🟢"),
+        show_industry=True,
+        lines=[
+            line_price, line_queue_collect,
+            line_value, line_value_ratio(bold=True), line_value_5_to_20,
+            line_sarane_kharid(),
+            line_sarane_diff,
+            line_godrat_kharid(),
+            line_godrat_kharid_weekly,
             line_pol_hagigi(),
             line_pol_hagigi_weekly,
             line_pol_power(),
@@ -739,6 +842,18 @@ class TelegramAlert:
 
     def format_filter_3_watchlist(self, df):
         return self._render(df, "filter_3_watchlist")
+
+    def format_filter_16_price_cross_up(self, df):
+        return self._render(df, "filter_16_price_cross_up")
+
+    def format_filter_16_price_cross_down(self, df):
+        return self._render(df, "filter_16_price_cross_down")
+
+    def format_filter_17_buy_queue_supply(self, df):
+        return self._render(df, "filter_17_buy_queue_supply")
+
+    def format_filter_18_sell_queue_collect(self, df):
+        return self._render(df, "filter_18_sell_queue_collect")
 
     def format_filter_4_range_mosbat(self, df):
         return self._render(df, "filter_4_range_mosbat")
