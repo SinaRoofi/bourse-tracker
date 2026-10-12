@@ -72,6 +72,7 @@ def map_snapshot_row_to_old_schema(row: dict) -> dict:
     # سمت فروش سطح ۱ (برای فیلتر ۱۸ - جمع‌آوری صف فروش). اگه API قیمت/حجم
     # عرضه رو نده None می‌مونه (نه صفر) تا فیلتر بی‌صدا هشدار اشتباه نده.
     ask_price = lvl1.get("askPrice")
+    ask_count = lvl1.get("askCount")
     if ask_price is not None and ask_volume is not None:
         sell_queue_value = ask_price * ask_volume  # خام (ریال) - ارزش کل صف فروش سطح ۱
     else:
@@ -155,6 +156,7 @@ def map_snapshot_row_to_old_schema(row: dict) -> dict:
         # --- برای فیلتر ۱۸ (جمع‌آوری صف فروش) ---
         "bid_volume": bid_volume,              # حجم سمت خرید سطح ۱ - صفر یعنی خریداری نیست
         "ask_price": ask_price,
+        "ask_count": ask_count,                # تعداد سفارش صف فروش سطح ۱
         "sell_queue_value": sell_queue_value,  # خام (ریال) - ارزش کل صف فروش سطح ۱
         # کف قیمت مجاز (فقط سهام). اول lowThreshold (هم‌خانواده‌ی highThreshold سقف)،
         # اگه نبود priceLimits.lowGate (ساختاری که تو خروجی صندوق‌ها تأیید شد).
