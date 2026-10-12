@@ -27,6 +27,7 @@ from utils.alerts import TelegramAlert
 from utils.gist_alert_manager import GistAlertManager, WATCHLIST_COPY_SUFFIX
 from utils.queue_tracker import (
     evaluate_queues,
+    snapshot_needs_save,
     BUY_SUPPLY_FILTER,
     SELL_COLLECT_FILTER,
 )
@@ -478,6 +479,7 @@ async def main_async():
         # ردیاب صف‌های سنگین (فیلتر ۱۷ و ۱۸): مقایسه با اسنپ‌شات اجرای قبلی
         # که تو فایل جدای queue_snapshot.json تو Gist نگه‌داری می‌شه.
         new_queue_snapshot = None
+        queue_snapshot = None
         if QUEUE_TRACKER_CONFIG.get("enabled"):
             try:
                 queue_snapshot = await alert_manager.load_queue_snapshot()
@@ -522,10 +524,19 @@ async def main_async():
         # ذخیره‌ی اسنپ‌شات صف (بعد از ارسال، تا اگه اجرا وسط کار خطا خورد،
         # دور بعد همون هشدارها دوباره بررسی بشن)
         if new_queue_snapshot is not None:
-            if await alert_manager.save_queue_snapshot(new_queue_snapshot):
-                logger.info("💾 اسنپ‌شات صف ذخیره شد")
+            if snapshot_needs_save(
+                queue_snapshot,
+                new_queue_snapshot,
+                QUEUE_TRACKER_CONFIG.get("snapshot_refresh_minutes", 10),
+                time.time(),
+            ):
+                new_queue_snapshot["saved_at"] = time.time()
+                if await alert_manager.save_queue_snapshot(new_queue_snapshot):
+                    logger.info("💾 اسنپ‌شات صف ذخیره شد")
+                else:
+                    logger.warning("⚠️ ذخیره‌ی اسنپ‌شات صف شکست خورد")
             else:
-                logger.warning("⚠️ ذخیره‌ی اسنپ‌شات صف شکست خورد")
+                logger.info("💾 اسنپ‌شات صف تغییر مهمی نکرده - نوشتن Gist رد شد")
 
         stats = await alert_manager.get_today_stats()
         logger.info("\n" + "=" * 80)
