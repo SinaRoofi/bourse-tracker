@@ -26,6 +26,11 @@ API_BASE_URL = os.getenv("API_BASE_URL")
 # ========================================
 GIST_TOKEN = os.getenv("GIST_TOKEN")
 GIST_ID = os.getenv("GIST_ID")
+# اسنپ‌شات صف‌ها (فیلتر ۱۷/۱۸ و خلاصه‌ی بازار) می‌تونه تو یه Gist جدا و با توکن یه
+# اکانت دیگه نگه‌داری بشه تا محدودیت نوشتن GitHub دیداپ هشدارها رو خراب نکنه.
+# اختیاریه: اگه این دو تنظیم نشن، از همون GIST_ID/GIST_TOKEN بالا استفاده می‌شه.
+QUEUE_GIST_TOKEN = os.getenv("QUEUE_GIST_TOKEN")
+QUEUE_GIST_ID = os.getenv("QUEUE_GIST_ID")
 
 # ========================================
 # کدهای صنایع مختلف بورس
@@ -320,6 +325,9 @@ QUEUE_TRACKER_CONFIG = {
     # ذخیره این‌قدر دقیقه گذشته باشه (تعداد نوشتن‌ها رو کم می‌کنه؛ GitHub برای نوشتن
     # زیاد و پشت‌سرهم تو Gist 403 می‌ده).
     "snapshot_refresh_minutes": 10,
+    # تو این چند دقیقه‌ی آخر بازار (تا MARKET_END_TIME) اسنپ‌شات هر اجرا ذخیره می‌شه تا
+    # خلاصه‌ی بازار آخرین ارزش صف‌ها رو داشته باشه. 0 = غیرفعال.
+    "snapshot_final_window_minutes": 10,
     # فیلتر 17: عرضه صف خرید (صف خرید سنگینی که کامل عرضه شد)
     "buy_supply": {
         "enabled": True,
