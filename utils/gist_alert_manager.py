@@ -28,6 +28,15 @@ WATCHLIST_COPY_SUFFIX = "__watchlist_copy"
 # و پاکسازی روزهای قدیمی دست نخوره.
 QUEUE_SNAPSHOT_FILE = "queue_snapshot.json"
 
+# GitHub برای نوشتن‌های پشت‌سرهم تو یک Gist (rate limit ثانویه) 403 می‌ده و توصیه
+# می‌کنه بین دو درخواست نوشتن حداقل ۱ ثانیه فاصله باشه. اگه نوشتن dedup شکست بخوره،
+# اجرای بعدی همون هشدارها رو دوباره می‌فرسته (اسپم)، پس هر نوشتن/خوندن با فاصله و
+# retry انجام می‌شه.
+MIN_WRITE_GAP_SECONDS = 1.5
+HTTP_MAX_ATTEMPTS = 3
+HTTP_RETRY_STATUSES = {403, 429, 500, 502, 503, 504}
+HTTP_MAX_WAIT_SECONDS = 20
+
 
 class GistAlertManager:
     """مدیریت هشدارها با ذخیره مستقیم در GitHub Gist - نسخه Async"""
@@ -48,6 +57,8 @@ class GistAlertManager:
         self._cache = None
         self._cache_time = 0
         self._cache_duration = 10
+        self._last_write_ts = 0.0
+        self._load_failed = False  # آخرین خوندن alert_cache.json شکست خورده؟
 
         if not self.gist_id:
             # ⚠️ این متد یک requests.post سینک (بلاکینگ) اجرا می‌کنه.
@@ -97,34 +108,94 @@ class GistAlertManager:
     # ------------------------------------------------------------------
     # Load Gist
     # ------------------------------------------------------------------
-    async def _load_gist_content(self, use_cache: bool = True) -> dict:
+    async def _http(self, method: str, url: str, payload: Optional[dict] = None):
+        """
+        درخواست به GitHub API با فاصله‌ی حداقلی بین نوشتن‌ها و retry روی خطاهای
+        موقتی (403 rate limit، 429، 5xx). برمی‌گردونه: (status, body) که body برای
+        200 دیکشنری JSON و برای خطا متن کوتاه پاسخه.
+        """
+        status, body = 0, None
+        for attempt in range(1, HTTP_MAX_ATTEMPTS + 1):
+            if method != "GET":
+                gap = MIN_WRITE_GAP_SECONDS - (time.time() - self._last_write_ts)
+                if gap > 0:
+                    await asyncio.sleep(gap)
+
+            retry_after = None
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.request(
+                        method, url, headers=self.headers, json=payload, timeout=10
+                    ) as r:
+                        status = r.status
+                        if status == 200:
+                            body = await r.json()
+                        else:
+                            body = (await r.text())[:300]
+                            retry_after = r.headers.get("Retry-After")
+            except Exception as e:
+                status, body = 0, str(e)
+
+            if method != "GET":
+                self._last_write_ts = time.time()
+
+            if status == 200:
+                return status, body
+
+            logger.error(
+                f"❌ Gist {method} ناموفق: {status} (تلاش {attempt}/{HTTP_MAX_ATTEMPTS}) "
+                f"{body if body else ''} retry-after={retry_after}"
+            )
+            retryable = status == 0 or status in HTTP_RETRY_STATUSES
+            if not retryable or attempt == HTTP_MAX_ATTEMPTS:
+                break
+
+            try:
+                wait = float(retry_after) if retry_after else 3.0 * attempt
+            except ValueError:
+                wait = 3.0 * attempt
+            await asyncio.sleep(min(wait, HTTP_MAX_WAIT_SECONDS))
+
+        return status, body
+
+    async def _load_gist_content(self, use_cache: bool = True, allow_stale: bool = False) -> dict:
+        """
+        محتوای alert_cache.json. اگه خوندن Gist شکست بخوره:
+          - allow_stale=True و کش قدیمی موجود: همون کش برمی‌گرده.
+          - وگرنه {} برمی‌گرده و self._load_failed=True می‌شه تا فراخوان بتونه
+            به‌جای «هیچ هشداری ارسال نشده» فرض کردن (که اسپم و بازنویسی خطرناک
+            Gist رو می‌سازه) تصمیم درست بگیره.
+        """
         if not self.gist_id:
             return {}
 
         now = time.time()
         if use_cache and self._cache and (now - self._cache_time) < self._cache_duration:
+            self._load_failed = False
             return self._cache.copy()
 
-        url = f"{self.api_url}/{self.gist_id}"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=self.headers, timeout=10) as r:
-                if r.status != 200:
-                    logger.error(f"❌ Failed to load gist: {r.status}")
-                    return {}
+        status, gist = await self._http("GET", f"{self.api_url}/{self.gist_id}")
+        if status != 200:
+            if allow_stale and self._cache:
+                logger.warning("⚠️ خوندن Gist شکست خورد - از کش قدیمی همین اجرا استفاده شد")
+                self._load_failed = False
+                return self._cache.copy()
+            self._load_failed = True
+            return {}
 
-                gist = await r.json()
-                content = gist["files"]["alert_cache.json"]["content"]
+        self._load_failed = False
+        content = gist["files"]["alert_cache.json"]["content"]
 
-                try:
-                    data = json.loads(content)
-                except json.JSONDecodeError as e:
-                    logger.error(f"❌ JSON خراب در Gist: {e} - ریست می‌شود")
-                    data = {"_daily_summary_sent": {}, self.today_jalali: []}
-                    await self._save_to_gist(data)
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ JSON خراب در Gist: {e} - ریست می‌شود")
+            data = {"_daily_summary_sent": {}, self.today_jalali: []}
+            await self._save_to_gist(data)
 
-                self._cache = data
-                self._cache_time = now
-                return data
+        self._cache = data
+        self._cache_time = now
+        return data
 
     # ------------------------------------------------------------------
     # Save Gist
@@ -138,17 +209,13 @@ class GistAlertManager:
                     }
                 }
             }
-
-            url = f"{self.api_url}/{self.gist_id}"
-            async with aiohttp.ClientSession() as session:
-                async with session.patch(url, headers=self.headers, json=payload, timeout=10) as r:
-                    if r.status == 200:
-                        self._cache = data
-                        self._cache_time = time.time()
-                        return True
-
-                    logger.error(f"❌ Failed to save gist: {r.status}")
-                    return False
+            status, _ = await self._http("PATCH", f"{self.api_url}/{self.gist_id}", payload)
+            if status == 200:
+                self._cache = data
+                self._cache_time = time.time()
+                return True
+            logger.error(f"❌ Failed to save gist: {status}")
+            return False
 
     # ------------------------------------------------------------------
     # پاکسازی داده‌ی قدیمی (روزهای هشدار + روزهای داخل _industry_universe)
@@ -184,10 +251,15 @@ class GistAlertManager:
     # ------------------------------------------------------------------
     async def is_today_summary_sent(self) -> bool:
         data = await self._load_gist_content(use_cache=False)
+        if self._load_failed:
+            return True  # نمی‌تونیم مطمئن بشیم؛ از ارسال دوباره‌ی خلاصه جلوگیری می‌کنیم
         return data.get("_daily_summary_sent", {}).get(self.today_jalali, False)
 
     async def mark_today_summary_sent(self) -> bool:
         data = await self._load_gist_content(use_cache=False)
+        if self._load_failed:
+            logger.error("❌ قفل خلاصه‌ی روزانه ذخیره نشد: خوندن Gist شکست خورد")
+            return False
         data.setdefault("_daily_summary_sent", {})[self.today_jalali] = True
         return await self._save_to_gist(data)
 
@@ -215,6 +287,8 @@ class GistAlertManager:
             return True
 
         data = await self._load_gist_content(use_cache=False)
+        if self._load_failed:
+            return False  # روی داده‌ی خالی بازنویسی نکن
         existing = data.setdefault("_industry_universe", {})
         if existing.get(self.today_jalali):
             return True  # امروز قبلاً ذخیره شده
@@ -227,7 +301,11 @@ class GistAlertManager:
     # Alert Dedup
     # ------------------------------------------------------------------
     async def should_send_alert(self, symbol: str, alert_type: str) -> bool:
-        data = await self._load_gist_content()
+        data = await self._load_gist_content(allow_stale=True)
+        if self._load_failed:
+            # بدون سابقه‌ی dedup نمی‌شه مطمئن بود؛ ارسال نکردن بهتر از اسپم تکراریه
+            logger.warning(f"⚠️ {symbol}: سابقه‌ی dedup در دسترس نیست - ارسال رد شد")
+            return False
         today_alerts = data.get(self.today_jalali, [])
         return not any(
             a["symbol"] == symbol and a["alert_type"] == alert_type
@@ -257,6 +335,9 @@ class GistAlertManager:
             return True
 
         data = await self._load_gist_content(use_cache=False)
+        if self._load_failed:
+            logger.error("❌ علامت‌گذاری هشدارها انجام نشد: خوندن Gist شکست خورد")
+            return False
         data.setdefault(self.today_jalali, [])
 
         # پاکسازی روزهای قدیمی (نگه داشتن فقط ۳ روز اخیر) - هم سطح بالا
@@ -318,16 +399,9 @@ class GistAlertManager:
         if not self.gist_id:
             return None
 
-        url = f"{self.api_url}/{self.gist_id}"
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=self.headers, timeout=10) as r:
-                    if r.status != 200:
-                        logger.error(f"❌ Failed to load queue snapshot: {r.status}")
-                        return None
-                    gist = await r.json()
-        except Exception as e:
-            logger.error(f"❌ خطا در خواندن اسنپ‌شات صف: {e}")
+        status, gist = await self._http("GET", f"{self.api_url}/{self.gist_id}")
+        if status != 200:
+            logger.error(f"❌ Failed to load queue snapshot: {status}")
             return None
 
         file_info = (gist.get("files") or {}).get(QUEUE_SNAPSHOT_FILE)
@@ -355,18 +429,12 @@ class GistAlertManager:
                 }
             }
         }
-        url = f"{self.api_url}/{self.gist_id}"
         async with self._lock:
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.patch(url, headers=self.headers, json=payload, timeout=10) as r:
-                        if r.status == 200:
-                            return True
-                        logger.error(f"❌ Failed to save queue snapshot: {r.status}")
-                        return False
-            except Exception as e:
-                logger.error(f"❌ خطا در ذخیره‌ی اسنپ‌شات صف: {e}")
-                return False
+            status, _ = await self._http("PATCH", f"{self.api_url}/{self.gist_id}", payload)
+            if status == 200:
+                return True
+            logger.error(f"❌ Failed to save queue snapshot: {status}")
+            return False
 
     # ------------------------------------------------------------------
     # Stats / Utils
