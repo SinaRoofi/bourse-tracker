@@ -14,6 +14,8 @@ from config import (
     ERROR_CHAT_ID,
     GIST_ID,
     GIST_TOKEN,
+    QUEUE_GIST_ID,
+    QUEUE_GIST_TOKEN,
     PERSONAL_WATCHLIST,
     WATCHLIST_CHAT_ID,
     BUY_QUEUE_SIMPLE_CONFIG,
@@ -127,6 +129,16 @@ def is_market_open() -> bool:
     jnow = jdatetime.datetime.fromgregorian(datetime=now.replace(tzinfo=None))
     logger.info(f"✅ بازار باز است - {jnow.strftime('%Y-%m-%d')} {current_time}")
     return True
+
+
+def in_snapshot_final_window(window_minutes: int) -> bool:
+    """آیا تو آخرین window_minutes دقیقه‌ی بازار (تا MARKET_END_TIME) هستیم؟"""
+    if not window_minutes:
+        return False
+    now = datetime.now(TEHRAN_TZ)
+    end_h, end_m = (int(x) for x in MARKET_END_TIME.split(":"))
+    minutes_now = now.hour * 60 + now.minute
+    return (end_h * 60 + end_m - window_minutes) <= minutes_now <= (end_h * 60 + end_m)
 
 
 def chunk_dataframe(df, filter_name):
@@ -433,7 +445,7 @@ async def main_async():
         logger.info(f"⏱️ پردازش + فیلترها: {t_process_end - t_process_start:.1f}s")
 
         logger.info("\n📤 شروع ارسال هشدارها به تلگرام...")
-        alert_manager = GistAlertManager(GIST_TOKEN, GIST_ID)
+        alert_manager = GistAlertManager(GIST_TOKEN, GIST_ID, QUEUE_GIST_TOKEN, QUEUE_GIST_ID)
 
         # ذخیره‌ی یک‌باره‌ی تعداد کل نماد هر صنعت (universe) — برای نرمال‌سازی
         # «برترین صنایع» در گزارش خلاصه‌ی روزانه (درصد مشارکت به‌جای عدد خام).
@@ -529,6 +541,9 @@ async def main_async():
                 new_queue_snapshot,
                 QUEUE_TRACKER_CONFIG.get("snapshot_refresh_minutes", 10),
                 time.time(),
+                force=in_snapshot_final_window(
+                    QUEUE_TRACKER_CONFIG.get("snapshot_final_window_minutes", 10)
+                ),
             ):
                 new_queue_snapshot["saved_at"] = time.time()
                 if await alert_manager.save_queue_snapshot(new_queue_snapshot):
