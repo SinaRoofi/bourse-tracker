@@ -19,7 +19,7 @@ from utils.daily_summary_generator import DailySummaryGenerator
 from utils.alerts import TelegramAlert
 from utils.gist_alert_manager import GistAlertManager
 from utils.holidays import is_trading_day
-from config import GIST_TOKEN, GIST_ID
+from config import GIST_TOKEN, GIST_ID, QUEUE_GIST_TOKEN, QUEUE_GIST_ID
 
 # ===========================
 # تنظیم timezone تهران
@@ -98,7 +98,7 @@ async def main_async():
 
         # 4) init manager
         telegram_alert = TelegramAlert()
-        alert_manager = GistAlertManager(GIST_TOKEN, GIST_ID)
+        alert_manager = GistAlertManager(GIST_TOKEN, GIST_ID, QUEUE_GIST_TOKEN, QUEUE_GIST_ID)
         summary_generator = DailySummaryGenerator(alert_manager, telegram_alert)
 
         # 5) چک ارسال‌شدن قبلی (قفل روزانه)
