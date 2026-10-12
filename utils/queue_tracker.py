@@ -154,6 +154,12 @@ def evaluate_queues(
     if df is None or df.empty or "symbol" not in df.columns:
         return pd.DataFrame(), pd.DataFrame(), new_snapshot
 
+    # بعضی نمادها دو ردیف دارن (مثلاً سهم و صندوق هم‌نام)؛ حالت و هشدار هر نماد
+    # باید یکتا باشه، پس ردیف سهام اول می‌مونه.
+    if "is_fund" in df.columns:
+        df = df.sort_values("is_fund", kind="stable")
+    df = df.drop_duplicates(subset="symbol", keep="first")
+
     buy_cfg = config.get("buy_supply", {})
     sell_cfg = config.get("sell_collect", {})
 
@@ -215,3 +221,34 @@ def evaluate_queues(
         f"فروش={sum(1 for e in new_snapshot['sell'].values() if e.get('v', 0) > 0)}"
     )
     return _events_df(df, buy_events), _events_df(df, sell_events), new_snapshot
+
+
+def snapshot_needs_save(
+    old: Optional[dict], new: dict, refresh_minutes: float, now_ts: float
+) -> bool:
+    """
+    نوشتن اسنپ‌شات تو Gist فقط وقتی لازمه که چیز مهمی عوض شده باشه، تا هر اجرا
+    یک نوشتن اضافه به Gist نخوره (GitHub برای نوشتن‌های مکرر 403 می‌ده):
+      - نماد جدید وارد/خارج صف شده یا برچسب «سنگین» عوض شده
+      - مرجع (ref) یک نماد بیشتر از ۱۵٪ بالا رفته
+      - از آخرین ذخیره بیشتر از refresh_minutes گذشته (برای تازه‌بودن مقادیر خلاصه‌ی بازار)
+    """
+    if not old or old.get("date") != new.get("date"):
+        return True
+
+    for side in ("buy", "sell"):
+        old_side = old.get(side, {}) or {}
+        new_side = new.get(side, {}) or {}
+        if set(old_side) != set(new_side):
+            return True
+        for sym, e in new_side.items():
+            o = old_side[sym]
+            if bool(o.get("heavy")) != bool(e.get("heavy")):
+                return True
+            if (o.get("v", 0) > 0) != (e.get("v", 0) > 0):
+                return True
+            if e.get("ref", 0) > o.get("ref", 0) * 1.15 and e.get("ref", 0) > 0:
+                return True
+
+    saved_at = old.get("saved_at") or 0
+    return (now_ts - saved_at) >= refresh_minutes * 60
