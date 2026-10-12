@@ -41,7 +41,13 @@ HTTP_MAX_WAIT_SECONDS = 20
 class GistAlertManager:
     """مدیریت هشدارها با ذخیره مستقیم در GitHub Gist - نسخه Async"""
 
-    def __init__(self, github_token: str, gist_id: str = None):
+    def __init__(
+        self,
+        github_token: str,
+        gist_id: str = None,
+        queue_gist_token: str = None,
+        queue_gist_id: str = None,
+    ):
         self.github_token = github_token
         self.gist_id = gist_id
         self.api_url = "https://api.github.com/gists"
@@ -50,6 +56,17 @@ class GistAlertManager:
             "Accept": "application/vnd.github.v3+json"
         }
 
+        # Gist جدای اسنپ‌شات صف‌ها (اختیاری؛ اگه نبود همون Gist اصلی)
+        if queue_gist_id and queue_gist_token:
+            self.queue_gist_id = queue_gist_id
+            self.queue_headers = {
+                "Authorization": f"token {queue_gist_token}",
+                "Accept": "application/vnd.github.v3+json"
+            }
+        else:
+            self.queue_gist_id = gist_id
+            self.queue_headers = self.headers
+
         self.today_jalali = jdatetime.date.today().strftime("%Y-%m-%d")
 
         self._lock = asyncio.Lock()
@@ -57,7 +74,7 @@ class GistAlertManager:
         self._cache = None
         self._cache_time = 0
         self._cache_duration = 10
-        self._last_write_ts = 0.0
+        self._last_write_ts = {}  # آخرین زمان نوشتن به‌ازای هر توکن (محدودیت GitHub روی هر اکانته)
         self._load_failed = False  # آخرین خوندن alert_cache.json شکست خورده؟
 
         if not self.gist_id:
@@ -108,16 +125,20 @@ class GistAlertManager:
     # ------------------------------------------------------------------
     # Load Gist
     # ------------------------------------------------------------------
-    async def _http(self, method: str, url: str, payload: Optional[dict] = None):
+    async def _http(
+        self, method: str, url: str, payload: Optional[dict] = None, headers: Optional[dict] = None
+    ):
         """
         درخواست به GitHub API با فاصله‌ی حداقلی بین نوشتن‌ها و retry روی خطاهای
         موقتی (403 rate limit، 429، 5xx). برمی‌گردونه: (status, body) که body برای
         200 دیکشنری JSON و برای خطا متن کوتاه پاسخه.
         """
         status, body = 0, None
+        headers = headers or self.headers
+        write_key = headers.get("Authorization", "")
         for attempt in range(1, HTTP_MAX_ATTEMPTS + 1):
             if method != "GET":
-                gap = MIN_WRITE_GAP_SECONDS - (time.time() - self._last_write_ts)
+                gap = MIN_WRITE_GAP_SECONDS - (time.time() - self._last_write_ts.get(write_key, 0.0))
                 if gap > 0:
                     await asyncio.sleep(gap)
 
@@ -125,7 +146,7 @@ class GistAlertManager:
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.request(
-                        method, url, headers=self.headers, json=payload, timeout=10
+                        method, url, headers=headers, json=payload, timeout=10
                     ) as r:
                         status = r.status
                         if status == 200:
@@ -137,7 +158,7 @@ class GistAlertManager:
                 status, body = 0, str(e)
 
             if method != "GET":
-                self._last_write_ts = time.time()
+                self._last_write_ts[write_key] = time.time()
 
             if status == 200:
                 return status, body
@@ -396,10 +417,12 @@ class GistAlertManager:
         خالیِ امروز برمی‌گرده. اگه خوندن Gist شکست بخوره None برمی‌گرده تا
         فراخوان این دور رو بی‌صدا رد کنه (نه اینکه با اسنپ‌شات خالی بازنویسی کنه).
         """
-        if not self.gist_id:
+        if not self.queue_gist_id:
             return None
 
-        status, gist = await self._http("GET", f"{self.api_url}/{self.gist_id}")
+        status, gist = await self._http(
+            "GET", f"{self.api_url}/{self.queue_gist_id}", headers=self.queue_headers
+        )
         if status != 200:
             logger.error(f"❌ Failed to load queue snapshot: {status}")
             return None
@@ -430,7 +453,9 @@ class GistAlertManager:
             }
         }
         async with self._lock:
-            status, _ = await self._http("PATCH", f"{self.api_url}/{self.gist_id}", payload)
+            status, _ = await self._http(
+                "PATCH", f"{self.api_url}/{self.queue_gist_id}", payload, headers=self.queue_headers
+            )
             if status == 200:
                 return True
             logger.error(f"❌ Failed to save queue snapshot: {status}")
