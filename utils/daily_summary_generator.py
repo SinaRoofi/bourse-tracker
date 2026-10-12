@@ -720,14 +720,14 @@ class DailySummaryGenerator:
     # ------------------------------------------------------------------
     @staticmethod
     def _format_queue_value(value: Optional[float]) -> str:
-        """آخرین ارزش صف خرید (میلیارد تومان) به متن خوانا؛ 0 = خارج از سقف"""
+        """آخرین ارزش صف خرید (میلیارد تومان) به متن کوتاه: B = میلیارد، M = میلیون؛ 0 = خارج از سقف"""
         if value is None:
             return "؟"
         if value <= 0:
             return "خارج از سقف"
         if value < 1:
-            return f"{value * 1000:.0f} میلیون"
-        return f"{value:.1f} میلیارد" if value < 10 else f"{value:.0f} میلیارد"
+            return f"{value * 1000:.0f}M"
+        return f"{value:.1f}B" if value < 10 else f"{value:.0f}B"
 
     @staticmethod
     def _format_symbol_hashtag(symbol: str) -> str:
