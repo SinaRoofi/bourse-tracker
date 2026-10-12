@@ -85,6 +85,7 @@ class BourseDataProcessor:
             "ask_volume",
             "bid_volume",
             "ask_price",
+            "ask_count",
             "sell_queue_value",
             "floor_price",
         ]
