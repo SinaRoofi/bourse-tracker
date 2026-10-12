@@ -290,6 +290,13 @@ def line_queue_supply(row: pd.Series) -> Optional[str]:
     return f"📉 <b>صف خرید عرضه شده: {ref}</b>\n"
 
 
+def line_queue_order(row: pd.Series) -> Optional[str]:
+    """اختصاصی filter_17/18: ارزش هر اردر صف (تو لحظه‌ی بیشترین ارزش صف)"""
+    if "queue_order" not in row or pd.isna(row["queue_order"]):
+        return None
+    return f"📋 ارزش هر اردر: {row['queue_order']:.0f} میلیون تومان\n"
+
+
 def line_queue_collect(row: pd.Series) -> Optional[str]:
     """اختصاصی filter_18: ارزش صف فروش سنگینی که کامل جمع شد"""
     if "queue_ref" not in row or pd.isna(row["queue_ref"]):
@@ -483,7 +490,7 @@ FILTER_DISPLAY_CONFIG = {
         header_emoji=_static_emoji("🔴"),
         show_industry=True,
         lines=[
-            line_price, line_queue_supply,
+            line_price, line_queue_supply, line_queue_order,
             line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
             line_sarane_diff,
@@ -501,7 +508,7 @@ FILTER_DISPLAY_CONFIG = {
         header_emoji=_static_emoji("🟢"),
         show_industry=True,
         lines=[
-            line_price, line_queue_collect,
+            line_price, line_queue_collect, line_queue_order,
             line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
             line_sarane_diff,
