@@ -43,7 +43,12 @@ def _num(value) -> Optional[float]:
 
 
 def _step(
-    prev: Optional[dict], cur: Optional[float], heavy_now: bool, cfg: dict, now_str: str
+    prev: Optional[dict],
+    cur: Optional[float],
+    heavy_now: bool,
+    cfg: dict,
+    now_str: str,
+    order: Optional[float] = None,
 ) -> Tuple[Optional[dict], Optional[dict]]:
     """
     یک قدم از ماشین حالت یک نماد.
@@ -67,20 +72,28 @@ def _step(
         if was_in_queue:
             event = None
             if prev.get("heavy") and prev.get("ref", 0) >= min_value:
-                event = {"ref": prev["ref"]}
+                event = {"ref": prev["ref"], "ord": prev.get("ord")}
             return {"v": 0.0, "ref": 0.0, "heavy": False, "t": now_str, "exited": True}, event
         return prev, None  # هیچ‌وقت تو صف نبوده یا قبلاً خارج شده
 
     # --- الان تو صف هست ---
     if not was_in_queue:
         # صف تازه (یا ورود دوباره بعد از خروج): فقط شروع ردیابی، بدون هشدار
-        return {"v": round(cur, 3), "ref": round(cur, 3), "heavy": bool(heavy_now), "t": now_str}, None
+        entry = {"v": round(cur, 3), "ref": round(cur, 3), "heavy": bool(heavy_now), "t": now_str}
+        if order is not None:
+            entry["ord"] = round(order, 1)
+        return entry, None
 
     # هنوز تو صف هست: فقط مرجع (بیشترین ارزش صف) رو به‌روز می‌کنیم؛ کم شدن
     # صف هشدار نمی‌ده - هشدار فقط وقتی میاد که صف کامل عرضه/جمع بشه.
     ref = max(prev.get("ref", cur), cur)
     heavy = bool(prev.get("heavy")) or bool(heavy_now)
-    return {"v": round(cur, 3), "ref": round(ref, 3), "heavy": heavy, "t": now_str}, None
+    entry = {"v": round(cur, 3), "ref": round(ref, 3), "heavy": heavy, "t": now_str}
+    # ارزش هر اردر همون لحظه‌ای ثبت می‌شه که صف به بیشترین ارزش (مرجع) رسیده
+    ord_value = order if (cur >= prev.get("ref", cur) and order is not None) else prev.get("ord")
+    if ord_value is not None:
+        entry["ord"] = round(ord_value, 1)
+    return entry, None
 
 
 def _buy_current(rec: dict) -> Optional[float]:
@@ -126,6 +139,7 @@ def _events_df(df: pd.DataFrame, events: List[Tuple[str, dict]]) -> pd.DataFrame
     if out.empty:
         return pd.DataFrame()
     out["queue_ref"] = out["symbol"].map(lambda s: info[s]["ref"])
+    out["queue_order"] = out["symbol"].map(lambda s: info[s].get("ord"))
     return out.sort_values("queue_ref", ascending=False)
 
 
@@ -191,7 +205,10 @@ def evaluate_queues(
             cur = _buy_current(rec)
             order = _num(rec.get("buy_order")) or 0.0
             heavy_now = cur is not None and cur >= min_buy_value and order >= min_buy_order
-            entry, event = _step(new_snapshot["buy"].get(symbol), cur, heavy_now, buy_cfg, now_str)
+            entry, event = _step(
+                new_snapshot["buy"].get(symbol), cur, heavy_now, buy_cfg, now_str,
+                order=_num(rec.get("buy_order")),
+            )
             if event and (min_buy_power is not None or min_sarane is not None):
                 # فقط وقتی هشدار بده که با وجود عرضه، قدرت خرید و سرانه‌ی خرید
                 # هنوز بالان (هر شرطی که تو کانفیگ None نباشه).
@@ -209,7 +226,13 @@ def evaluate_queues(
         if sell_on:
             cur = _sell_current(rec, sell_cfg)
             heavy_now = cur is not None and cur >= min_sell_value
-            entry, event = _step(new_snapshot["sell"].get(symbol), cur, heavy_now, sell_cfg, now_str)
+            # ارزش هر اردر صف فروش = ارزش کل صف (میلیارد) / تعداد سفارش، به میلیون تومان
+            ask_count = _num(rec.get("ask_count"))
+            sell_order = (cur * 1000 / ask_count) if (cur and ask_count and ask_count > 0) else None
+            entry, event = _step(
+                new_snapshot["sell"].get(symbol), cur, heavy_now, sell_cfg, now_str,
+                order=sell_order,
+            )
             if entry is not None:
                 new_snapshot["sell"][symbol] = entry
             if event:
@@ -224,7 +247,11 @@ def evaluate_queues(
 
 
 def snapshot_needs_save(
-    old: Optional[dict], new: dict, refresh_minutes: float, now_ts: float
+    old: Optional[dict],
+    new: dict,
+    refresh_minutes: float,
+    now_ts: float,
+    force: bool = False,
 ) -> bool:
     """
     نوشتن اسنپ‌شات تو Gist فقط وقتی لازمه که چیز مهمی عوض شده باشه، تا هر اجرا
@@ -232,7 +259,10 @@ def snapshot_needs_save(
       - نماد جدید وارد/خارج صف شده یا برچسب «سنگین» عوض شده
       - مرجع (ref) یک نماد بیشتر از ۱۵٪ بالا رفته
       - از آخرین ذخیره بیشتر از refresh_minutes گذشته (برای تازه‌بودن مقادیر خلاصه‌ی بازار)
+      - force=True (پنجره‌ی پایان بازار): هر اجرا ذخیره می‌شه
     """
+    if force:
+        return True
     if not old or old.get("date") != new.get("date"):
         return True
 
