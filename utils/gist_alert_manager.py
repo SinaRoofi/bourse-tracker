@@ -179,6 +179,22 @@ class GistAlertManager:
 
         return status, body
 
+    async def _fetch_raw(self, raw_url: Optional[str]) -> Optional[str]:
+        """متن کامل یک فایل Gist از raw_url (برای فایل‌های بزرگ‌تر از ۱MB). شکست -> None."""
+        if not raw_url:
+            return None
+        for attempt in range(1, 3):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(raw_url, timeout=20) as r:
+                        if r.status == 200:
+                            return await r.text()
+                        logger.error(f"❌ raw_url ناموفق: {r.status} (تلاش {attempt}/2)")
+            except Exception as e:
+                logger.error(f"❌ raw_url خطا: {e} (تلاش {attempt}/2)")
+            await asyncio.sleep(2)
+        return None
+
     async def _load_gist_content(self, use_cache: bool = True, allow_stale: bool = False) -> dict:
         """
         محتوای alert_cache.json. اگه خوندن Gist شکست بخوره:
@@ -205,7 +221,22 @@ class GistAlertManager:
             return {}
 
         self._load_failed = False
-        content = gist["files"]["alert_cache.json"]["content"]
+        file_info = gist["files"]["alert_cache.json"]
+        content = file_info.get("content") or ""
+
+        # API گیست فقط ۱ مگابایت اول هر فایل رو برمی‌گردونه (truncated=True).
+        # JSON ناقص نباید «خراب» حساب بشه و باعث ریست داده بشه؛ متن کامل رو از
+        # raw_url (آدرس نسخه‌ی مشخص) می‌خونیم و اگه نشد، خوندن شکست‌خورده حساب می‌شه.
+        if file_info.get("truncated"):
+            raw = await self._fetch_raw(file_info.get("raw_url"))
+            if raw is None:
+                if allow_stale and self._cache:
+                    logger.warning("⚠️ فایل truncated و raw_url خونده نشد - از کش قدیمی استفاده شد")
+                    return self._cache.copy()
+                logger.error("❌ alert_cache.json truncated است و raw_url خونده نشد")
+                self._load_failed = True
+                return {}
+            content = raw
 
         try:
             data = json.loads(content)
@@ -242,7 +273,7 @@ class GistAlertManager:
     # پاکسازی داده‌ی قدیمی (روزهای هشدار + روزهای داخل _industry_universe)
     # ------------------------------------------------------------------
     @staticmethod
-    def _prune_old_days(data: dict, keep_days: int = 3) -> None:
+    def _prune_old_days(data: dict, keep_days: int = 1) -> None:
         """
         هر ساختاری که کلیدش تاریخ جلالی روزانه باشه رو به آخرین keep_days
         روز محدود می‌کنه - هم سطح بالای data (روزهای هشدار)، هم داخل
@@ -361,7 +392,7 @@ class GistAlertManager:
             return False
         data.setdefault(self.today_jalali, [])
 
-        # پاکسازی روزهای قدیمی (نگه داشتن فقط ۳ روز اخیر) - هم سطح بالا
+        # پاکسازی روزهای قدیمی (فقط امروز + دیروز نگه داشته می‌شه) - هم سطح بالا
         # هم داخل _industry_universe
         self._prune_old_days(data)
 
