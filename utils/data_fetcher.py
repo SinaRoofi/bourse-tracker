@@ -179,6 +179,13 @@ class UnifiedDataFetcher:
             "User-Agent": "Mozilla/5.0",
             "Accept": "application/json, text/plain, */*",
         })
+        # pool پیش‌فرض requests فقط ۱۰ اتصال نگه می‌داره ولی ۱۲ thread موازی داریم؛
+        # بدون این، هشدار "Connection pool is full" میاد. (بی‌خطر بود، ولی لاگ رو شلوغ می‌کرد)
+        _adapter = requests.adapters.HTTPAdapter(
+            pool_connections=FETCH_MAX_WORKERS, pool_maxsize=FETCH_MAX_WORKERS
+        )
+        self.session_api1.mount("https://", _adapter)
+        self.session_api1.mount("http://", _adapter)
 
         try:
             from config import FUND_TYPES
