@@ -56,16 +56,17 @@ class GistAlertManager:
             "Accept": "application/vnd.github.v3+json"
         }
 
-        # Gist جدای اسنپ‌شات صف‌ها (اختیاری؛ اگه نبود همون Gist اصلی)
+        # Gist جدای اسنپ‌شات صف‌ها. فالبک به Gist اصلی عمداً وجود نداره تا Gist اصلی
+        # (دیداپ هشدارها) با اسنپ‌شات پر نشه؛ اگه این دو تنظیم نشن، ردیاب صف و
+        # ارزش صف تو خلاصه‌ی بازار غیرفعال می‌شن.
+        self.queue_gist_id = None
+        self.queue_headers = None
         if queue_gist_id and queue_gist_token:
             self.queue_gist_id = queue_gist_id
             self.queue_headers = {
                 "Authorization": f"token {queue_gist_token}",
                 "Accept": "application/vnd.github.v3+json"
             }
-        else:
-            self.queue_gist_id = gist_id
-            self.queue_headers = self.headers
 
         self.today_jalali = jdatetime.date.today().strftime("%Y-%m-%d")
 
@@ -85,6 +86,10 @@ class GistAlertManager:
             # کردی، این خط دوباره می‌تونه event loop رو بلاک کنه — اون‌موقع
             # باید __init__ رو به یک async factory (classmethod create) تبدیل کنی.
             self._create_new_gist_sync()
+
+    @property
+    def queue_gist_enabled(self) -> bool:
+        return bool(self.queue_gist_id and self.queue_headers)
 
     # ------------------------------------------------------------------
     # ایجاد اولیه Gist
@@ -448,7 +453,7 @@ class GistAlertManager:
         خالیِ امروز برمی‌گرده. اگه خوندن Gist شکست بخوره None برمی‌گرده تا
         فراخوان این دور رو بی‌صدا رد کنه (نه اینکه با اسنپ‌شات خالی بازنویسی کنه).
         """
-        if not self.queue_gist_id:
+        if not self.queue_gist_enabled:
             return None
 
         status, gist = await self._http(
@@ -476,6 +481,8 @@ class GistAlertManager:
         return data
 
     async def save_queue_snapshot(self, snapshot: dict) -> bool:
+        if not self.queue_gist_enabled:
+            return False
         payload = {
             "files": {
                 QUEUE_SNAPSHOT_FILE: {
