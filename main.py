@@ -492,7 +492,11 @@ async def main_async():
         # که تو فایل جدای queue_snapshot.json تو Gist نگه‌داری می‌شه.
         new_queue_snapshot = None
         queue_snapshot = None
-        if QUEUE_TRACKER_CONFIG.get("enabled"):
+        if QUEUE_TRACKER_CONFIG.get("enabled") and not alert_manager.queue_gist_enabled:
+            logger.warning(
+                "⚠️ QUEUE_GIST_ID/QUEUE_GIST_TOKEN تنظیم نشده - ردیاب صف (فیلتر ۱۷ و ۱۸) غیرفعاله"
+            )
+        elif QUEUE_TRACKER_CONFIG.get("enabled"):
             try:
                 queue_snapshot = await alert_manager.load_queue_snapshot()
                 if queue_snapshot is None:
