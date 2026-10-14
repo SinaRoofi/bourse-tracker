@@ -19,7 +19,22 @@ from utils.daily_summary_generator import DailySummaryGenerator
 from utils.alerts import TelegramAlert
 from utils.gist_alert_manager import GistAlertManager
 from utils.holidays import is_trading_day
-from config import GIST_TOKEN, GIST_ID, QUEUE_GIST_TOKEN, QUEUE_GIST_ID
+from utils.data_fetcher import UnifiedDataFetcher
+from utils.data_processor import BourseDataProcessor
+from utils.sarane_history import (
+    normalize_history,
+    has_day,
+    build_today_values,
+    add_day,
+)
+from config import (
+    GIST_TOKEN,
+    GIST_ID,
+    QUEUE_GIST_TOKEN,
+    QUEUE_GIST_ID,
+    API_BASE_URL,
+    HEAVY_SARANE_CONFIG,
+)
 
 # ===========================
 # تنظیم timezone تهران
@@ -67,6 +82,64 @@ def is_trading_day_today() -> bool:
     return True
 
 
+async def save_sarane_history_step(alert_manager: GistAlertManager) -> None:
+    """
+    ذخیره‌ی سرانه‌ی پایانیِ امروز برای فیلتر ۱۹ - یک‌بار در روز، بعد از بسته‌شدن بازار.
+    مستقل از قفل خلاصه‌ی روزانه است (اگه ذخیره شکست بخوره، اجرای بعدیِ همین روز دوباره
+    تلاش می‌کنه) و هیچ‌وقت خلاصه‌ی بازار رو خراب نمی‌کنه.
+    """
+    cfg = HEAVY_SARANE_CONFIG
+    try:
+        if not cfg.get("enabled"):
+            return
+        if not alert_manager.queue_gist_enabled:
+            logger.warning("⚠️ QUEUE_GIST_ID/QUEUE_GIST_TOKEN تنظیم نشده - ذخیره‌ی تاریخچه‌ی سرانه رد شد")
+            return
+        if not API_BASE_URL:
+            logger.warning("⚠️ API_BASE_URL تنظیم نشده - ذخیره‌ی تاریخچه‌ی سرانه رد شد")
+            return
+
+        not_after = cfg.get("save_not_after", "12:45")
+        if datetime.now(TEHRAN_TZ).strftime("%H:%M") > not_after:
+            logger.info(f"⏭️ بعد از {not_after} - ذخیره‌ی تاریخچه‌ی سرانه رد شد (پنجره‌ی ذخیره تموم شده)")
+            return
+
+        raw = await alert_manager.load_sarane_history()
+        if raw is None:
+            logger.warning("⚠️ تاریخچه‌ی سرانه خونده نشد - ذخیره‌ی امروز رد شد")
+            return
+        keep_days = cfg.get("history_days", 10)
+        history = normalize_history(raw, keep_days)
+        today = alert_manager.today_jalali
+        if has_day(history, today):
+            logger.info("⏭️ سرانه‌ی امروز قبلاً ذخیره شده")
+            return
+
+        fetcher = UnifiedDataFetcher(api1_base_url=API_BASE_URL)
+        try:
+            df_raw = fetcher.fetch_all_data()
+        finally:
+            fetcher.close()
+        if df_raw is None or df_raw.empty:
+            logger.error("❌ دریافت داده برای ذخیره‌ی سرانه شکست خورد")
+            return
+
+        df = BourseDataProcessor().process_all_data(df_raw)
+        values = build_today_values(df)
+        if len(values) < cfg.get("min_symbols_to_save", 100):
+            logger.warning(
+                f"⚠️ فقط {len(values)} نماد معتبر - ذخیره‌ی سرانه رد شد (جلوگیری از خراب‌شدن تاریخچه)"
+            )
+            return
+
+        if await alert_manager.save_sarane_history(add_day(history, today, values, keep_days)):
+            logger.info(f"💾 سرانه‌ی پایانی امروز ذخیره شد ({len(values)} نماد)")
+        else:
+            logger.warning("⚠️ ذخیره‌ی تاریخچه‌ی سرانه شکست خورد")
+    except Exception as e:
+        logger.error(f"❌ خطا در ذخیره‌ی تاریخچه‌ی سرانه (خلاصه‌ی بازار ادامه پیدا می‌کنه): {e}", exc_info=True)
+
+
 async def main_async():
     logger.info("=" * 80)
     logger.info("📊 Daily Summary Reporter")
@@ -100,6 +173,11 @@ async def main_async():
         telegram_alert = TelegramAlert()
         alert_manager = GistAlertManager(GIST_TOKEN, GIST_ID, QUEUE_GIST_TOKEN, QUEUE_GIST_ID)
         summary_generator = DailySummaryGenerator(alert_manager, telegram_alert)
+
+        # ذخیره‌ی سرانه‌ی پایانی برای فیلتر ۱۹ (یک‌بار در روز؛ تو حالت تست فورس انجام نمی‌شه
+        # چون داده‌ی وسط روز نباید به‌عنوان سرانه‌ی پایانی ثبت بشه)
+        if not FORCE_SUMMARY:
+            await save_sarane_history_step(alert_manager)
 
         # 5) چک ارسال‌شدن قبلی (قفل روزانه)
         if not FORCE_SUMMARY and await alert_manager.is_today_summary_sent():
