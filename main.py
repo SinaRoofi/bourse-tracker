@@ -20,6 +20,7 @@ from config import (
     WATCHLIST_CHAT_ID,
     BUY_QUEUE_SIMPLE_CONFIG,
     QUEUE_TRACKER_CONFIG,
+    HEAVY_SARANE_CONFIG,
     validate_config,
 )
 from utils.holidays import is_trading_day
@@ -32,6 +33,13 @@ from utils.queue_tracker import (
     snapshot_needs_save,
     BUY_SUPPLY_FILTER,
     SELL_COLLECT_FILTER,
+)
+
+from utils.sarane_history import (
+    HEAVY_SARANE_FILTER,
+    normalize_history,
+    days_before,
+    evaluate_heavy_sarane,
 )
 
 # ===========================
@@ -81,6 +89,7 @@ STOCKS_PER_MESSAGE_MAP = {
     "filter_16_price_cross_down": 5,
     "filter_17_buy_queue_supply": 5,
     "filter_18_sell_queue_collect": 5,
+    "filter_19_heavy_sarane_buy": 5,
 }
 
 # فیلترهایی که فقط به کانال واچ‌لیست می‌رن (نه کانال اصلی):
@@ -106,6 +115,7 @@ FILTER_VALUE_COLUMN = {
     "filter_13_sarane_diff":                    "sarane_diff",
     "filter_14_buy_queue_simple":               "buy_queue_value",
     "filter_15_suspicious_volume_weekly":       "value_5_to_20_ratio",
+    "filter_19_heavy_sarane_buy":               "sarane_to_avg_ratio",
 }
 
 
@@ -522,13 +532,43 @@ async def main_async():
                         chat_id=ERROR_CHAT_ID,
                     )
 
+        # فیلتر ۱۹ (سرانه خرید سنگین): مقایسه‌ی سرانه‌ی لحظه‌ای با میانگین ۱۰ روز قبل
+        # که تو Gist صف‌ها (فایل sarane_history.json) نگه‌داری می‌شه.
+        if HEAVY_SARANE_CONFIG.get("enabled") and not alert_manager.queue_gist_enabled:
+            logger.warning(
+                "⚠️ QUEUE_GIST_ID/QUEUE_GIST_TOKEN تنظیم نشده - فیلتر ۱۹ (سرانه خرید سنگین) غیرفعاله"
+            )
+        elif HEAVY_SARANE_CONFIG.get("enabled"):
+            try:
+                raw_history = await alert_manager.load_sarane_history()
+                if raw_history is None:
+                    logger.warning("⚠️ تاریخچه‌ی سرانه خونده نشد - فیلتر ۱۹ این دور رد شد")
+                else:
+                    sarane_history = normalize_history(
+                        raw_history, HEAVY_SARANE_CONFIG.get("history_days", 10)
+                    )
+                    heavy_sarane_df = evaluate_heavy_sarane(
+                        df,
+                        days_before(sarane_history, alert_manager.today_jalali),
+                        HEAVY_SARANE_CONFIG,
+                    )
+                    all_results = dict(all_results) if all_results else {}
+                    all_results[HEAVY_SARANE_FILTER] = heavy_sarane_df
+            except Exception as e:
+                logger.error(f"❌ خطا در فیلتر ۱۹ (بقیه‌ی هشدارها ادامه پیدا می‌کنن): {e}", exc_info=True)
+                if ERROR_CHAT_ID:
+                    await alert.send_message(
+                        f"⚠️ <b>خطا در فیلتر سرانه خرید سنگین</b>\n<code>{e}</code>",
+                        chat_id=ERROR_CHAT_ID,
+                    )
+
         total_sent = 0
         total_skipped = 0
         t_send_start = time.time()
 
         if all_results:
             sent, skipped = await send_alerts_for_filters_async(
-                alert, alert_manager, all_results, "همه‌ی فیلترها (1-18)",
+                alert, alert_manager, all_results, "همه‌ی فیلترها (1-19)",
                 personal_watchlist, WATCHLIST_CHAT_ID,
             )
             total_sent += sent
