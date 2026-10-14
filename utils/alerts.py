@@ -305,6 +305,16 @@ def line_queue_collect(row: pd.Series) -> Optional[str]:
     return f"🧹 <b>صف فروش جمع شده: {ref}</b>\n"
 
 
+def line_sarane_avg_10d(row: pd.Series) -> Optional[str]:
+    """اختصاصی filter_19: میانگین سرانه خرید ۱۰ روز قبل و نسبت سرانه‌ی فعلی به اون"""
+    if "sarane_avg_10d" not in row or pd.isna(row["sarane_avg_10d"]):
+        return None
+    line = f"📊 میانگین ۱۰ روزه: {row['sarane_avg_10d']:.0f} میلیون تومان"
+    if "sarane_to_avg_ratio" in row and pd.notna(row["sarane_to_avg_ratio"]):
+        line += f" (<b>{row['sarane_to_avg_ratio']:.2f}x</b>)"
+    return line + "\n"
+
+
 def line_tick_diff(row: pd.Series) -> Optional[str]:
     """اختصاصی filter_6"""
     if "tick_diff" not in row or pd.isna(row["tick_diff"]):
@@ -496,6 +506,25 @@ FILTER_DISPLAY_CONFIG = {
             line_sarane_diff,
             line_godrat_kharid(),
             line_godrat_kharid_weekly,
+            line_pol_hagigi(),
+            line_pol_hagigi_weekly,
+            line_pol_power(),
+            line_diff_buy_sell_order,
+            line_bubble, line_5_day_return, line_20_day_return, line_marketcap,
+        ],
+    ),
+    "filter_19_heavy_sarane_buy": FilterDisplay(
+        hashtag="🐋#سرانه_خرید_سنگین",
+        header_emoji=_static_emoji("🟢"),
+        show_industry=True,
+        lines=[
+            line_price,
+            line_sarane_kharid(bold=True),
+            line_sarane_avg_10d,
+            line_sarane_diff,
+            line_godrat_kharid(bold=True),
+            line_godrat_kharid_weekly,
+            line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_pol_hagigi(),
             line_pol_hagigi_weekly,
             line_pol_power(),
@@ -858,6 +887,9 @@ class TelegramAlert:
 
     def format_filter_17_buy_queue_supply(self, df):
         return self._render(df, "filter_17_buy_queue_supply")
+
+    def format_filter_19_heavy_sarane_buy(self, df):
+        return self._render(df, "filter_19_heavy_sarane_buy")
 
     def format_filter_18_sell_queue_collect(self, df):
         return self._render(df, "filter_18_sell_queue_collect")
