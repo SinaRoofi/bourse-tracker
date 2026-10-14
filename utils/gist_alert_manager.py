@@ -28,6 +28,12 @@ WATCHLIST_COPY_SUFFIX = "__watchlist_copy"
 # و پاکسازی روزهای قدیمی دست نخوره.
 QUEUE_SNAPSHOT_FILE = "queue_snapshot.json"
 
+# تاریخچه‌ی ۱۰ روزه‌ی سرانه خرید (فیلتر ۱۹) تو همون Gist صف‌ها (QUEUE_GIST) ولی تو فایل جدا.
+SARANE_HISTORY_FILE = "sarane_history.json"
+# فایل تاریخچه چند صد کیلوبایته (تا حدود ۴۰۰KB تو بدترین حالت)؛ timeout پیش‌فرض ۱۰ ثانیه برای
+# آپلود/دانلود این حجم تو شبکه‌ی کند کمه.
+SARANE_HTTP_TIMEOUT = 30
+
 # GitHub برای نوشتن‌های پشت‌سرهم تو یک Gist (rate limit ثانویه) 403 می‌ده و توصیه
 # می‌کنه بین دو درخواست نوشتن حداقل ۱ ثانیه فاصله باشه. اگه نوشتن dedup شکست بخوره،
 # اجرای بعدی همون هشدارها رو دوباره می‌فرسته (اسپم)، پس هر نوشتن/خوندن با فاصله و
@@ -131,7 +137,12 @@ class GistAlertManager:
     # Load Gist
     # ------------------------------------------------------------------
     async def _http(
-        self, method: str, url: str, payload: Optional[dict] = None, headers: Optional[dict] = None
+        self,
+        method: str,
+        url: str,
+        payload: Optional[dict] = None,
+        headers: Optional[dict] = None,
+        timeout: int = 10,
     ):
         """
         درخواست به GitHub API با فاصله‌ی حداقلی بین نوشتن‌ها و retry روی خطاهای
@@ -151,7 +162,7 @@ class GistAlertManager:
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.request(
-                        method, url, headers=headers, json=payload, timeout=10
+                        method, url, headers=headers, json=payload, timeout=timeout
                     ) as r:
                         status = r.status
                         if status == 200:
@@ -497,6 +508,68 @@ class GistAlertManager:
             if status == 200:
                 return True
             logger.error(f"❌ Failed to save queue snapshot: {status}")
+            return False
+
+    # ------------------------------------------------------------------
+    # Sarane History (فایل جدا تو همون Gist صف‌ها: sarane_history.json)
+    # ------------------------------------------------------------------
+    async def load_sarane_history(self) -> Optional[dict]:
+        """
+        تاریخچه‌ی خام سرانه خرید. اگه فایل نباشه یا خالی/خراب باشه، {} برمی‌گرده
+        (فراخوان با normalize_history کامل‌ش می‌کنه). اگه خوندن Gist شکست بخوره
+        None برمی‌گرده تا فراخوان فیلتر رو رد کنه و روی تاریخچه بازنویسی نکنه.
+        """
+        if not self.queue_gist_enabled:
+            return None
+
+        status, gist = await self._http(
+            "GET", f"{self.api_url}/{self.queue_gist_id}", headers=self.queue_headers,
+            timeout=SARANE_HTTP_TIMEOUT,
+        )
+        if status != 200:
+            logger.error(f"❌ Failed to load sarane history: {status}")
+            return None
+
+        file_info = (gist.get("files") or {}).get(SARANE_HISTORY_FILE)
+        if not file_info:
+            return {}
+
+        content = file_info.get("content") or ""
+        if file_info.get("truncated"):
+            raw = await self._fetch_raw(file_info.get("raw_url"))
+            if raw is None:
+                logger.error("❌ sarane_history truncated است و raw_url خونده نشد")
+                return None
+            content = raw
+
+        if not content.strip():
+            return {}
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError as e:
+            # ریست نمی‌کنیم تا تاریخچه‌ی قابل‌بازیابی بی‌صدا پاک نشه؛ این دور رد می‌شه
+            logger.error(f"❌ JSON خراب در sarane_history - این دور رد شد: {e}")
+            return None
+        return data if isinstance(data, dict) else {}
+
+    async def save_sarane_history(self, history: dict) -> bool:
+        if not self.queue_gist_enabled:
+            return False
+        payload = {
+            "files": {
+                SARANE_HISTORY_FILE: {
+                    "content": json.dumps(history, ensure_ascii=False, separators=(",", ":"))
+                }
+            }
+        }
+        async with self._lock:
+            status, _ = await self._http(
+                "PATCH", f"{self.api_url}/{self.queue_gist_id}", payload, headers=self.queue_headers,
+                timeout=SARANE_HTTP_TIMEOUT,
+            )
+            if status == 200:
+                return True
+            logger.error(f"❌ Failed to save sarane history: {status}")
             return False
 
     # ------------------------------------------------------------------
