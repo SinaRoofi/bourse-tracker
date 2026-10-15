@@ -16,7 +16,6 @@ concurrency:
 jobs:
   run-bourse-tracker:
     runs-on: ubuntu-latest
-    timeout-minutes: 10  # سقف نهایی کل جاب (نصب + فیلترها + خلاصه)
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,11 +46,12 @@ jobs:
 
       - name: Send Daily Summary
         if: always()
-        timeout-minutes: 5  # خلاصه + ذخیره‌ی سرانه (فقط ~۱۲:۳۱)؛ کنسل وسط ارسال باعث ارسال دوباره می‌شه
+        # عمداً بدون timeout: اکشن آخرین‌بار ~۱۲:۳۱ اجرا می‌شه و باید کامل تموم بشه (کنسل وسط ارسال = ارسال دوباره/ذخیره‌ی ناقص)
         run: python daily_summary_main.py
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ERROR_CHAT_ID: ${{ secrets.ERROR_CHAT_ID }}
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
