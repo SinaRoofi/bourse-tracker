@@ -306,10 +306,15 @@ def line_queue_collect(row: pd.Series) -> Optional[str]:
 
 
 def line_sarane_avg_10d(row: pd.Series) -> Optional[str]:
-    """اختصاصی filter_19: میانگین سرانه خرید ۱۰ روز قبل و نسبت سرانه‌ی فعلی به اون"""
+    """اختصاصی filter_19: میانگین سرانه خرید روزهای قبل و نسبت سرانه‌ی فعلی به اون.
+    تعداد روز تو برچسب، تعداد روزِ واقعیِ داده‌ی همون نمادِ (نه عدد ثابت ۱۰) چون تا پر شدن
+    تاریخچه ممکنه میانگین روی ۵ تا ۹ روز باشه."""
     if "sarane_avg_10d" not in row or pd.isna(row["sarane_avg_10d"]):
         return None
-    line = f"📊 میانگین ۱۰ روزه: {row['sarane_avg_10d']:.0f} میلیون تومان"
+    days = 10
+    if "sarane_history_days" in row and pd.notna(row["sarane_history_days"]):
+        days = int(row["sarane_history_days"])
+    line = f"📊 میانگین {days} روزه: {row['sarane_avg_10d']:.0f} میلیون تومان"
     if "sarane_to_avg_ratio" in row and pd.notna(row["sarane_to_avg_ratio"]):
         line += f" (<b>{row['sarane_to_avg_ratio']:.2f}x</b>)"
     return line + "\n"
