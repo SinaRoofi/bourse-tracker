@@ -39,7 +39,7 @@ SARANE_HTTP_TIMEOUT = 30
 # اجرای بعدی همون هشدارها رو دوباره می‌فرسته (اسپم)، پس هر نوشتن/خوندن با فاصله و
 # retry انجام می‌شه.
 MIN_WRITE_GAP_SECONDS = 1.5
-HTTP_MAX_ATTEMPTS = 3
+HTTP_MAX_ATTEMPTS = 4
 HTTP_RETRY_STATUSES = {403, 429, 500, 502, 503, 504}
 HTTP_MAX_WAIT_SECONDS = 20
 
@@ -83,6 +83,11 @@ class GistAlertManager:
         self._cache_duration = 10
         self._last_write_ts = {}  # آخرین زمان نوشتن به‌ازای هر توکن (محدودیت GitHub روی هر اکانته)
         self._load_failed = False  # آخرین خوندن alert_cache.json شکست خورده؟
+        # کش کوتاه‌مدت GET گیست صف‌ها: queue_snapshot.json و sarane_history.json تو یک Gist‌ان،
+        # پس با یک GET هر دو خونده می‌شن (نصف درخواست‌های خوندن). بعد از هر نوشتن پاک می‌شه.
+        self._queue_gist_cache = None
+        self._queue_gist_cache_time = 0.0
+        self._queue_gist_cache_ttl = 30
 
         if not self.gist_id:
             # ⚠️ این متد یک requests.post سینک (بلاکینگ) اجرا می‌کنه.
@@ -179,18 +184,22 @@ class GistAlertManager:
             if status == 200:
                 return status, body
 
-            logger.error(
-                f"❌ Gist {method} ناموفق: {status} (تلاش {attempt}/{HTTP_MAX_ATTEMPTS}) "
+            retryable = status == 0 or status in HTTP_RETRY_STATUSES
+            final = (not retryable) or attempt == HTTP_MAX_ATTEMPTS
+            # تلاش‌های وسط (که retry می‌شن) فقط warning‌ان؛ error فقط وقتی که واقعاً تموم شد
+            (logger.error if final else logger.warning)(
+                f"{'❌' if final else '⚠️'} Gist {method} ناموفق: {status} (تلاش {attempt}/{HTTP_MAX_ATTEMPTS}) "
                 f"{body if body else ''} retry-after={retry_after}"
             )
-            retryable = status == 0 or status in HTTP_RETRY_STATUSES
-            if not retryable or attempt == HTTP_MAX_ATTEMPTS:
+            if final:
                 break
 
+            # backoff نمایی (۳، ۶، ۱۲ ثانیه)؛ اگه GitHub Retry-After داده باشه همون رعایت می‌شه
+            backoff = 3.0 * (2 ** (attempt - 1))
             try:
-                wait = float(retry_after) if retry_after else 3.0 * attempt
+                wait = float(retry_after) if retry_after else backoff
             except ValueError:
-                wait = 3.0 * attempt
+                wait = backoff
             await asyncio.sleep(min(wait, HTTP_MAX_WAIT_SECONDS))
 
         return status, body
@@ -458,6 +467,23 @@ class GistAlertManager:
     def _empty_queue_snapshot(self) -> dict:
         return {"date": self.today_jalali, "updated": None, "buy": {}, "sell": {}}
 
+    async def _get_queue_gist(self):
+        """(status, gist) با کش ۳۰ ثانیه‌ای؛ فقط پاسخ موفق کش می‌شه."""
+        now = time.time()
+        if self._queue_gist_cache is not None and now - self._queue_gist_cache_time < self._queue_gist_cache_ttl:
+            return 200, self._queue_gist_cache
+        status, gist = await self._http(
+            "GET", f"{self.api_url}/{self.queue_gist_id}", headers=self.queue_headers,
+            timeout=SARANE_HTTP_TIMEOUT,
+        )
+        if status == 200:
+            self._queue_gist_cache = gist
+            self._queue_gist_cache_time = time.time()
+        return status, gist
+
+    def _invalidate_queue_gist_cache(self) -> None:
+        self._queue_gist_cache = None
+
     async def load_queue_snapshot(self) -> Optional[dict]:
         """
         اسنپ‌شات امروز صف‌ها. اگه فایل نباشه یا مال روز قبل باشه، اسنپ‌شات
@@ -467,9 +493,7 @@ class GistAlertManager:
         if not self.queue_gist_enabled:
             return None
 
-        status, gist = await self._http(
-            "GET", f"{self.api_url}/{self.queue_gist_id}", headers=self.queue_headers
-        )
+        status, gist = await self._get_queue_gist()
         if status != 200:
             logger.error(f"❌ Failed to load queue snapshot: {status}")
             return None
@@ -505,6 +529,7 @@ class GistAlertManager:
             status, _ = await self._http(
                 "PATCH", f"{self.api_url}/{self.queue_gist_id}", payload, headers=self.queue_headers
             )
+            self._invalidate_queue_gist_cache()
             if status == 200:
                 return True
             logger.error(f"❌ Failed to save queue snapshot: {status}")
@@ -522,10 +547,7 @@ class GistAlertManager:
         if not self.queue_gist_enabled:
             return None
 
-        status, gist = await self._http(
-            "GET", f"{self.api_url}/{self.queue_gist_id}", headers=self.queue_headers,
-            timeout=SARANE_HTTP_TIMEOUT,
-        )
+        status, gist = await self._get_queue_gist()
         if status != 200:
             logger.error(f"❌ Failed to load sarane history: {status}")
             return None
@@ -567,6 +589,7 @@ class GistAlertManager:
                 "PATCH", f"{self.api_url}/{self.queue_gist_id}", payload, headers=self.queue_headers,
                 timeout=SARANE_HTTP_TIMEOUT,
             )
+            self._invalidate_queue_gist_cache()
             if status == 200:
                 return True
             logger.error(f"❌ Failed to save sarane history: {status}")
