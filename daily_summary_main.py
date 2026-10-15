@@ -28,6 +28,7 @@ from utils.sarane_history import (
     add_day,
 )
 from config import (
+    ERROR_CHAT_ID,
     GIST_TOKEN,
     GIST_ID,
     QUEUE_GIST_TOKEN,
@@ -82,62 +83,136 @@ def is_trading_day_today() -> bool:
     return True
 
 
-async def save_sarane_history_step(alert_manager: GistAlertManager) -> None:
+async def _notify(telegram_alert: TelegramAlert, text: str) -> None:
+    """پیام وضعیت به کانال خطا/وضعیت (ERROR_CHAT_ID). شکست ارسال هیچ‌وقت چیزی رو خراب نمی‌کنه."""
+    if not ERROR_CHAT_ID:
+        logger.warning("⚠️ ERROR_CHAT_ID تنظیم نشده — پیام وضعیت سرانه فقط در لاگ ثبت شد")
+        return
+    try:
+        await telegram_alert.send_message(text, chat_id=ERROR_CHAT_ID)
+    except Exception as e:
+        logger.error(f"❌ ارسال پیام وضعیت سرانه به کانال شکست خورد: {e}")
+
+
+async def save_sarane_history_step(
+    alert_manager: GistAlertManager, telegram_alert: TelegramAlert
+) -> None:
     """
     ذخیره‌ی سرانه‌ی پایانیِ امروز برای فیلتر ۱۹ - یک‌بار در روز، بعد از بسته‌شدن بازار.
-    مستقل از قفل خلاصه‌ی روزانه است (اگه ذخیره شکست بخوره، اجرای بعدیِ همین روز دوباره
-    تلاش می‌کنه) و هیچ‌وقت خلاصه‌ی بازار رو خراب نمی‌کنه.
+    چون اکشن فقط یک‌بار (آخرین‌بار ~۱۲:۳۱) اجرا می‌شه، فرصت دوم وجود نداره؛ پس دریافت داده و
+    ذخیره تا SAVE_ATTEMPTS بار تلاش می‌کنن. هر نتیجه‌ی مهم هم لاگ می‌شه هم تو کانال میاد.
+    مستقل از قفل خلاصه‌ی روزانه‌ست و هیچ‌وقت خلاصه‌ی بازار رو خراب نمی‌کنه.
     """
     cfg = HEAVY_SARANE_CONFIG
+    SAVE_ATTEMPTS = 3
+    RETRY_DELAY_SECONDS = 20
+    header = "💾 <b>تاریخچه‌ی سرانه خرید</b>"
     try:
         if not cfg.get("enabled"):
+            logger.info("⏭️ فیلتر ۱۹ غیرفعاله - ذخیره‌ی تاریخچه‌ی سرانه رد شد")
             return
         if not alert_manager.queue_gist_enabled:
             logger.warning("⚠️ QUEUE_GIST_ID/QUEUE_GIST_TOKEN تنظیم نشده - ذخیره‌ی تاریخچه‌ی سرانه رد شد")
+            await _notify(telegram_alert, f"{header}\n⚠️ QUEUE_GIST_ID/QUEUE_GIST_TOKEN تنظیم نشده؛ ذخیره انجام نشد.")
             return
         if not API_BASE_URL:
             logger.warning("⚠️ API_BASE_URL تنظیم نشده - ذخیره‌ی تاریخچه‌ی سرانه رد شد")
+            await _notify(telegram_alert, f"{header}\n⚠️ API_BASE_URL تنظیم نشده؛ ذخیره انجام نشد.")
             return
 
+        now_str = datetime.now(TEHRAN_TZ).strftime("%H:%M")
         not_after = cfg.get("save_not_after", "12:45")
-        if datetime.now(TEHRAN_TZ).strftime("%H:%M") > not_after:
-            logger.info(f"⏭️ بعد از {not_after} - ذخیره‌ی تاریخچه‌ی سرانه رد شد (پنجره‌ی ذخیره تموم شده)")
-            return
-
-        raw = await alert_manager.load_sarane_history()
-        if raw is None:
-            logger.warning("⚠️ تاریخچه‌ی سرانه خونده نشد - ذخیره‌ی امروز رد شد")
-            return
-        keep_days = cfg.get("history_days", 10)
-        history = normalize_history(raw, keep_days)
-        today = alert_manager.today_jalali
-        if has_day(history, today):
-            logger.info("⏭️ سرانه‌ی امروز قبلاً ذخیره شده")
-            return
-
-        fetcher = UnifiedDataFetcher(api1_base_url=API_BASE_URL)
-        try:
-            df_raw = fetcher.fetch_all_data()
-        finally:
-            fetcher.close()
-        if df_raw is None or df_raw.empty:
-            logger.error("❌ دریافت داده برای ذخیره‌ی سرانه شکست خورد")
-            return
-
-        df = BourseDataProcessor().process_all_data(df_raw)
-        values = build_today_values(df)
-        if len(values) < cfg.get("min_symbols_to_save", 100):
-            logger.warning(
-                f"⚠️ فقط {len(values)} نماد معتبر - ذخیره‌ی سرانه رد شد (جلوگیری از خراب‌شدن تاریخچه)"
+        if now_str > not_after:
+            logger.warning(f"⏭️ ساعت {now_str} بعد از {not_after} است - ذخیره‌ی تاریخچه‌ی سرانه رد شد")
+            await _notify(
+                telegram_alert,
+                f"{header}\n⚠️ اجرا دیر شد (ساعت {now_str}، حداکثر {not_after}). سرانه‌ی امروز ذخیره نشد.",
             )
             return
 
-        if await alert_manager.save_sarane_history(add_day(history, today, values, keep_days)):
-            logger.info(f"💾 سرانه‌ی پایانی امروز ذخیره شد ({len(values)} نماد)")
+        keep_days = cfg.get("history_days", 10)
+        today = alert_manager.today_jalali
+
+        raw = await alert_manager.load_sarane_history()
+        if raw is None:
+            logger.error("❌ تاریخچه‌ی سرانه خونده نشد - ذخیره‌ی امروز رد شد")
+            await _notify(telegram_alert, f"{header}\n❌ خوندن تاریخچه از Gist شکست خورد؛ سرانه‌ی {today} ذخیره نشد.")
+            return
+        history = normalize_history(raw, keep_days)
+        if has_day(history, today):
+            logger.info(f"⏭️ سرانه‌ی امروز ({today}) قبلاً ذخیره شده")
+            return
+        logger.info(f"📂 تاریخچه‌ی فعلی: {len(history.get('days', {}))} روز - شروع دریافت سرانه‌ی پایانی {today}")
+
+        values: dict = {}
+        for attempt in range(1, SAVE_ATTEMPTS + 1):
+            fetcher = UnifiedDataFetcher(api1_base_url=API_BASE_URL)
+            try:
+                df_raw = fetcher.fetch_all_data()
+            finally:
+                fetcher.close()
+            if df_raw is None or df_raw.empty:
+                logger.error(f"❌ دریافت داده برای سرانه شکست خورد (تلاش {attempt}/{SAVE_ATTEMPTS})")
+            else:
+                df = BourseDataProcessor().process_all_data(df_raw)
+                # build_today_values اول نمادهای تکراری (سهم/صندوق هم‌نام) رو دیداپ می‌کنه؛
+                # پس شمارش min_symbols_to_save روی نمادهای یکتاست.
+                values = build_today_values(df)
+                logger.info(f"📊 نماد معتبر (بعد از دیداپ): {len(values)} (تلاش {attempt}/{SAVE_ATTEMPTS})")
+                if len(values) >= cfg.get("min_symbols_to_save", 100):
+                    break
+                logger.warning(
+                    f"⚠️ فقط {len(values)} نماد معتبر (حداقل {cfg.get('min_symbols_to_save', 100)}) "
+                    f"(تلاش {attempt}/{SAVE_ATTEMPTS})"
+                )
+            if attempt < SAVE_ATTEMPTS:
+                await asyncio.sleep(RETRY_DELAY_SECONDS)
+
+        min_symbols = cfg.get("min_symbols_to_save", 100)
+        if len(values) < min_symbols:
+            logger.error(f"❌ ذخیره‌ی سرانه رد شد: {len(values)} نماد معتبر < {min_symbols}")
+            await _notify(
+                telegram_alert,
+                f"{header}\n❌ داده‌ی کافی نیست ({len(values)} نماد یکتا از حداقل {min_symbols})؛ "
+                f"سرانه‌ی {today} ذخیره نشد تا تاریخچه خراب نشه.",
+            )
+            return
+
+        new_history = add_day(history, today, values, keep_days)
+        saved = False
+        for attempt in range(1, SAVE_ATTEMPTS + 1):
+            if await alert_manager.save_sarane_history(new_history):
+                saved = True
+                break
+            logger.warning(f"⚠️ ذخیره‌ی تاریخچه‌ی سرانه شکست خورد (تلاش {attempt}/{SAVE_ATTEMPTS})")
+            if attempt < SAVE_ATTEMPTS:
+                await asyncio.sleep(RETRY_DELAY_SECONDS)
+
+        if saved:
+            days_count = len(new_history.get("days", {}))
+            min_days = cfg.get("min_history_days", 10)
+            logger.info(f"💾 سرانه‌ی پایانی {today} ذخیره شد ({len(values)} نماد، {days_count} روز در تاریخچه)")
+            ready = (
+                "✅ فیلتر ۱۹ از فردا فعاله."
+                if days_count >= min_days
+                else f"⏳ فیلتر ۱۹ وقتی فعال می‌شه که حداقل {min_days} روز تو تاریخچه باشه "
+                     f"(الان {days_count} روز)."
+            )
+            await _notify(
+                telegram_alert,
+                f"{header}\n✅ سرانه‌ی پایانی {today} ذخیره شد\n"
+                f"• نماد: {len(values)}\n• روز در تاریخچه: {days_count}/{keep_days}\n{ready}",
+            )
         else:
-            logger.warning("⚠️ ذخیره‌ی تاریخچه‌ی سرانه شکست خورد")
+            logger.error("❌ ذخیره‌ی تاریخچه‌ی سرانه بعد از همه‌ی تلاش‌ها شکست خورد")
+            await _notify(
+                telegram_alert,
+                f"{header}\n❌ ذخیره‌ی سرانه‌ی {today} بعد از {SAVE_ATTEMPTS} تلاش شکست خورد (خطای Gist). "
+                "اکشن دیگه تا فردا اجرا نمی‌شه؛ دستی بررسی کن.",
+            )
     except Exception as e:
         logger.error(f"❌ خطا در ذخیره‌ی تاریخچه‌ی سرانه (خلاصه‌ی بازار ادامه پیدا می‌کنه): {e}", exc_info=True)
+        await _notify(telegram_alert, f"{header}\n❌ خطای غیرمنتظره: <code>{e}</code>")
 
 
 async def main_async():
@@ -177,7 +252,7 @@ async def main_async():
         # ذخیره‌ی سرانه‌ی پایانی برای فیلتر ۱۹ (یک‌بار در روز؛ تو حالت تست فورس انجام نمی‌شه
         # چون داده‌ی وسط روز نباید به‌عنوان سرانه‌ی پایانی ثبت بشه)
         if not FORCE_SUMMARY:
-            await save_sarane_history_step(alert_manager)
+            await save_sarane_history_step(alert_manager, telegram_alert)
 
         # 5) چک ارسال‌شدن قبلی (قفل روزانه)
         if not FORCE_SUMMARY and await alert_manager.is_today_summary_sent():
