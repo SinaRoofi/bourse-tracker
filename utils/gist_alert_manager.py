@@ -247,8 +247,14 @@ class GistAlertManager:
             self._load_failed = True
             return {}
 
+        file_info = (gist or {}).get("files", {}).get("alert_cache.json")
+        if file_info is None:
+            # قبلاً KeyError می‌داد و کل اجرا می‌افتاد. تو این حالت عمداً «خوندن شکست‌خورده» حساب
+            # می‌شه (نه دیتای خالی) تا کش هشدارها بازنویسی و هشدارها دوباره ارسال نشن.
+            logger.error("❌ فایل alert_cache.json توی Gist نیست - باید یه فایل با همین نام (محتوا: {}) بسازی")
+            self._load_failed = True
+            return {}
         self._load_failed = False
-        file_info = gist["files"]["alert_cache.json"]
         content = file_info.get("content") or ""
 
         # API گیست فقط ۱ مگابایت اول هر فایل رو برمی‌گردونه (truncated=True).
@@ -402,7 +408,9 @@ class GistAlertManager:
                 (symbol, alert_type, value, is_fund)
                 (symbol, alert_type, value, is_fund, industry_name)
                 (symbol, alert_type, value, is_fund, industry_name, price_change_percent)
+                (symbol, alert_type, value, is_fund, industry_name, price_change_percent, sarane_kharid)
 
+                sarane_kharid: سرانه خرید لحظه‌ی هشدار (فقط برای فیلتر ۱۹؛ بقیه None)
                 value: می‌تواند None باشد (برای فیلترهایی که value ندارند)
                 is_fund: می‌تواند None باشد (یعنی نامشخص)
                 industry_name: نام صنعت نماد در لحظه‌ی ارسال (برای گزارش «برترین صنایع»)؛
@@ -431,9 +439,12 @@ class GistAlertManager:
             is_fund = None
             industry_name = None
             price_change_percent = None
+            sarane_kharid = None
 
             n = len(item)
-            if n == 6:
+            if n == 7:
+                s, t, val, is_fund, industry_name, price_change_percent, sarane_kharid = item
+            elif n == 6:
                 s, t, val, is_fund, industry_name, price_change_percent = item
             elif n == 5:
                 s, t, val, is_fund, industry_name = item
@@ -455,6 +466,8 @@ class GistAlertManager:
                     entry["industry_name"] = industry_name
                 if price_change_percent is not None:
                     entry["price_change_percent"] = price_change_percent
+                if sarane_kharid is not None:
+                    entry["sarane_kharid"] = sarane_kharid
                 new_items.append(entry)
 
         if not new_items:
