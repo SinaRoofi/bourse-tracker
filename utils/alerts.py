@@ -1,4 +1,5 @@
 import asyncio
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
@@ -553,7 +554,6 @@ FILTER_DISPLAY_CONFIG = {
         lines=[
             line_price,
             line_sarane_kharid(bold=True),
-            line_sarane_kharid_weekly,
             line_sarane_avg_10d,
             line_sarane_diff,
             line_sarane_diff_weekly,
@@ -833,7 +833,61 @@ class TelegramAlert:
         now = jdatetime.datetime.now(tehran_tz)
         return now.strftime("%Y/%m/%d"), now.strftime("%H:%M")
 
+    # حد تلگرام ۴۰۹۶ کاراکتر (بعد از حذف تگ‌های HTML)؛ کمی پایین‌تر تقسیم می‌کنیم
+    TELEGRAM_MAX_CHARS = 4096
+    SPLIT_TARGET_CHARS = 3900
+
+    @staticmethod
+    def _plain_len(text: str) -> int:
+        return len(re.sub(r"<[^>]+>", "", text))
+
+    @classmethod
+    def _split_message(cls, message: str) -> list:
+        """
+        پیام کوتاه (<= حد تلگرام) دست‌نخورده برمی‌گرده. پیام بلند سر مرز بلاک‌ها (خط خالی) و در
+        نهایت مرز خطوط تقسیم می‌شه؛ تگ‌های HTML هر خط خودشون بسته‌ان پس تقسیم، HTML رو نمی‌شکنه.
+        """
+        if cls._plain_len(message) <= cls.TELEGRAM_MAX_CHARS:
+            return [message]
+        limit = cls.SPLIT_TARGET_CHARS
+        pieces = []
+        for block in message.split("\n\n"):
+            if cls._plain_len(block) <= limit:
+                pieces.append(block)
+                continue
+            current = ""
+            for line in block.split("\n"):
+                if current and cls._plain_len(current + "\n" + line) > limit:
+                    pieces.append(current)
+                    current = line
+                else:
+                    current = f"{current}\n{line}" if current else line
+            if current:
+                pieces.append(current)
+        parts, current = [], ""
+        for piece in pieces:
+            candidate = f"{current}\n\n{piece}" if current else piece
+            if current and cls._plain_len(candidate) > limit:
+                parts.append(current)
+                current = piece
+            else:
+                current = candidate
+        if current:
+            parts.append(current)
+        return parts
+
     async def send_message(
+        self, message: str, parse_mode: str = "HTML", chat_id: str = None
+    ) -> bool:
+        parts = self._split_message(message)
+        if len(parts) > 1:
+            logger.warning(f"⚠️ پیام بلند بود ({self._plain_len(message)} کاراکتر) - در {len(parts)} بخش ارسال می‌شه")
+        ok = True
+        for part in parts:
+            ok = await self._send_single(part, parse_mode=parse_mode, chat_id=chat_id) and ok
+        return ok
+
+    async def _send_single(
         self, message: str, parse_mode: str = "HTML", chat_id: str = None
     ) -> bool:
         target_chat_id = chat_id or self.chat_id
