@@ -5,6 +5,11 @@ from typing import Dict, List, Optional
 
 import requests
 
+try:
+    from config import SUMMARY_SARANE_MIN_VALUE_SHARE_PCT
+except ImportError:  # اجرای مستقل ماژول
+    SUMMARY_SARANE_MIN_VALUE_SHARE_PCT = 0.0
+
 logger = logging.getLogger(__name__)
 
 INDUSTRIES_CSV_URL = "https://tradersarena.ir/data/industries-csv"
@@ -293,7 +298,10 @@ class IndustryMarketFetcher:
     # تحلیل
     # ------------------------------------------------------------------
     @staticmethod
-    def analyze(records: List[Dict]) -> Dict:
+    def analyze(
+        records: List[Dict],
+        min_sarane_value_share_pct: Optional[float] = None,
+    ) -> Dict:
         """
         محاسبه‌ی خلاصه‌ی بازار روی رکوردهای برگشتی از fetch().
         اصطلاح «هفتگی» = ۵ روزه و «ماهانه» = ۲۰ روزه (تقریب رایج بازه‌ی
@@ -325,6 +333,13 @@ class IndustryMarketFetcher:
         sarane_above_month: List[Dict] = []
         pol_to_avg_month: List[Dict] = []
 
+        # کف نقدشوندگی برای لیست «سرانه خرید بیشتر از میانگین ماهانه»: سهم میانگین ۲۰ روزه‌ی
+        # ارزش معاملات هر رکورد از کل همین گروه (صنایع یا صندوق‌ها)
+        if min_sarane_value_share_pct is None:
+            min_sarane_value_share_pct = SUMMARY_SARANE_MIN_VALUE_SHARE_PCT
+        group_avg20_total = sum(r["value_avg20"] for r in records if r["value_avg20"] > 0)
+        sarane_excluded: List[str] = []
+
         for r in records:
             if r["value_vs_avg5_pct"] > 100 and r["value_vs_avg20_pct"] > 100:
                 value_above_avg.append({
@@ -334,16 +349,28 @@ class IndustryMarketFetcher:
                 })
 
             if r["sarane_kharid_20d"] > 0 and r["sarane_kharid"] > r["sarane_kharid_20d"]:
-                sarane_above_month.append({
-                    **r,
-                    "sarane_ratio": r["sarane_kharid"] / r["sarane_kharid_20d"],
-                })
+                share_pct = (r["value_avg20"] / group_avg20_total * 100) if group_avg20_total > 0 else 0.0
+                if min_sarane_value_share_pct > 0 and share_pct < min_sarane_value_share_pct:
+                    sarane_excluded.append(f"{r['name']} ({share_pct:.2f}٪)")
+                else:
+                    sarane_above_month.append({
+                        **r,
+                        "sarane_ratio": r["sarane_kharid"] / r["sarane_kharid_20d"],
+                        "value_share_pct": share_pct,
+                    })
 
             if r["value_avg20"] > 0:
                 pol_to_avg_month.append({
                     **r,
                     "pol_to_avg_month_pct": (r["pol_hagigi"] / r["value_avg20"]) * 100,
                 })
+
+        if sarane_excluded:
+            logger.info(
+                f"🛒 {len(sarane_excluded)} رکورد به‌خاطر نقدشوندگی کم (سهم ارزش < "
+                f"{min_sarane_value_share_pct}٪) از لیست سرانه خرید کنار رفت: "
+                + "، ".join(sarane_excluded)
+            )
 
         value_above_avg.sort(key=lambda r: r["pct_month"], reverse=True)
         sarane_above_month.sort(key=lambda r: r["sarane_ratio"], reverse=True)
