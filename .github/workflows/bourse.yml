@@ -16,6 +16,7 @@ concurrency:
 jobs:
   run-bourse-tracker:
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # فقط ضد گیرِ طولانی (پیش‌فرض GitHub ۶ ساعته)؛ اجرای عادی چند دقیقه‌ست
     steps:
       - uses: actions/checkout@v4
         with:
