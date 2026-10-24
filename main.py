@@ -40,6 +40,7 @@ from utils.sarane_history import (
     normalize_history,
     days_before,
     evaluate_heavy_sarane,
+    add_weekly_columns,
 )
 
 # ===========================
@@ -534,6 +535,7 @@ async def main_async():
 
         # فیلتر ۱۹ (سرانه خرید سنگین): مقایسه‌ی سرانه‌ی لحظه‌ای با میانگین ۱۰ روز قبل
         # که تو Gist صف‌ها (فایل sarane_history.json) نگه‌داری می‌شه.
+        sarane_days_prior = None  # روزهای قبلِ تاریخچه (بدون امروز)؛ برای خطوط هفتگی تو متن هشدارها
         if HEAVY_SARANE_CONFIG.get("enabled") and not alert_manager.queue_gist_enabled:
             logger.warning(
                 "⚠️ QUEUE_GIST_ID/QUEUE_GIST_TOKEN تنظیم نشده - فیلتر ۱۹ (سرانه خرید سنگین) غیرفعاله"
@@ -547,9 +549,10 @@ async def main_async():
                     sarane_history = normalize_history(
                         raw_history, HEAVY_SARANE_CONFIG.get("history_days", 10)
                     )
+                    sarane_days_prior = days_before(sarane_history, alert_manager.today_jalali)
                     heavy_sarane_df = evaluate_heavy_sarane(
                         df,
-                        days_before(sarane_history, alert_manager.today_jalali),
+                        sarane_days_prior,
                         HEAVY_SARANE_CONFIG,
                     )
                     all_results = dict(all_results) if all_results else {}
@@ -561,6 +564,21 @@ async def main_async():
                         f"⚠️ <b>خطا در فیلتر سرانه خرید سنگین</b>\n<code>{e}</code>",
                         chat_id=ERROR_CHAT_ID,
                     )
+
+        # خطوط «سرانه خرید هفتگی» و «اختلاف سرانه هفتگی» برای متن همه‌ی هشدارها.
+        # هر خطایی اینجا فقط باعث نیومدن این دو خط می‌شه، نه نیومدن هشدارها.
+        if sarane_days_prior and all_results:
+            try:
+                all_results = {
+                    name: (
+                        add_weekly_columns(res, sarane_days_prior, HEAVY_SARANE_CONFIG)
+                        if isinstance(res, pd.DataFrame)
+                        else res
+                    )
+                    for name, res in all_results.items()
+                }
+            except Exception as e:
+                logger.warning(f"⚠️ افزودن سرانه‌ی هفتگی به هشدارها شکست خورد (هشدارها بدون اون می‌رن): {e}")
 
         total_sent = 0
         total_skipped = 0
