@@ -26,6 +26,7 @@ API فقط سرانه «لحظه‌ای» رو می‌ده و میانگینش �
 میانگینِ هشدارهای حین بازار نیست (قبل از ۱۲:۳۱ هنوز ذخیره نشده).
 """
 
+import json
 import logging
 import math
 from typing import Dict, List, Optional, Tuple
@@ -177,3 +178,74 @@ def add_day(history: dict, today: str, values: Dict[str, list], keep_days: int =
     days = dict(history.get("days", {}))
     days[today] = values
     return normalize_history({"days": days}, keep_days)
+
+
+def history_size_bytes(history: dict) -> int:
+    """حجم فایل همون‌طور که تو Gist نوشته می‌شه (JSON فشرده، UTF-8)."""
+    return len(json.dumps(history, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+
+def fit_history_size(history: dict, max_bytes: int, min_days: int = 1) -> Tuple[dict, int, int]:
+    """
+    اگه حجم از max_bytes بیشتر بود، قدیمی‌ترین روزها رو می‌ندازه تا زیر سقف بیاد (حداقل min_days روز
+    می‌مونه). سقف پیش‌فرض زیر ۱ مگابایتِ Gist‌ه تا خوندن همیشه با یک درخواست انجام بشه (بالاتر از
+    ۱ مگابایت GitHub محتوا رو truncate می‌کنه و خوندن به درخواست اضافه نیاز پیدا می‌کنه).
+    برمی‌گردونه: (history, تعداد_روز_حذف‌شده, حجم_نهایی)
+    """
+    days = dict(history.get("days", {}))
+    dropped = 0
+    size = history_size_bytes({"days": days})
+    while size > max_bytes and len(days) > max(1, min_days):
+        del days[sorted(days)[0]]
+        dropped += 1
+        size = history_size_bytes({"days": days})
+    return {"days": days}, dropped, size
+
+
+def compute_weekly(
+    days: Dict[str, dict], window_days: int = 5, min_days: int = 3
+) -> Dict[str, Tuple[Optional[float], Optional[float]]]:
+    """
+    میانگین «هفتگی» (window_days روزِ آخرِ تاریخچه، بدون امروز) سرانه خرید و اختلاف سرانه هر نماد.
+    {symbol: (avg_kharid, avg_diff)}؛ هر کدوم اگه کمتر از min_days روز داده داشته باشه None می‌شه
+    (مثلاً اختلاف برای روزهایی که با فرمت قدیمی ذخیره شدن موجود نیست).
+    """
+    ordered = sorted(days)[-window_days:] if window_days and window_days > 0 else sorted(days)
+    k_sum: Dict[str, float] = {}
+    k_cnt: Dict[str, int] = {}
+    d_sum: Dict[str, float] = {}
+    d_cnt: Dict[str, int] = {}
+    for day in ordered:
+        day_data = days[day]
+        if not isinstance(day_data, dict):
+            continue
+        for symbol, value in day_data.items():
+            kharid, diff = split_value(value)
+            if kharid is not None and kharid > 0:
+                k_sum[symbol] = k_sum.get(symbol, 0.0) + kharid
+                k_cnt[symbol] = k_cnt.get(symbol, 0) + 1
+            if diff is not None:
+                d_sum[symbol] = d_sum.get(symbol, 0.0) + diff
+                d_cnt[symbol] = d_cnt.get(symbol, 0) + 1
+    need = max(1, min_days)
+    result: Dict[str, Tuple[Optional[float], Optional[float]]] = {}
+    for symbol in set(k_sum) | set(d_sum):
+        k = k_sum[symbol] / k_cnt[symbol] if k_cnt.get(symbol, 0) >= need else None
+        d = d_sum[symbol] / d_cnt[symbol] if d_cnt.get(symbol, 0) >= need else None
+        if k is not None or d is not None:
+            result[symbol] = (k, d)
+    return result
+
+
+def add_weekly_columns(df: pd.DataFrame, days: Dict[str, dict], config: dict) -> pd.DataFrame:
+    """ستون‌های sarane_kharid_weekly و sarane_diff_weekly رو به df اضافه می‌کنه (کپی برمی‌گردونه).
+    نمادِ بدون داده NaN می‌گیره و خطش تو پیام نمیاد."""
+    if df is None or df.empty or "symbol" not in df.columns or not days:
+        return df
+    weekly = compute_weekly(days, config.get("weekly_days", 5), config.get("weekly_min_days", 3))
+    if not weekly:
+        return df
+    out = df.copy()
+    out["sarane_kharid_weekly"] = out["symbol"].map(lambda s: weekly.get(s, (None, None))[0])
+    out["sarane_diff_weekly"] = out["symbol"].map(lambda s: weekly.get(s, (None, None))[1])
+    return out
