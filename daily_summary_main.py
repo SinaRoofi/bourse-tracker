@@ -130,7 +130,7 @@ async def save_sarane_history_step(
             )
             return
 
-        keep_days = cfg.get("history_days", 10)
+        keep_days = cfg.get("history_days", 20)
         today = alert_manager.today_jalali
 
         raw = await alert_manager.load_sarane_history()
@@ -190,6 +190,7 @@ async def save_sarane_history_step(
 
         if saved:
             days_count = len(new_history.get("days", {}))
+            with_diff = sum(1 for v in values.values() if v[1] is not None)
             min_days = cfg.get("min_history_days", 10)
             logger.info(f"💾 سرانه‌ی پایانی {today} ذخیره شد ({len(values)} نماد، {days_count} روز در تاریخچه)")
             ready = (
@@ -201,7 +202,8 @@ async def save_sarane_history_step(
             await _notify(
                 telegram_alert,
                 f"{header}\n✅ سرانه‌ی پایانی {today} ذخیره شد\n"
-                f"• نماد: {len(values)}\n• روز در تاریخچه: {days_count}/{keep_days}\n{ready}",
+                f"• نماد: {len(values)} (با اختلاف سرانه: {with_diff})\n"
+                f"• روز در تاریخچه: {days_count}/{keep_days}\n{ready}",
             )
         else:
             logger.error("❌ ذخیره‌ی تاریخچه‌ی سرانه بعد از همه‌ی تلاش‌ها شکست خورد")
