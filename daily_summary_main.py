@@ -145,6 +145,15 @@ async def save_sarane_history_step(
             return
         logger.info(f"📂 تاریخچه‌ی فعلی: {len(history.get('days', {}))} روز - شروع دریافت سرانه‌ی پایانی {today}")
 
+        # تعداد نمادهای روز قبل = معیار «کامل بودن» دریافت امروز. اگه دریافت ناقص بود
+        # (صنعتی شکست خورده)، دوباره تلاش می‌شه و بهترین نتیجه نگه داشته می‌شه.
+        # ذخیره‌ی نتیجه همچنان انجام می‌شه (فقط داده‌ی بهتر و هشدار تو کانال).
+        prev_days = sorted(history.get("days", {}))
+        last_day_data = history["days"][prev_days[-1]] if prev_days else {}
+        prev_count = len(last_day_data) if isinstance(last_day_data, dict) else 0
+        min_symbols = cfg.get("min_symbols_to_save", 100)
+        expected = max(min_symbols, int(prev_count * cfg.get("min_symbols_ratio_vs_prev", 0.9)))
+
         values: dict = {}
         for attempt in range(1, SAVE_ATTEMPTS + 1):
             fetcher = UnifiedDataFetcher(api1_base_url=API_BASE_URL)
@@ -158,18 +167,22 @@ async def save_sarane_history_step(
                 df = BourseDataProcessor().process_all_data(df_raw)
                 # build_today_values اول نمادهای تکراری (سهم/صندوق هم‌نام) رو دیداپ می‌کنه؛
                 # پس شمارش min_symbols_to_save روی نمادهای یکتاست.
-                values = build_today_values(df)
-                logger.info(f"📊 نماد معتبر (بعد از دیداپ): {len(values)} (تلاش {attempt}/{SAVE_ATTEMPTS})")
-                if len(values) >= cfg.get("min_symbols_to_save", 100):
+                attempt_values = build_today_values(df)
+                logger.info(
+                    f"📊 نماد معتبر (بعد از دیداپ): {len(attempt_values)} "
+                    f"(مورد انتظار: {expected}) (تلاش {attempt}/{SAVE_ATTEMPTS})"
+                )
+                if len(attempt_values) > len(values):
+                    values = attempt_values
+                if len(values) >= expected:
                     break
                 logger.warning(
-                    f"⚠️ فقط {len(values)} نماد معتبر (حداقل {cfg.get('min_symbols_to_save', 100)}) "
+                    f"⚠️ دریافت ناقص‌ به‌نظر میاد: {len(values)} نماد از حداقل {expected} "
                     f"(تلاش {attempt}/{SAVE_ATTEMPTS})"
                 )
             if attempt < SAVE_ATTEMPTS:
                 await asyncio.sleep(RETRY_DELAY_SECONDS)
 
-        min_symbols = cfg.get("min_symbols_to_save", 100)
         if len(values) < min_symbols:
             logger.error(f"❌ ذخیره‌ی سرانه رد شد: {len(values)} نماد معتبر < {min_symbols}")
             await _notify(
@@ -213,9 +226,14 @@ async def save_sarane_history_step(
                 else f"⏳ فیلتر ۱۹ وقتی فعال می‌شه که حداقل {min_days} روز تو تاریخچه باشه "
                      f"(الان {days_count} روز)."
             )
+            incomplete = (
+                f"\n⚠️ دریافت احتمالاً ناقص بود: {len(values)} نماد (روز قبل: {prev_count})"
+                if len(values) < expected
+                else ""
+            )
             await _notify(
                 telegram_alert,
-                f"{header}\n✅ سرانه‌ی پایانی {today} ذخیره شد\n"
+                f"{header}\n✅ سرانه‌ی پایانی {today} ذخیره شد{incomplete}\n"
                 f"• نماد: {len(values)} (با اختلاف سرانه: {with_diff})\n"
                 f"• روز در تاریخچه: {days_count}/{keep_days} (حجم: {size_bytes // 1024}KB)\n{ready}",
             )
