@@ -181,6 +181,22 @@ def line_sarane_diff(row: pd.Series) -> Optional[str]:
     return f"{emoji} اختلاف سرانه: {diff:+.0f} میلیون تومان\n"
 
 
+def line_sarane_kharid_weekly(row: pd.Series) -> Optional[str]:
+    """سرانه خرید هفتگی: میانگین سرانه خرید ۵ روز قبل (از تاریخچه‌ی Gist). بدون داده، خط نمیاد."""
+    if "sarane_kharid_weekly" not in row or pd.isna(row["sarane_kharid_weekly"]):
+        return None
+    return f"📈 سرانه خرید هفتگی: {row['sarane_kharid_weekly']:.0f} میلیون تومان\n"
+
+
+def line_sarane_diff_weekly(row: pd.Series) -> Optional[str]:
+    """اختلاف سرانه هفتگی: میانگین (سرانه خرید - سرانه فروش) ۵ روز قبل. بدون داده، خط نمیاد."""
+    if "sarane_diff_weekly" not in row or pd.isna(row["sarane_diff_weekly"]):
+        return None
+    diff = row["sarane_diff_weekly"]
+    emoji = "🟢" if diff > 0 else "🔴" if diff < 0 else "⚪"
+    return f"{emoji} اختلاف سرانه هفتگی: {diff:+.0f} میلیون تومان\n"
+
+
 def line_godrat_kharid(label: str = "قدرت خرید", bold: bool = False) -> LineBuilder:
     def _builder(row: pd.Series) -> Optional[str]:
         if "godrat_kharid" not in row or pd.isna(row["godrat_kharid"]):
@@ -420,7 +436,9 @@ FILTER_DISPLAY_CONFIG = {
         lines=[
             line_price, line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(bold=False),
+            line_sarane_kharid_weekly,
             line_sarane_diff,
+            line_sarane_diff_weekly,
             line_godrat_kharid(bold=True),
             line_godrat_kharid_weekly,
             line_pol_hagigi(),
@@ -438,7 +456,9 @@ FILTER_DISPLAY_CONFIG = {
             line_price, line_value,
             line_value_ratio(bold=True), line_value_5_to_20,  # FIX: قبلاً بولد نبود، حالا یکسان با بقیه
             line_sarane_kharid(label="سرانه خرید"),
+            line_sarane_kharid_weekly,
             line_sarane_diff,
+            line_sarane_diff_weekly,
             line_godrat_kharid(label="قدرت خرید"),  # FIX: قبلاً "قدرت خریدار" بود
             line_godrat_kharid_weekly,
             line_pol_hagigi(),
@@ -460,7 +480,9 @@ FILTER_DISPLAY_CONFIG = {
             line_price, line_threshold, line_final_price, line_value,
             line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
+            line_sarane_kharid_weekly,
             line_sarane_diff,
+            line_sarane_diff_weekly,
             line_pol_hagigi(),
             line_pol_hagigi_weekly,
             line_pol_power(),
@@ -476,7 +498,9 @@ FILTER_DISPLAY_CONFIG = {
             line_price, line_mark_price_up, line_final_price, line_value,
             line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
+            line_sarane_kharid_weekly,
             line_sarane_diff,
+            line_sarane_diff_weekly,
             line_pol_hagigi(),
             line_pol_hagigi_weekly,
             line_pol_power(),
@@ -492,7 +516,9 @@ FILTER_DISPLAY_CONFIG = {
             line_price, line_mark_price_down, line_final_price, line_value,
             line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
+            line_sarane_kharid_weekly,
             line_sarane_diff,
+            line_sarane_diff_weekly,
             line_pol_hagigi(),
             line_pol_hagigi_weekly,
             line_pol_power(),
@@ -508,7 +534,9 @@ FILTER_DISPLAY_CONFIG = {
             line_price, line_queue_supply, line_queue_order,
             line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
+            line_sarane_kharid_weekly,
             line_sarane_diff,
+            line_sarane_diff_weekly,
             line_godrat_kharid(),
             line_godrat_kharid_weekly,
             line_pol_hagigi(),
@@ -525,8 +553,10 @@ FILTER_DISPLAY_CONFIG = {
         lines=[
             line_price,
             line_sarane_kharid(bold=True),
+            line_sarane_kharid_weekly,
             line_sarane_avg_10d,
             line_sarane_diff,
+            line_sarane_diff_weekly,
             line_godrat_kharid(bold=True),
             line_godrat_kharid_weekly,
             line_value, line_value_ratio(bold=True), line_value_5_to_20,
@@ -545,7 +575,9 @@ FILTER_DISPLAY_CONFIG = {
             line_price, line_queue_collect, line_queue_order,
             line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
+            line_sarane_kharid_weekly,
             line_sarane_diff,
+            line_sarane_diff_weekly,
             line_godrat_kharid(),
             line_godrat_kharid_weekly,
             line_pol_hagigi(),
@@ -562,7 +594,9 @@ FILTER_DISPLAY_CONFIG = {
         lines=[
             line_price, line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
+            line_sarane_kharid_weekly,
             line_sarane_diff,
+            line_sarane_diff_weekly,
             line_godrat_kharid(),  # FIX: خط قدرت خرید جا افتاده بود
             line_godrat_kharid_weekly,
             line_pol_hagigi(),
@@ -583,7 +617,9 @@ FILTER_DISPLAY_CONFIG = {
         lines=[
             line_price, line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
+            line_sarane_kharid_weekly,
             line_sarane_diff,
+            line_sarane_diff_weekly,
             line_godrat_kharid(),  # FIX: قبلاً "قدرت خریدار" بود
             line_godrat_kharid_weekly,
             line_pol_hagigi(),
@@ -600,7 +636,9 @@ FILTER_DISPLAY_CONFIG = {
         lines=[
             line_price, line_tick_diff, line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
+            line_sarane_kharid_weekly,
             line_sarane_diff,
+            line_sarane_diff_weekly,
             line_godrat_kharid(),
             line_godrat_kharid_weekly,
             line_pol_hagigi(),
@@ -621,7 +659,9 @@ FILTER_DISPLAY_CONFIG = {
             line_price, line_buy_queue_value, line_buy_order,
             line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
+            line_sarane_kharid_weekly,
             line_sarane_diff,
+            line_sarane_diff_weekly,
             line_godrat_kharid(),
             line_godrat_kharid_weekly,
             line_pol_hagigi(),
@@ -638,7 +678,9 @@ FILTER_DISPLAY_CONFIG = {
             line_price, line_buy_queue_value,
             line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
+            line_sarane_kharid_weekly,
             line_sarane_diff,
+            line_sarane_diff_weekly,
             line_godrat_kharid(),
             line_godrat_kharid_weekly,
             line_pol_hagigi(),
@@ -658,7 +700,9 @@ FILTER_DISPLAY_CONFIG = {
         lines=[
             line_price, line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),  # FIX: قبلاً بولد بود، حالا یکسان با بقیه
+            line_sarane_kharid_weekly,
             line_sarane_diff,
+            line_sarane_diff_weekly,
             line_godrat_kharid(),
             line_godrat_kharid_weekly,
             line_pol_hagigi(always_negative_abs=True),
@@ -675,7 +719,9 @@ FILTER_DISPLAY_CONFIG = {
         lines=[
             line_price, line_marubozu, line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
+            line_sarane_kharid_weekly,
             line_sarane_diff,
+            line_sarane_diff_weekly,
             line_godrat_kharid(),
             line_godrat_kharid_weekly,
             line_pol_hagigi(),
@@ -696,7 +742,9 @@ FILTER_DISPLAY_CONFIG = {
         lines=[
             line_price, line_value, line_value_ratio(bold=True), line_value_5_to_20,
             line_sarane_kharid(),
+            line_sarane_kharid_weekly,
             line_sarane_diff,
+            line_sarane_diff_weekly,
             line_godrat_kharid(),
             line_godrat_kharid_weekly,
             line_pol_hagigi(),
@@ -714,7 +762,9 @@ FILTER_DISPLAY_CONFIG = {
             line_price, line_value, line_value_ratio(bold=True),
             line_value_5_to_20,
             line_sarane_kharid(),
+            line_sarane_kharid_weekly,
             line_sarane_diff,
+            line_sarane_diff_weekly,
             line_godrat_kharid(),
             line_godrat_kharid_weekly,
             line_pol_hagigi(),
@@ -732,7 +782,8 @@ DEFAULT_ALERT_TITLES = {
 }
 DEFAULT_ALERT_LINES = [
     line_price, line_value, line_value_ratio(bold=True), line_value_5_to_20,
-    line_sarane_kharid(), line_sarane_diff, line_godrat_kharid(), line_godrat_kharid_weekly,
+    line_sarane_kharid(), line_sarane_kharid_weekly, line_sarane_diff, line_sarane_diff_weekly,
+    line_godrat_kharid(), line_godrat_kharid_weekly,
     line_pol_hagigi(),
     line_pol_hagigi_weekly,
     line_pol_power(),
