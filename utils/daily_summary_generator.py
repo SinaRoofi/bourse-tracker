@@ -43,6 +43,8 @@ def _iso(text: str) -> str:
     return f"{_LATIN_ISOLATE_START}{text}{_LATIN_ISOLATE_END}"
 
 
+_RLM = "\u200f"  # Right-to-Left Mark: جهت خط رو راست‌به‌چپ قفل می‌کنه
+
 MA20 = _iso("MA20")
 
 # عنوان فارسی و واحد هر فیلتر برای نمایش در پیام
@@ -109,6 +111,8 @@ FILTER_META = {
         "emoji": "🐋",
         "unit": "برابر میانگین",
         "format": ".1f",
+        # قالب اختصاصی ردیف: «▲3.0% | M 500 (14.7x)»؛ قسمت لاتین ایزوله می‌شه تا راست‌چین بمونه
+        "row_style": "sarane_heavy",
     },
 }
 
@@ -442,6 +446,23 @@ class DailySummaryGenerator:
     # ------------------------------------------------------------------
     # فرمت پیام Top-N فیلترها
     # ------------------------------------------------------------------
+    @staticmethod
+    def _format_sarane_heavy_row(index: int, symbol: str, price_prefix: str, item: dict) -> str:
+        """
+        ردیف فیلتر ۱۹ تو «برترین نمادها»:  «1. #امید — ▲3.0% | M 500 (14.7x)»
+        M = سرانه خرید (میلیون تومان) و داخل پرانتز نسبت به میانگین. کل بخش لاتین
+        (M 500 (14.7x)) یک ایزوله‌ی مستقل می‌شه تا پرانتز/اعداد تو متن راست‌چین
+        جابه‌جا نشن؛ RLM اول خط هم جهت خط رو راست‌به‌چپ قفل می‌کنه.
+        اگه سرانه ذخیره نشده بود (هشدارهای قبل از این آپدیت)، فقط «(14.7x)» میاد.
+        """
+        ratio = f"{item['value']:.1f}x"
+        sarane = item.get("sarane_kharid")
+        if sarane is not None:
+            detail = f"M {sarane:.0f} ({ratio})"
+        else:
+            detail = f"({ratio})"
+        return f"{_RLM}  {index}. #{symbol} — {price_prefix}{_iso(detail)}\n"
+
     def format_top_filter_message(self, top_per_filter: Dict[str, List[dict]]) -> str:
         """
         فرمت پیام Top-N نمادهای برتر هر فیلتر، همراه با درصد تغییر قیمت
@@ -473,6 +494,9 @@ class DailySummaryGenerator:
                 val_str = format(raw_val, fmt)
                 unit_str = f" {unit}" if unit else ""
                 price_prefix = self._format_price_change_prefix(item.get("price_change_percent"))
+                if meta.get("row_style") == "sarane_heavy":
+                    message += self._format_sarane_heavy_row(i, symbol, price_prefix, item)
+                    continue
                 message += f"  {i}. #{symbol} — {price_prefix}{val_str}{unit_str}\n"
 
             message += "\n"
