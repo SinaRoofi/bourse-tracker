@@ -105,6 +105,12 @@ WATCHLIST_ONLY_FILTERS = {
 # نگاشت فیلتر به ستون کلیدی برای Daily Summary
 # فقط فیلترهایی که در summary نمایش داده می‌شن
 # ===========================
+# ستون اضافه‌ای که کنار value تو Gist ذخیره می‌شه تا خلاصه‌ی روزانه بتونه نشونش بده
+# (filter_19: سرانه خرید لحظه‌ی هشدار؛ value خودش نسبت به میانگینه)
+FILTER_EXTRA_COLUMN = {
+    "filter_19_heavy_sarane_buy": "sarane_kharid",
+}
+
 FILTER_VALUE_COLUMN = {
     "filter_1_strong_buying":                  "godrat_kharid",
     "filter_2_sarane_cross":                   "sarane_kharid",
@@ -360,8 +366,17 @@ async def send_alerts_for_filters_async(
                     is_fund = None
                     industry_name = None
                     price_change_percent = None
+                    extra_value = None
                     row = chunk_to_send[chunk_to_send["symbol"] == s]
                     if not row.empty:
+                        extra_col = FILTER_EXTRA_COLUMN.get(filter_name)
+                        if extra_col and extra_col in chunk_to_send.columns:
+                            try:
+                                extra_raw = row.iloc[0][extra_col]
+                                if pd.notna(extra_raw):
+                                    extra_value = round(float(extra_raw), 1)
+                            except (ValueError, TypeError):
+                                extra_value = None
                         if value_col and value_col in chunk_to_send.columns:
                             try:
                                 val = float(row.iloc[0][value_col])
@@ -383,7 +398,7 @@ async def send_alerts_for_filters_async(
                             except (ValueError, TypeError):
                                 price_change_percent = None
                     successful_marks.append(
-                        (s, dedup_type, val, is_fund, industry_name, price_change_percent)
+                        (s, dedup_type, val, is_fund, industry_name, price_change_percent, extra_value)
                     )
 
                 sent_count += len(symbols)
