@@ -10,6 +10,7 @@ import logging
 import jdatetime
 
 from config import WORKING_DAYS
+from utils.tehran_time import tehran_today, tehran_today_str
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ class HolidayManager:
         اولویت: اضطراری دستی -> لیست هاردکد -> سال ناشناخته = روز کاری (fail-open)
         """
         if date_str is None:
-            date_str = jdatetime.date.today().strftime("%Y-%m-%d")
+            date_str = tehran_today_str()
         return self._is_holiday_cached(date_str)
 
     def is_working_day(self, date_str: str = None) -> bool:
@@ -87,7 +88,7 @@ class HolidayManager:
 
     def get_next_working_day(self, date_str: str = None) -> str:
         if date_str is None:
-            current_date = jdatetime.date.today()
+            current_date = tehran_today()
         else:
             year, month, day = map(int, date_str.split("-"))
             current_date = jdatetime.date(year, month, day)
