@@ -12,6 +12,8 @@ import logging
 from typing import Optional
 import time
 
+from utils.tehran_time import tehran_today, tehran_today_str
+
 logger = logging.getLogger(__name__)
 
 # پسوند dedup برای کپیِ واچ‌لیست شخصی در کانال دوم — عمداً از filter_name جدا نگه
@@ -74,7 +76,7 @@ class GistAlertManager:
                 "Accept": "application/vnd.github.v3+json"
             }
 
-        self.today_jalali = jdatetime.date.today().strftime("%Y-%m-%d")
+        self.today_jalali = tehran_today_str()
 
         self._lock = asyncio.Lock()
 
@@ -305,7 +307,7 @@ class GistAlertManager:
         _industry_universe (که قبلاً هیچ‌وقت پاک نمی‌شد و هر روز فقط
         بزرگ‌تر می‌شد). in-place تغییر می‌ده.
         """
-        cutoff = (jdatetime.date.today() - jdatetime.timedelta(days=keep_days)).strftime("%Y-%m-%d")
+        cutoff = (tehran_today() - jdatetime.timedelta(days=keep_days)).strftime("%Y-%m-%d")
 
         top_level_keys = [
             k for k in list(data.keys())
