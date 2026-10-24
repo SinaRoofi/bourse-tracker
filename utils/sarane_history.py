@@ -7,24 +7,28 @@
   ۳) قدرت خرید  >  ۱
   ۴) سرانه خرید  >  ۱۰۰ میلیون تومان
 
-API فقط سرانه خرید «لحظه‌ای» رو می‌ده و میانگین ۱۰ روزه‌ش رو نمی‌ده، پس سرانه‌ی
-پایانی هر روز تو Gist صف‌ها (فایل جدای sarane_history.json) ذخیره می‌شه. فقط ۱۰ روز آخر نگه‌داری
-می‌شه؛ بیشتر از اون پاک می‌شه.
+API فقط سرانه «لحظه‌ای» رو می‌ده و میانگینش رو نمی‌ده، پس مقادیر پایانیِ هر روز تو Gist
+صف‌ها (فایل جدای sarane_history.json) ذخیره می‌شه. برای هر نماد دو عدد نگه‌داری می‌شه:
+سرانه خرید و اختلاف سرانه (سرانه خرید - سرانه فروش). فقط history_days روز آخر (الان ۲۰) نگه
+داشته می‌شه؛ بیشتر از اون پاک می‌شه. پنجره‌ی میانگینِ فیلتر ۱۹ مستقل از اینه
+(avg_window_days، الان ۱۰ روزِ آخر).
 
 ساختار فایل sarane_history.json:
-{"days": {"1405-07-14": {"فملی": 312.4, ...}, ... حداکثر ۱۰ روز}}
+{"days": {"1405-07-14": {"فملی": [312.4, 38.1], ...}, ... حداکثر ۲۰ روز}}
+هر مقدار = [سرانه_خرید, اختلاف_سرانه] (اختلاف ممکنه null باشه اگه سرانه فروش نبوده).
+فرمت قدیمی (فقط یک عدد برای هر نماد) هم خونده می‌شه: همون عدد سرانه خرید حساب می‌شه و
+اختلافش نامشخصه.
 واحد: میلیون تومان (همون واحد df بعد از پردازش).
 
 نوشتن فقط یک‌بار در روز و بعد از بسته‌شدن بازار انجام می‌شه (توی daily_summary_main،
-ساعت ۱۲:۳۱ به بعد) تا سرانه‌ی پایانیِ واقعی ثبت بشه. حین بازار فقط خونده می‌شه. هر
-نوشتن، روز جدید رو اضافه می‌کنه و فقط ۱۰ روز آخر رو نگه می‌داره. امروز تو میانگینِ
-هشدارهای حین بازار نیست (قبل از ۱۲:۳۱ هنوز ذخیره نشده)، پس مقایسه همیشه با ۱۰ روز
-کامل قبلیه.
+ساعت ۱۲:۳۱ به بعد) تا مقادیر پایانیِ واقعی ثبت بشه. حین بازار فقط خونده می‌شه. هر
+نوشتن، روز جدید رو اضافه می‌کنه و فقط history_days روز آخر رو نگه می‌داره. امروز تو
+میانگینِ هشدارهای حین بازار نیست (قبل از ۱۲:۳۱ هنوز ذخیره نشده).
 """
 
 import logging
 import math
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
@@ -54,7 +58,7 @@ def _dedupe_symbols(df: pd.DataFrame) -> pd.DataFrame:
     return df.drop_duplicates(subset="symbol", keep="first")
 
 
-def normalize_history(raw: Optional[dict], keep_days: int = 10) -> dict:
+def normalize_history(raw: Optional[dict], keep_days: int = 20) -> dict:
     """ساختار ناقص رو کامل می‌کنه و فقط keep_days روز آخر رو نگه می‌داره."""
     raw = raw if isinstance(raw, dict) else {}
     days = raw.get("days")
@@ -72,19 +76,34 @@ def has_day(history: dict, today: str) -> bool:
     return today in history.get("days", {})
 
 
-def compute_averages(days: Dict[str, dict], min_days: int) -> Dict[str, tuple]:
+def split_value(value) -> Tuple[Optional[float], Optional[float]]:
+    """(سرانه_خرید, اختلاف_سرانه) از یک مقدار ذخیره‌شده؛ فرمت قدیمی (یک عدد) هم پشتیبانی می‌شه."""
+    if isinstance(value, (list, tuple)):
+        kharid = _num(value[0]) if len(value) > 0 else None
+        diff = _num(value[1]) if len(value) > 1 else None
+        return kharid, diff
+    return _num(value), None
+
+
+def compute_averages(
+    days: Dict[str, dict], min_days: int, window_days: Optional[int] = None
+) -> Dict[str, tuple]:
     """
-    میانگین سرانه خرید هر نماد روی روزهای موجود.
+    میانگین سرانه خرید هر نماد روی window_days روزِ آخر (اگه None باشه، همه‌ی روزها).
     برمی‌گردونه: {symbol: (avg, تعداد_روز)} فقط برای نمادهایی که حداقل
     min_days روز داده دارن.
     """
+    ordered = sorted(days)
+    if window_days and window_days > 0:
+        ordered = ordered[-window_days:]
     sums: Dict[str, float] = {}
     counts: Dict[str, int] = {}
-    for day_data in days.values():
+    for day in ordered:
+        day_data = days[day]
         if not isinstance(day_data, dict):
             continue
         for symbol, value in day_data.items():
-            v = _num(value)
+            v, _ = split_value(value)
             if v is None or v <= 0:
                 continue
             sums[symbol] = sums.get(symbol, 0.0) + v
@@ -103,7 +122,9 @@ def evaluate_heavy_sarane(df: pd.DataFrame, days: Dict[str, dict], config: dict)
         logger.warning("⚠️ فیلتر ۱۹: ستون‌های لازم در داده نیست - این دور رد شد")
         return pd.DataFrame()
 
-    averages = compute_averages(days, config.get("min_history_days", 10))
+    averages = compute_averages(
+        days, config.get("min_history_days", 10), config.get("avg_window_days", 10)
+    )
     if not averages:
         logger.info(
             f"فیلتر ۱۹: تاریخچه کافی نیست (روزهای ذخیره‌شده: {len(days)}، "
@@ -130,20 +151,28 @@ def evaluate_heavy_sarane(df: pd.DataFrame, days: Dict[str, dict], config: dict)
     return out
 
 
-def build_today_values(df: pd.DataFrame) -> Dict[str, float]:
-    """سرانه‌ی خرید فعلی هر نماد (فقط مقادیر معتبر و مثبت) برای ذخیره تو تاریخچه."""
+def build_today_values(df: pd.DataFrame) -> Dict[str, List[Optional[float]]]:
+    """
+    مقادیر فعلی هر نماد برای ذخیره تو تاریخچه: [سرانه_خرید, اختلاف_سرانه].
+    سرانه خرید باید معتبر و مثبت باشه وگرنه نماد ذخیره نمی‌شه؛ اختلاف (خرید - فروش)
+    اگه سرانه فروش نباشه null ذخیره می‌شه.
+    """
     if df is None or df.empty or not {"symbol", "sarane_kharid"}.issubset(df.columns):
         return {}
-    values: Dict[str, float] = {}
-    for symbol, sarane in _dedupe_symbols(df)[["symbol", "sarane_kharid"]].itertuples(index=False):
-        v = _num(sarane)
-        if not symbol or v is None or v <= 0:
+    df = _dedupe_symbols(df)
+    forosh = df["sarane_forosh"] if "sarane_forosh" in df.columns else pd.Series(None, index=df.index)
+    values: Dict[str, List[Optional[float]]] = {}
+    for symbol, kharid, sell in zip(df["symbol"], df["sarane_kharid"], forosh):
+        k = _num(kharid)
+        if not symbol or k is None or k <= 0:
             continue
-        values[str(symbol)] = round(v, 1)
+        sell_v = _num(sell)
+        diff = round(k - sell_v, 1) if sell_v is not None else None
+        values[str(symbol)] = [round(k, 1), diff]
     return values
 
 
-def add_day(history: dict, today: str, values: Dict[str, float], keep_days: int = 10) -> dict:
+def add_day(history: dict, today: str, values: Dict[str, list], keep_days: int = 20) -> dict:
     """نسخه‌ی جدید تاریخچه با روز امروز؛ فقط keep_days روز آخر (با احتساب امروز) می‌مونه."""
     days = dict(history.get("days", {}))
     days[today] = values
