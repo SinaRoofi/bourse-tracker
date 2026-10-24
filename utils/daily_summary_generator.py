@@ -14,6 +14,7 @@ import pytz
 from typing import Dict, List, Optional
 
 from utils.gist_alert_manager import WATCHLIST_COPY_SUFFIX
+from utils.tehran_time import tehran_today_str
 from utils.industry_market_fetcher import (
     IndustryMarketFetcher,
     RIAL_TO_MILLION_TOMAN,
@@ -118,7 +119,7 @@ class DailySummaryGenerator:
     def __init__(self, alert_manager, telegram_alert):
         self.alert_manager = alert_manager
         self.telegram = telegram_alert
-        self.today_jalali = jdatetime.date.today().strftime("%Y-%m-%d")
+        self.today_jalali = tehran_today_str()
 
     # ------------------------------------------------------------------
     # نمادهای پرتکرار
