@@ -23,6 +23,7 @@ from utils.data_fetcher import UnifiedDataFetcher
 from utils.data_processor import BourseDataProcessor
 from utils.sarane_history import (
     normalize_history,
+    fit_history_size,
     has_day,
     build_today_values,
     add_day,
@@ -179,6 +180,19 @@ async def save_sarane_history_step(
             return
 
         new_history = add_day(history, today, values, keep_days)
+        # حجم فایل زیر سقف بمونه (کمتر از ۱MB گیست) تا خوندن همیشه با یک درخواست انجام بشه
+        new_history, dropped_days, size_bytes = fit_history_size(
+            new_history,
+            int(cfg.get("max_file_kb", 800)) * 1024,
+            cfg.get("min_history_days", 5),
+        )
+        if dropped_days:
+            logger.warning(f"⚠️ حجم تاریخچه از سقف گذشت؛ {dropped_days} روز قدیمی حذف شد (حجم: {size_bytes // 1024}KB)")
+            await _notify(
+                telegram_alert,
+                f"{header}\n⚠️ حجم تاریخچه از سقف {cfg.get('max_file_kb', 800)}KB گذشت؛ "
+                f"{dropped_days} روز قدیمی حذف شد.",
+            )
         saved = False
         for attempt in range(1, SAVE_ATTEMPTS + 1):
             if await alert_manager.save_sarane_history(new_history):
@@ -203,7 +217,7 @@ async def save_sarane_history_step(
                 telegram_alert,
                 f"{header}\n✅ سرانه‌ی پایانی {today} ذخیره شد\n"
                 f"• نماد: {len(values)} (با اختلاف سرانه: {with_diff})\n"
-                f"• روز در تاریخچه: {days_count}/{keep_days}\n{ready}",
+                f"• روز در تاریخچه: {days_count}/{keep_days} (حجم: {size_bytes // 1024}KB)\n{ready}",
             )
         else:
             logger.error("❌ ذخیره‌ی تاریخچه‌ی سرانه بعد از همه‌ی تلاش‌ها شکست خورد")
