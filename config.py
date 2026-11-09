@@ -176,7 +176,7 @@ FUND_TYPES = {
 # فیلتر 1: قدرت خرید قوی
 STRONG_BUYING_CONFIG = {
     "min_value_to_avg_monthly": 1,
-    "min_sarane_kharid": 100,  # میلیون تومان
+    "min_sarane_kharid": 150,  # میلیون تومان
     "min_godrat_kharid": 2,
     "godrat_greater_than_5day": True,  # قدرت خرید > میانگین 5 روز
     "godrat_5day_multiplier": 2,  # ضریب مقایسه با میانگین 5 روزه (فقط وقتی بالا True باشه اثر داره)
@@ -186,7 +186,7 @@ STRONG_BUYING_CONFIG = {
 SARANE_CROSS_CONFIG = {
     "sarane_kharid_greater_than_forosh": True,
     "min_value_to_avg_monthly": 0.5,
-    "min_sarane_kharid": 100,
+    "min_sarane_kharid": 150,
     "max_buy_queue_value": 2,  # میلیارد تومان - ارزش سفارش ردیف اول صف خرید باید کمتر از این باشه
 }
 
@@ -232,7 +232,7 @@ range_mosbat = {
 # فیلتر 5: ورود پول حقیقی قوی
 POL_HAGIGI_FILTER_CONFIG = {
     "min_pol_to_value_ratio": 0.5,
-    "min_sarane_kharid": 100,
+    "min_sarane_kharid": 150,
     "min_godrat_kharid": 1.5,
 }
 
@@ -260,7 +260,7 @@ SWING_TRADE_CONFIG = {
     "min_allowed_price": -2.8,
     "max_last_change_percent": -1.0,
     "min_godrat_kharid": 2.0,
-    "min_sarane_kharid": 100, 
+    "min_sarane_kharid": 150, 
     "min_value_to_avg_monthly": 1.0,
 }
 
@@ -298,7 +298,7 @@ BUY_QUEUE_SIMPLE_CONFIG = {
 HOGHOOGHI_HAGHIGHI_STRONG_BUY_CONFIG = {
     "max_pol_hagigi_to_value": -0.3,  
     "min_last_price_change_percent": 0, 
-    "min_sarane_kharid": 100,  
+    "min_sarane_kharid": 150,  
     "sarane_kharid_greater_than_forosh": True, 
 } 
 
@@ -339,7 +339,7 @@ QUEUE_TRACKER_CONFIG = {
         # هشدار بده. None = بدون شرط قدرت خرید.
         "min_godrat_kharid": 1,
         # و سرانه‌ی خرید حقیقی (میلیون تومان) هم باید بیشتر از این عدد باشه. None = بدون شرط.
-        "min_sarane_kharid": 100,
+        "min_sarane_kharid": 150,
     },
     # فیلتر 18: جمع‌آوری صف فروش (صف فروش سنگین روی کف که کامل جمع شد)
     "sell_collect": {
@@ -378,7 +378,7 @@ HEAVY_SARANE_CONFIG = {
     "min_ratio_to_avg": 2,           # سرانه فعلی >= این‌قدر برابر میانگین ۱۰ روزه
     "min_value_to_avg_monthly": 1,   # حجم نسبی >= این عدد
     "min_godrat_kharid": 1,          # قدرت خرید > این عدد
-    "min_sarane_kharid": 100,        # میلیون تومان - سرانه خرید > این عدد
+    "min_sarane_kharid": 150,        # میلیون تومان - سرانه خرید > این عدد
     # اگه تعداد نمادهای معتبر از این کمتر بود (خرابی API)، ذخیره نمی‌شه تا تاریخچه خراب نشه
     "min_symbols_to_save": 100,
     # اگه تعداد نمادهای دریافتی از این نسبتِ تعداد روز قبل کمتر بود (احتمال شکست یک صنعت)،
