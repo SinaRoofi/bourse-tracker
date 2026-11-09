@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 FETCH_TIMEOUT = 10          # ثانیه
 FETCH_RETRIES = 1           # یک‌بار retry
 FETCH_RETRY_DELAY = 1       # ثانیه بین retry‌ها
-FETCH_MAX_WORKERS = 12      # تعداد thread‌های موازی (صنایع + صندوق‌ها با هم، ~48 درخواست)
+FETCH_MAX_WORKERS = 10      # تعداد thread‌های موازی (صنایع + صندوق‌ها با هم، ~48 درخواست)
 
 # بازه‌ی زمانی پیش‌فرض برای اندپوینت snapshot (روز معاملاتی)
 SNAPSHOT_TIMEFRAME = 12
