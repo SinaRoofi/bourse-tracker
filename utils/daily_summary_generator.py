@@ -15,6 +15,7 @@ from typing import Dict, List, Optional
 
 from utils.gist_alert_manager import WATCHLIST_COPY_SUFFIX
 from utils.tehran_time import tehran_today_str
+from utils.rich_summary import build_daily_summary_html, within_limits
 from utils.industry_market_fetcher import (
     IndustryMarketFetcher,
     RIAL_TO_MILLION_TOMAN,
@@ -788,25 +789,20 @@ class DailySummaryGenerator:
         return date_str, time_str
 
     # ------------------------------------------------------------------
-    # تولید و ارسال — هر سه پیام
+    # تولید و ارسال
     # ------------------------------------------------------------------
     async def generate_and_send(self, min_count: int = 3, top_n: int = None) -> bool:
         """
-        تولید و ارسال پنج پیام، به این ترتیب:
-          ۱. خلاصه معاملات بازار (از endpoint جدول صنایع + بخش «صنایع
-             پیشرو صف خرید» از داده‌ی Gist)
-          ۲. خلاصه معاملات صندوق‌ها (همون endpoint، جدا از صنایع - چون
-             رفتار معاملاتی صندوق‌ها خیلی متفاوته و قاطی کردنشون
-             میانگین‌های کل بازار رو منحرف می‌کنه)
-          ۳. برترین صنایع
-          ۴. Top-N برترین نمادهای هر فیلتر
-          ۵. خلاصه نمادهای پرتکرار (خلاصه هشدارها)
+        تولید و ارسال خلاصه‌ی روزانه.
 
-        داده‌ی Gist فقط یک‌بار در ابتدا لود می‌شه و بین محاسبات ۱، ۳، ۴، ۵
-        به اشتراک گذاشته می‌شه. industry_universe هم یک‌بار لود می‌شه و
-        بین پیام‌های ۱ و ۳ مشترکه. پیام‌های ۱ و ۲ منبع داده‌ی کاملاً
-        جدایی دارن (IndustryMarketFetcher) و با یک fetch مستقل، بعد
-        split شدن به صنایع/صندوق‌ها، تولید می‌شن.
+        مسیر اصلی: همه‌ی بخش‌ها (خلاصه‌ی بازار، صندوق‌ها، برترین صنایع،
+        برترین نمادها، نمادهای پرتکرار) در «یک» Rich Message با جدول و بلاک
+        جمع‌شونده ارسال می‌شن. اگه ساخت پیام ریچ، محدودیت‌های تلگرام، یا ارسال
+        ریچ شکست بخوره، همون ۵ پیام HTML قبلی (مسیر legacy) فرستاده می‌شه.
+
+        داده‌ی Gist و industry_universe فقط یک‌بار لود می‌شن و بین بخش‌ها
+        مشترکن؛ خلاصه‌ی بازار/صندوق‌ها منبع جداگانه‌ی خودشون رو دارن
+        (IndustryMarketFetcher، یک fetch مستقل).
 
         Returns:
             bool: True اگر همه‌ی پیام‌های قابل‌ارسال موفق باشند
@@ -819,11 +815,6 @@ class DailySummaryGenerator:
             ))
             industry_universe = await self.alert_manager.get_industry_universe()
 
-            # پیام ۱: خلاصه معاملات بازار + پیام ۲: خلاصه معاملات صندوق‌ها
-            # (industries-csv - جدا از داده‌ی Gist، به‌جز بخش «صنایع پیشرو
-            # صف خرید» که از همون data میاد و فقط تو پیام بازار هست)
-            success1 = True
-            success2 = True
             fetcher = IndustryMarketFetcher()
             try:
                 split_analysis = await asyncio.to_thread(fetcher.fetch_and_analyze_split)
@@ -837,81 +828,153 @@ class DailySummaryGenerator:
             funds_analysis = split_analysis.get("funds") if split_analysis else None
             combined_totals = split_analysis.get("combined_totals") if split_analysis else None
 
+            buy_queue_industries = None
             if industries_analysis:
                 queue_snapshot = await self.alert_manager.load_queue_snapshot()
                 buy_queue_industries = self.get_top_buy_queue_industries(
                     data, industry_universe=industry_universe, top_n=5,
                     queue_snapshot=queue_snapshot,
                 )
-                message1 = self.format_industry_market_summary_message(
-                    industries_analysis, combined_totals, buy_queue_industries
-                )
-                if message1:
-                    logger.info("📤 ارسال پیام خلاصه معاملات بازار...")
-                    success1 = await self.telegram.send_message(message1, parse_mode='HTML')
-                    if success1:
-                        logger.info("✅ پیام خلاصه معاملات بازار ارسال شد")
-                    else:
-                        logger.error("❌ خطا در ارسال پیام خلاصه معاملات بازار")
-            else:
-                logger.info("ℹ️ داده‌ای برای خلاصه معاملات بازار موجود نیست")
 
-            if funds_analysis:
-                message2 = self.format_funds_market_summary_message(funds_analysis)
-                if message2:
-                    logger.info("📤 ارسال پیام خلاصه معاملات صندوق‌ها...")
-                    success2 = await self.telegram.send_message(message2, parse_mode='HTML')
-                    if success2:
-                        logger.info("✅ پیام خلاصه معاملات صندوق‌ها ارسال شد")
-                    else:
-                        logger.error("❌ خطا در ارسال پیام خلاصه معاملات صندوق‌ها")
-            else:
-                logger.info("ℹ️ داده‌ای برای خلاصه معاملات صندوق‌ها موجود نیست")
-
-            # پیام ۳: برترین صنایع
             top_industries = self.get_top_industries(data, industry_universe, top_n=5)
-            message3 = self.format_top_industries_message(top_industries)
-
-            success3 = True
-            if message3:
-                logger.info("📤 ارسال پیام برترین صنایع...")
-                success3 = await self.telegram.send_message(message3, parse_mode='HTML')
-                if success3:
-                    logger.info("✅ پیام برترین صنایع ارسال شد")
-                else:
-                    logger.error("❌ خطا در ارسال پیام برترین صنایع")
-            else:
-                logger.info("ℹ️ داده‌ای برای برترین صنایع موجود نیست")
-
-            # پیام ۴: Top-5 هر فیلتر
             top_per_filter = self.get_top_symbols_per_filter(data, top_n=5)
-            message4 = self.format_top_filter_message(top_per_filter)
-
-            success4 = True
-            if message4:
-                logger.info("📤 ارسال پیام Top-5 فیلترها...")
-                success4 = await self.telegram.send_message(message4, parse_mode='HTML')
-                if success4:
-                    logger.info("✅ پیام Top-5 ارسال شد")
-                else:
-                    logger.error("❌ خطا در ارسال پیام Top-5")
-            else:
-                logger.info("ℹ️ داده‌ای برای Top-5 موجود نیست")
-
-            # پیام ۵: نمادهای پرتکرار (خلاصه هشدارها)
             frequent_symbols = self.get_frequent_symbols(data, min_count, top_n)
-            message5 = self.format_summary_message(frequent_symbols, total_unique_symbols)
 
-            logger.info("📤 ارسال پیام خلاصه نمادهای پرتکرار...")
-            success5 = await self.telegram.send_message(message5, parse_mode='HTML')
+            # ---- مسیر اصلی: یک Rich Message ----
+            rich_ok = await self._try_send_rich(
+                industries_analysis=industries_analysis,
+                funds_analysis=funds_analysis,
+                combined_totals=combined_totals,
+                buy_queue_industries=buy_queue_industries,
+                top_industries=top_industries,
+                top_per_filter=top_per_filter,
+                frequent_symbols=frequent_symbols,
+                total_unique_symbols=total_unique_symbols,
+            )
+            if rich_ok:
+                return True
 
-            if success5:
-                logger.info("✅ پیام خلاصه ارسال شد")
-            else:
-                logger.error("❌ خطا در ارسال پیام خلاصه")
-
-            return success1 and success2 and success3 and success4 and success5
+            # ---- fallback: همون ۵ پیام HTML قبلی ----
+            logger.warning("⚠️ ارسال Rich Message انجام نشد - ارسال با پیام‌های HTML قدیمی")
+            return await self._send_legacy_messages(
+                industries_analysis=industries_analysis,
+                funds_analysis=funds_analysis,
+                combined_totals=combined_totals,
+                buy_queue_industries=buy_queue_industries,
+                top_industries=top_industries,
+                top_per_filter=top_per_filter,
+                frequent_symbols=frequent_symbols,
+                total_unique_symbols=total_unique_symbols,
+            )
 
         except Exception as e:
             logger.error(f"❌ خطا در تولید گزارش خلاصه: {e}", exc_info=True)
             return False
+
+    async def _try_send_rich(
+        self,
+        *,
+        industries_analysis,
+        funds_analysis,
+        combined_totals,
+        buy_queue_industries,
+        top_industries,
+        top_per_filter,
+        frequent_symbols,
+        total_unique_symbols,
+    ) -> bool:
+        """ساخت و ارسال پیام ریچ؛ هر مشکلی (ساخت، محدودیت، ارسال) => False و بدون exception."""
+        try:
+            date_str, time_str = self._get_tehran_datetime()
+            rich_html = build_daily_summary_html(
+                industries_analysis=industries_analysis,
+                funds_analysis=funds_analysis,
+                combined_totals=combined_totals,
+                buy_queue_industries=buy_queue_industries,
+                top_industries=top_industries,
+                top_per_filter=top_per_filter,
+                frequent_symbols=frequent_symbols,
+                total_unique_symbols=total_unique_symbols,
+                filter_meta=FILTER_META,
+                medals=RANK_MEDALS,
+                date_str=date_str,
+                time_str=time_str,
+                channel_name=self.telegram.channel_name,
+            )
+            if not within_limits(rich_html):
+                logger.warning("⚠️ پیام ریچ از محدودیت تلگرام بزرگ‌تره")
+                return False
+            logger.info("📤 ارسال خلاصه‌ی روزانه (Rich Message)...")
+            ok = await self.telegram.send_rich_message(rich_html)
+            if ok:
+                logger.info("✅ خلاصه‌ی روزانه (Rich Message) ارسال شد")
+            return ok
+        except Exception as e:
+            logger.error(f"❌ خطا در مسیر Rich Message: {e}", exc_info=True)
+            return False
+
+    async def _send_legacy_messages(
+        self,
+        *,
+        industries_analysis,
+        funds_analysis,
+        combined_totals,
+        buy_queue_industries,
+        top_industries,
+        top_per_filter,
+        frequent_symbols,
+        total_unique_symbols,
+    ) -> bool:
+        """مسیر قدیمی: ۵ پیام HTML جدا (بازار، صندوق‌ها، صنایع، Top-5 فیلترها، پرتکرارها)."""
+        success1 = True
+        success2 = True
+
+        if industries_analysis:
+            message1 = self.format_industry_market_summary_message(
+                industries_analysis, combined_totals, buy_queue_industries
+            )
+            if message1:
+                logger.info("📤 ارسال پیام خلاصه معاملات بازار...")
+                success1 = await self.telegram.send_message(message1, parse_mode='HTML')
+                if not success1:
+                    logger.error("❌ خطا در ارسال پیام خلاصه معاملات بازار")
+        else:
+            logger.info("ℹ️ داده‌ای برای خلاصه معاملات بازار موجود نیست")
+
+        if funds_analysis:
+            message2 = self.format_funds_market_summary_message(funds_analysis)
+            if message2:
+                logger.info("📤 ارسال پیام خلاصه معاملات صندوق‌ها...")
+                success2 = await self.telegram.send_message(message2, parse_mode='HTML')
+                if not success2:
+                    logger.error("❌ خطا در ارسال پیام خلاصه معاملات صندوق‌ها")
+        else:
+            logger.info("ℹ️ داده‌ای برای خلاصه معاملات صندوق‌ها موجود نیست")
+
+        success3 = True
+        message3 = self.format_top_industries_message(top_industries)
+        if message3:
+            logger.info("📤 ارسال پیام برترین صنایع...")
+            success3 = await self.telegram.send_message(message3, parse_mode='HTML')
+            if not success3:
+                logger.error("❌ خطا در ارسال پیام برترین صنایع")
+        else:
+            logger.info("ℹ️ داده‌ای برای برترین صنایع موجود نیست")
+
+        success4 = True
+        message4 = self.format_top_filter_message(top_per_filter)
+        if message4:
+            logger.info("📤 ارسال پیام Top-5 فیلترها...")
+            success4 = await self.telegram.send_message(message4, parse_mode='HTML')
+            if not success4:
+                logger.error("❌ خطا در ارسال پیام Top-5")
+        else:
+            logger.info("ℹ️ داده‌ای برای Top-5 موجود نیست")
+
+        message5 = self.format_summary_message(frequent_symbols, total_unique_symbols)
+        logger.info("📤 ارسال پیام خلاصه نمادهای پرتکرار...")
+        success5 = await self.telegram.send_message(message5, parse_mode='HTML')
+        if not success5:
+            logger.error("❌ خطا در ارسال پیام خلاصه")
+
+        return success1 and success2 and success3 and success4 and success5
