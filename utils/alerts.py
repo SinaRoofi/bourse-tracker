@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
+import aiohttp
 import pandas as pd
 import jdatetime
 import pytz
@@ -931,6 +932,69 @@ class TelegramAlert:
             except Exception as retry_error:
                 logger.error(f"❌ خطا در تلاش مجدد: {retry_error}")
                 return False
+
+    # ------------------------------------------------------------
+    # Rich Message (Bot API 10.1+)
+    # ------------------------------------------------------------
+    # python-telegram-bot==20.3 متد sendRichMessage رو نداره، پس مستقیم به
+    # Bot API درخواست می‌زنیم. قفل per-chat و فاصله‌ی بین ارسال‌ها همون
+    # _send_single هست تا با ارسال‌های دیگه به همون چت تداخل flood نسازه.
+    RICH_API_TIMEOUT_SECONDS = 30
+
+    async def send_rich_message(self, html_content: str, chat_id: str = None) -> bool:
+        """
+        ارسال یک Rich Message (فیلد html). True فقط وقتی تلگرام ok=True بده.
+        روی هر خطا False برمی‌گردونه تا صدازننده بتونه به مسیر قدیمی (HTML ساده) برگرده.
+        """
+        target_chat_id = chat_id or self.chat_id
+        chat_lock = self._get_chat_lock(target_chat_id)
+        url = f"https://api.telegram.org/bot{self.bot_token}/sendRichMessage"
+        payload = {
+            "chat_id": target_chat_id,
+            "rich_message": {"html": html_content, "is_rtl": True},
+        }
+
+        async with chat_lock:
+            last_sent = self._chat_last_sent.get(target_chat_id)
+            if last_sent is not None:
+                remaining = self.SEND_DELAY_SECONDS - (time.monotonic() - last_sent)
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
+
+            timeout = aiohttp.ClientTimeout(total=self.RICH_API_TIMEOUT_SECONDS)
+            for attempt in (1, 2):
+                try:
+                    async with self._global_semaphore:
+                        async with aiohttp.ClientSession(timeout=timeout) as session:
+                            async with session.post(url, json=payload) as resp:
+                                data = await resp.json(content_type=None)
+                except asyncio.TimeoutError:
+                    logger.warning("⚠️ Rich Message: Timeout (تلاش %d)", attempt)
+                    if attempt == 1:
+                        await asyncio.sleep(2)
+                        continue
+                    return False
+                except Exception as e:
+                    # متن خطا ممکنه URL (شامل توکن) داشته باشه؛ فقط نوع خطا لاگ می‌شه
+                    logger.error("❌ Rich Message: خطای شبکه (%s)", type(e).__name__)
+                    return False
+
+                if isinstance(data, dict) and data.get("ok"):
+                    self._chat_last_sent[target_chat_id] = time.monotonic()
+                    return True
+
+                description = data.get("description") if isinstance(data, dict) else None
+                retry_after = None
+                if isinstance(data, dict):
+                    retry_after = (data.get("parameters") or {}).get("retry_after")
+                if retry_after and attempt == 1:
+                    logger.warning("⚠️ Rich Message: flood control، انتظار %s ثانیه", retry_after)
+                    await asyncio.sleep(float(retry_after))
+                    continue
+
+                logger.error("❌ Rich Message رد شد: %s", description or "پاسخ نامعتبر")
+                return False
+        return False
 
     # ------------------------------------------------------------
     # موتور رندر مشترک
