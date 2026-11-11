@@ -234,35 +234,40 @@ async def _queue_filter_tasks(
     skipped_count: int,
 ) -> int:
     """
-    df رو chunk می‌کنه، برای هر نماد dedup چک می‌کنه، و task ارسال برای
-    chunkهایی که چیزی برای ارسال دارن به all_tasks اضافه می‌کنه.
+    برای هر نماد dedup چک می‌کنه، «بعد» نمادهای باقی‌مونده رو chunk می‌کنه و برای
+    هر chunk یک task ارسال به all_tasks اضافه می‌کنه.
+
+    ترتیب مهمه: اگه اول chunk بشه و بعد نمادهای قبلاً‌ارسال‌شده حذف بشن، chunkها
+    نیمه‌خالی می‌مونن (مثلاً ۱–۲ نماد تو هر پیام) و تعداد پیام‌ها بی‌دلیل زیاد
+    می‌شه؛ چون ارسال به هر چت سریالیه (~۱.۶ ثانیه/پیام)، زمان اجرا مستقیم بالا می‌ره.
+    ترتیب نمادها و اندازه‌ی chunk (STOCKS_PER_MESSAGE_MAP) تغییری نکرده.
     مقدار جدید skipped_count رو برمی‌گردونه (چون int تو پایتون immutable هست).
     """
-    for chunk_idx, chunk_df in enumerate(chunk_dataframe(df, filter_name), 1):
-        symbols_to_send = []
-
-        for _, row in chunk_df.iterrows():
-            symbol = row["symbol"]
-            if not await alert_manager.should_send_alert(symbol, dedup_type):
-                logger.info(f"⏭️  {symbol}: قبلاً امروز ارسال شده ({dedup_type})")
-                skipped_count += 1
-            else:
-                symbols_to_send.append(symbol)
-
-        if symbols_to_send:
-            chunk_to_send = chunk_df[chunk_df["symbol"].isin(symbols_to_send)]
-            task = alert.send_filter_alert(
-                chunk_to_send, filter_name, chat_id=chat_id, channel_label=channel_label
-            )
-            all_tasks.append(
-                (task, symbols_to_send, dedup_type, filter_name, chunk_idx, chunk_to_send, value_col)
-            )
-            logger.info(
-                f"📋 Task ایجاد شد برای {filter_name} [{dedup_type}] گروه {chunk_idx}: "
-                f"{len(symbols_to_send)} سهم"
-            )
+    unsent_positions = []
+    for pos, symbol in enumerate(df["symbol"].tolist()):
+        if not await alert_manager.should_send_alert(symbol, dedup_type):
+            logger.info(f"⏭️  {symbol}: قبلاً امروز ارسال شده ({dedup_type})")
+            skipped_count += 1
         else:
-            logger.info(f"⏭️  {filter_name} [{dedup_type}] گروه {chunk_idx}: همه قبلاً ارسال شده‌اند")
+            unsent_positions.append(pos)
+
+    if not unsent_positions:
+        logger.info(f"⏭️  {filter_name} [{dedup_type}]: همه قبلاً ارسال شده‌اند")
+        return skipped_count
+
+    unsent_df = df.iloc[unsent_positions]
+    for chunk_idx, chunk_to_send in enumerate(chunk_dataframe(unsent_df, filter_name), 1):
+        symbols_to_send = chunk_to_send["symbol"].tolist()
+        task = alert.send_filter_alert(
+            chunk_to_send, filter_name, chat_id=chat_id, channel_label=channel_label
+        )
+        all_tasks.append(
+            (task, symbols_to_send, dedup_type, filter_name, chunk_idx, chunk_to_send, value_col)
+        )
+        logger.info(
+            f"📋 Task ایجاد شد برای {filter_name} [{dedup_type}] گروه {chunk_idx}: "
+            f"{len(symbols_to_send)} سهم"
+        )
 
     return skipped_count
 
