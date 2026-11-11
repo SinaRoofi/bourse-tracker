@@ -1,0 +1,41 @@
+name: Fetch Compare Test
+
+# فقط دستی. تست یک‌بارمصرف: requests در برابر curl_cffi روی همون endpointهای پروژه.
+# چیزی به تلگرام نمی‌فرسته و Gist رو دست نمی‌زنه (فقط API_BASE_URL لازم داره).
+# نکته: وقتی workflow اصلی (Bourse Tracker) در حال اجراست نزن، تا بار اضافه نتیجه رو مخدوش نکنه.
+on:
+  workflow_dispatch:
+    inputs:
+      workers:
+        description: "تعداد درخواست همزمان (پروژه الان ۱۲ استفاده می‌کنه)"
+        default: "12"
+      rounds:
+        description: "تعداد دورهای تست (هر دور هر دو کلاینت)"
+        default: "2"
+
+concurrency:
+  group: fetch-compare
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: pip install --disable-pip-version-check -q requests==2.31.0 python-dotenv==1.0.0 curl_cffi
+
+      - name: Compare
+        run: python scripts/fetch_compare.py
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          WORKERS: ${{ inputs.workers }}
+          ROUNDS: ${{ inputs.rounds }}
