@@ -99,10 +99,10 @@ def _get_json(
             )
 
         except Exception as e:
-            logger.warning(
-                f"⚠️ {host}: {type(e).__name__} "
-                f"(تلاش {attempt})"
-            )
+    logger.warning(
+        f"⚠️ {host}: {type(e).__name__}: {e} "
+        f"(تلاش {attempt})"
+    )
 
         if attempt <= retries:
             time.sleep(2)
