@@ -59,25 +59,57 @@ def _num(value: Any) -> Optional[float]:
         return None
 
 
-def _get_json(url: str, timeout: float = FETCH_TIMEOUT, retries: int = FETCH_RETRIES) -> Optional[dict]:
+
+def _get_json(
+    url: str,
+    timeout: float = FETCH_TIMEOUT,
+    retries: int = FETCH_RETRIES
+) -> Optional[dict]:
+
     host = url.split("/")[2]
+
     for attempt in range(1, retries + 2):
         try:
-            resp = requests.get(url, headers=HEADERS, timeout=timeout)
+            resp = requests.get(
+                url,
+                impersonate="chrome",
+                timeout=timeout,
+                headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/131.0.0.0 Safari/537.36"
+                    ),
+                    "Accept": "application/json, text/plain, */*",
+                    "Accept-Language": "fa-IR,fa;q=0.9,en-US;q=0.8",
+                }
+            )
+
             if resp.status_code == 200:
                 data = resp.json()
+
                 if isinstance(data, dict):
                     return data
+
                 logger.warning(f"⚠️ پاسخ نامعتبر از {host}")
                 return None
-            logger.warning(f"⚠️ {host}: HTTP {resp.status_code} (تلاش {attempt})")
-        except requests.exceptions.Timeout:
-            logger.warning(f"⏱️ {host}: Timeout (تلاش {attempt})")
-        except Exception as e:  # متن خطا ممکنه URL داشته باشه؛ فقط نوعش
-            logger.warning(f"⚠️ {host}: {type(e).__name__} (تلاش {attempt})")
+
+            logger.warning(
+                f"⚠️ {host}: HTTP {resp.status_code} "
+                f"(تلاش {attempt})"
+            )
+
+        except Exception as e:
+            logger.warning(
+                f"⚠️ {host}: {type(e).__name__} "
+                f"(تلاش {attempt})"
+            )
+
         if attempt <= retries:
-            time.sleep(1)
+            time.sleep(2)
+
     return None
+
 
 
 # ----------------------------------------------------------------------
