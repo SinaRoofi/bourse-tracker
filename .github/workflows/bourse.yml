@@ -1,107 +1,71 @@
 name: Bourse Tracker
 on:
-  workflow_dispatch:
-    inputs:
-      force_summary:
-        description: "فورس ارسال خلاصه روزانه (بدون چک ساعت/روز/قفل) - فقط برای تست"
-        type: boolean
-        default: false
-  repository_dispatch:
-    types: [run-tracker]
+workflow_dispatch:
+inputs:
+force_summary:
+description: "فورس ارسال خلاصه روزانه (بدون چک ساعت/روز/قفل) - فقط برای تست"
+type: boolean
+default: false
+repository_dispatch:
+types: [run-tracker]
 
 concurrency:
-  group: bourse-tracker
-  cancel-in-progress: false
+group: bourse-tracker
+cancel-in-progress: false
 
 jobs:
-  run-bourse-tracker:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30  # فقط ضد گیرِ طولانی (پیش‌فرض GitHub ۶ ساعته)؛ اجرای عادی چند دقیقه‌ست
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+run-bourse-tracker:
+runs-on: ubuntu-latest
+timeout-minutes: 30  # فقط ضد گیرِ طولانی (پیش‌فرض GitHub ۶ ساعته)؛ اجرای عادی چند دقیقه‌ست
+steps:
+- uses: actions/checkout@v4
+with:
+fetch-depth: 1
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-          cache-dependency-path: requirements.txt
+- uses: actions/setup-python@v5  
+    with:  
+      python-version: "3.11"  
+      cache: "pip"  
+      cache-dependency-path: requirements.txt  
 
-      - name: Install Dependencies
-        run: pip install --disable-pip-version-check -q -r requirements.txt
-            - name: Diagnose Tablokhani
-        run: |
-          python - <<'PY'
-          import requests
-          import time
-          import socket
+  - name: Install Dependencies  
+    run: pip install --disable-pip-version-check -q -r requirements.txt  
 
-          host = "api.tablokhani.com"
-          url = "https://api.tablokhani.com/public/market-indices"
+  - name: Run Filters  
+    timeout-minutes: 4  
+    run: python main.py  
+    env:  
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}  
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}  
+      ERROR_CHAT_ID: ${{ secrets.ERROR_CHAT_ID }}  
+      WATCHLIST_CHAT_ID: ${{ secrets.WATCHLIST_CHAT_ID }}  
+      API_BASE_URL: ${{ secrets.API_BASE_URL }}  
+      GIST_ID: ${{ secrets.GIST_ID }}  
+      GIST_TOKEN: ${{ secrets.GIST_TOKEN }}  
+      QUEUE_GIST_ID: ${{ secrets.QUEUE_GIST_ID }}  
+      QUEUE_GIST_TOKEN: ${{ secrets.QUEUE_GIST_TOKEN }}  
 
-          try:
-              print("DNS:", socket.getaddrinfo(host, 443))
-          except Exception as e:
-              print("DNS ERROR:", repr(e))
+  - name: Send Daily Summary  
+    if: always()  
+    # عمداً بدون timeout: اکشن آخرین‌بار ~۱۲:۳۱ اجرا می‌شه و باید کامل تموم بشه (کنسل وسط ارسال = ارسال دوباره/ذخیره‌ی ناقص)  
+    run: python daily_summary_main.py  
+    env:  
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}  
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}  
+      ERROR_CHAT_ID: ${{ secrets.ERROR_CHAT_ID }}  
+      API_BASE_URL: ${{ secrets.API_BASE_URL }}  
+      GIST_ID: ${{ secrets.GIST_ID }}  
+      GIST_TOKEN: ${{ secrets.GIST_TOKEN }}  
+      QUEUE_GIST_ID: ${{ secrets.QUEUE_GIST_ID }}  
+      QUEUE_GIST_TOKEN: ${{ secrets.QUEUE_GIST_TOKEN }}  
+      FORCE_SUMMARY: ${{ inputs.force_summary || 'false' }}  
 
-          for i in range(1, 4):
-              start = time.time()
-              try:
-                  r = requests.get(
-                      url,
-                      headers={"User-Agent": "Mozilla/5.0"},
-                      timeout=(10, 20)
-                  )
-                  print(
-                      f"Attempt {i}: HTTP {r.status_code}, "
-                      f"Time: {time.time()-start:.2f}s"
-                  )
-                  print("Response:", r.text[:200])
-
-              except Exception as e:
-                  print(
-                      f"Attempt {i}: {type(e).__name__}: {e}, "
-                      f"Time: {time.time()-start:.2f}s"
-                  )
-
-              time.sleep(2)
-          PY
-      - name: Run Filters
-        timeout-minutes: 4
-        run: python main.py
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          ERROR_CHAT_ID: ${{ secrets.ERROR_CHAT_ID }}
-          WATCHLIST_CHAT_ID: ${{ secrets.WATCHLIST_CHAT_ID }}
-          API_BASE_URL: ${{ secrets.API_BASE_URL }}
-          GIST_ID: ${{ secrets.GIST_ID }}
-          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
-          QUEUE_GIST_ID: ${{ secrets.QUEUE_GIST_ID }}
-          QUEUE_GIST_TOKEN: ${{ secrets.QUEUE_GIST_TOKEN }}
-
-      - name: Send Daily Summary
-        if: always()
-        # عمداً بدون timeout: اکشن آخرین‌بار ~۱۲:۳۱ اجرا می‌شه و باید کامل تموم بشه (کنسل وسط ارسال = ارسال دوباره/ذخیره‌ی ناقص)
-        run: python daily_summary_main.py
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          ERROR_CHAT_ID: ${{ secrets.ERROR_CHAT_ID }}
-          API_BASE_URL: ${{ secrets.API_BASE_URL }}
-          GIST_ID: ${{ secrets.GIST_ID }}
-          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
-          QUEUE_GIST_ID: ${{ secrets.QUEUE_GIST_ID }}
-          QUEUE_GIST_TOKEN: ${{ secrets.QUEUE_GIST_TOKEN }}
-          FORCE_SUMMARY: ${{ inputs.force_summary || 'false' }}
-
-      - if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: error-logs-${{ github.run_number }}
-          path: |
-            bourse_tracker.log
-            daily_summary.log
-          retention-days: 2
-          compression-level: 9
+  - if: failure()  
+    uses: actions/upload-artifact@v4  
+    with:  
+      name: error-logs-${{ github.run_number }}  
+      path: |  
+        bourse_tracker.log  
+        daily_summary.log  
+      retention-days: 2  
+      compression-level: 9
