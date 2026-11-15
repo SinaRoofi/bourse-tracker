@@ -28,11 +28,11 @@ INDICES_URL = "https://api.tablokhani.com/public/market-indices"
 TOTALS_URL = "https://tradersarena.ir/data/market/chart/totals0"
 OPTIONS_URL = "https://api.optionbaaz.ir/market-overview"
 
-FETCH_TIMEOUT = 30  # ثانیه
+FETCH_TIMEOUT = 25  # ثانیه (برای داده‌های اصلی بعد بازار)
 FETCH_RETRIES = 1   # یک‌بار retry
 
-# چک وضعیت بازار تو هر اجرای main.py: کوتاه و بدون retry، تا اجرا رو کند نکنه
-STATE_TIMEOUT = 5
+# چک وضعیت بازار تو هر اجرای main.py: کوتاه تا اجرا رو کند نکنه
+STATE_TIMEOUT = 10
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
@@ -71,7 +71,7 @@ def _get_json(
         try:
             resp = cffi_requests.get(
                 url,
-                impersonate="chrome",
+                # impersonate="chrome",  # موقتاً غیرفعال شد چون روی Actions تایم‌اوت می‌داد
                 timeout=timeout,
                 headers={
                     "User-Agent": (
