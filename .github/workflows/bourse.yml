@@ -32,45 +32,6 @@ jobs:
       - name: Install Dependencies
         run: pip install --disable-pip-version-check -q -r requirements.txt
 
-      # تست مستقیم اتصال به API تابلوخوانی
-      - name: Diagnose Tablokhani
-        run: |
-          python - <<'PY'
-          import requests
-          import time
-          import socket
-
-          host = "api.tablokhani.com"
-          url = "https://api.tablokhani.com/public/market-indices"
-
-          try:
-              print("DNS:", socket.getaddrinfo(host, 443))
-          except Exception as e:
-              print("DNS ERROR:", repr(e))
-
-          for i in range(1, 4):
-              start = time.time()
-              try:
-                  r = requests.get(
-                      url,
-                      headers={"User-Agent": "Mozilla/5.0"},
-                      timeout=(10, 20)
-                  )
-                  print(
-                      f"Attempt {i}: HTTP {r.status_code}, "
-                      f"Time: {time.time()-start:.2f}s"
-                  )
-                  print("Response:", r.text[:200])
-
-              except Exception as e:
-                  print(
-                      f"Attempt {i}: {type(e).__name__}: {e}, "
-                      f"Time: {time.time()-start:.2f}s"
-                  )
-
-              time.sleep(2)
-          PY
-
       - name: Run Filters
         timeout-minutes: 4
         run: python main.py
