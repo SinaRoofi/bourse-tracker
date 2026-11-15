@@ -14,6 +14,7 @@ import re
 from typing import Callable, Dict, List, Optional
 
 from utils.industry_market_fetcher import RIAL_TO_MILLION_TOMAN, RIAL_TO_TRILLION_TOMAN
+from utils.market_overview import SECTION_TITLES, overview_sections
 
 # سقف‌های مستندشده‌ی تلگرام: ۳۲۷۶۸ کاراکتر متن و ۵۰۰ بلاک (ردیف جدول و آیتم لیست هم بلاک حساب می‌شن).
 # کمی پایین‌تر از سقف نگه می‌داریم تا اگه پیام بزرگ شد، به‌جای رد شدن، fallback بشه.
@@ -113,6 +114,43 @@ def _combined_totals_table(combined_totals: Dict) -> str:
     return _table(["شاخص", "مقدار", f"نسبت به {MA20}"], rows)
 
 
+# ----------------------------------------------------------------------
+# نمای کلی بازار (مقدارها مستقیم از API؛ بخش‌ها از utils/market_overview.py)
+# ----------------------------------------------------------------------
+def _arrow_pct(percent: float) -> str:
+    arrow = "▲" if percent >= 0 else "▼"
+    return f"{arrow} {abs(percent):.2f}٪"
+
+
+def indices_table(indices: Optional[List[dict]]) -> str:
+    """جدول کوچک شاخص‌ها: شاخص کل، هم‌وزن، فرابورس + درصد تغییر."""
+    if not indices:
+        return ""
+    rows = [
+        [_e(i["name"]), f"{i['value']:,.0f}", _arrow_pct(i["percent"])]
+        for i in indices
+    ]
+    return "<h4>📈 شاخص‌ها</h4>" + _table(["شاخص", "مقدار", "تغییر"], rows)
+
+
+def section_table(key: str, section: dict) -> str:
+    """یک «بخش» نمای کلی (market_overview.overview_sections) -> عنوان + جدول."""
+    headers = [
+        f"{h} ({u})" if u else h
+        for h, u in zip(section["headers"], section["units"])
+    ]
+    rows = [[_e(cell) for cell in row] for row in section["rows"]]
+    html_out = f"<h4>{_e(SECTION_TITLES[key])}</h4>" + _table([_e(h) for h in headers], rows)
+    if section.get("note"):
+        html_out += f"<p>{_e(section['note'])}</p>"
+    return html_out
+
+
+def overview_tables(overview: Optional[Dict]) -> str:
+    """معاملات کل بازار + پول/سرانه/صف + بازار آپشن؛ خالی = هیچ داده‌ای نیومد."""
+    return "".join(section_table(key, section) for key, section in overview_sections(overview))
+
+
 def _market_blocks(
     analysis: Dict,
     unit_label: str,
@@ -120,12 +158,18 @@ def _market_blocks(
     show_breadth: bool,
     buy_queue_industries: Optional[List[dict]],
     top_n: int,
+    market_overview: Optional[Dict] = None,
 ) -> str:
     """بدنه‌ی پیام خلاصه‌ی بازار؛ هر بخشِ خالی کلاً حذف می‌شه (مثل نسخه‌ی قبلی)."""
     out = []
     breadth = analysis.get("breadth", {})
 
-    if combined_totals:
+    overview_html = overview_tables(market_overview)
+    if overview_html:
+        # مقدارهای مستقیم از API؛ محاسبه‌ی قدیمی (combined_totals) دیگه لازم نیست
+        out.append(overview_html)
+    elif combined_totals:
+        # fallback: API نیومد => همون جدول محاسبه‌شده‌ی قبلی
         out.append("<h4>📌 کل بازار</h4>" + _combined_totals_table(combined_totals))
 
     total_active = breadth.get("total_active", 0)
@@ -307,6 +351,7 @@ def build_daily_summary_html(
     time_str: str,
     channel_name: str,
     top_n: int = 8,
+    market_overview: Optional[Dict] = None,
 ) -> str:
     """
     خلاصه‌ی روزانه رو در یک پیام Rich برمی‌گردونه. صندوق‌ها و هر فیلتر در
@@ -314,10 +359,19 @@ def build_daily_summary_html(
     """
     parts = [f"<h2>📅 خلاصه روزانه بازار — {_e(date_str)}</h2>"]
 
+    # جدول کوچک شاخص‌ها اولِ پیام
+    parts.append(indices_table((market_overview or {}).get("indices")))
+
     if industries_analysis:
         body = _market_blocks(
-            industries_analysis, "صنعت", combined_totals, True, buy_queue_industries, top_n
+            industries_analysis, "صنعت", combined_totals, True, buy_queue_industries, top_n,
+            market_overview=market_overview,
         )
+        if body:
+            parts.append("<h3>📊 خلاصه معاملات بازار</h3>" + body)
+    else:
+        # داده‌ی صنایع نیومد ولی جدول‌های مستقیم API هست => اون‌ها رو نشون بده
+        body = overview_tables(market_overview)
         if body:
             parts.append("<h3>📊 خلاصه معاملات بازار</h3>" + body)
 
