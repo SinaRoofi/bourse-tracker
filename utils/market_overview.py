@@ -32,7 +32,7 @@ FETCH_TIMEOUT = 30  # ثانیه
 FETCH_RETRIES = 1   # یک‌بار retry
 
 # چک وضعیت بازار تو هر اجرای main.py: کوتاه و بدون retry، تا اجرا رو کند نکنه
-STATE_TIMEOUT = 30
+STATE_TIMEOUT = 25
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
@@ -99,10 +99,10 @@ def _get_json(
             )
 
         except Exception as e:
-    logger.warning(
-        f"⚠️ {host}: {type(e).__name__}: {e} "
-        f"(تلاش {attempt})"
-    )
+            logger.warning(
+                f"⚠️ {host}: {type(e).__name__}: {e} "
+                f"(تلاش {attempt})"
+            )
 
         if attempt <= retries:
             time.sleep(2)
