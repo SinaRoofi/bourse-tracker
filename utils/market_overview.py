@@ -32,7 +32,7 @@ FETCH_TIMEOUT = 20  # ثانیه
 FETCH_RETRIES = 1   # یک‌بار retry
 
 # چک وضعیت بازار تو هر اجرای main.py: کوتاه و بدون retry، تا اجرا رو کند نکنه
-STATE_TIMEOUT = 3
+STATE_TIMEOUT = 10
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
