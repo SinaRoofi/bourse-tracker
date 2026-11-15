@@ -17,9 +17,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
+
 from curl_cffi import requests as cffi_requests
-# import requests   ← این خط رو حذف کن یا نگه دار اگر جای دیگه لازم داری
-import requests
 
 from utils.industry_market_fetcher import RIAL_TO_MILLION_TOMAN, RIAL_TO_TRILLION_TOMAN
 
@@ -58,7 +57,6 @@ def _num(value: Any) -> Optional[float]:
         return float(text) * multiplier
     except ValueError:
         return None
-
 
 
 def _get_json(
@@ -110,7 +108,6 @@ def _get_json(
             time.sleep(2)
 
     return None
-
 
 
 # ----------------------------------------------------------------------
