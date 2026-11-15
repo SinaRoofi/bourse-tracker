@@ -10,6 +10,8 @@ import pandas as pd
 from config import (
     MARKET_START_TIME,
     MARKET_END_TIME,
+    FILTER_SEND_ORDER,
+    MARKET_CLOSED_STATES,
     API_BASE_URL,
     ERROR_CHAT_ID,
     GIST_ID,
@@ -24,6 +26,7 @@ from config import (
     validate_config,
 )
 from utils.holidays import is_trading_day
+from utils.market_overview import fetch_market_state
 from utils.data_fetcher import UnifiedDataFetcher
 from utils.data_processor import BourseDataProcessor
 from utils.alerts import TelegramAlert
@@ -142,6 +145,19 @@ def is_market_open() -> bool:
     if not (MARKET_START_TIME <= current_time <= MARKET_END_TIME):
         logger.info(f"خارج از ساعات کاری بازار (ساعت تهران: {current_time})")
         return False
+
+    # وضعیت واقعی بازار از API: فقط می‌تونه اجرا رو «متوقف» کنه (تعطیلی ثبت‌نشده در تقویم، توقف بازار)،
+    # هیچ‌وقت بازشدن رو تأیید یا اجبار نمی‌کنه. نیومدن API یا وضعیت ناشناخته = فقط ساعت/تقویم.
+    api_state = fetch_market_state()
+    if api_state is None:
+        logger.info("ℹ️ وضعیت بازار از API نیومد - فقط ساعت و تقویم")
+    elif api_state in MARKET_CLOSED_STATES:
+        logger.info(f"⏸️  API می‌گه بازار بسته است (state='{api_state}')")
+        return False
+    elif api_state == "open":
+        logger.info("🏛️ وضعیت بازار از API: open")
+    else:
+        logger.warning(f"⚠️ وضعیت ناشناخته‌ی بازار از API: '{api_state}' (طبق ساعت باز است؛ ادامه)")
 
     jnow = jdatetime.datetime.fromgregorian(datetime=now.replace(tzinfo=None))
     logger.info(f"✅ بازار باز است - {jnow.strftime('%Y-%m-%d')} {current_time}")
@@ -350,6 +366,10 @@ async def send_alerts_for_filters_async(
                 )
 
     if all_tasks:
+        # ترتیب ارسال طبق FILTER_SEND_ORDER (sort پایدار: خارج از لیست = بعد از همه، با ترتیب قبلی)
+        send_rank = {name: i for i, name in enumerate(FILTER_SEND_ORDER)}
+        all_tasks.sort(key=lambda t: send_rank.get(t[3], len(send_rank)))
+        alert.set_batch_size(len(all_tasks))
         logger.info(f"\n🚀 شروع ارسال موازی {len(all_tasks)} پیام...")
 
         tasks_only = [task for task, _, _, _, _, _, _ in all_tasks]
