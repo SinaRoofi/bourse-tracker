@@ -1,20 +1,94 @@
 name: Test APIs
 
 on:
-  workflow_dispatch:   # این خط مهمه - دکمه‌ی Run workflow رو فعال می‌کنه
+  workflow_dispatch:
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Test tablokhani
-        run: |
-          echo "=== Testing tablokhani ==="
-          curl -v -m 20 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-            "https://api.tablokhani.com/public/market-indices" || echo "TIMEOUT or FAILED"
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Test OptionBaaz
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install curl_cffi
+        run: pip install curl_cffi
+
+      - name: Test 1 - Plain curl (tablokhani)
         run: |
-          echo "=== Testing OptionBaaz ==="
-          curl -v -m 20 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-            "https://api.optionbaaz.ir/market-overview" || echo "TIMEOUT or FAILED"
+          echo "=== 1. Plain curl → tablokhani ==="
+          curl -s -m 15 -o /tmp/t1.json -w "HTTP %{http_code} | time=%{time_total}s\n" \
+            -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            "https://api.tablokhani.com/public/market-indices" || echo "FAILED"
+          head -c 200 /tmp/t1.json || true
+          echo ""
+
+      - name: Test 2 - Plain curl (optionbaaz)
+        run: |
+          echo "=== 2. Plain curl → optionbaaz ==="
+          curl -s -m 15 -o /tmp/t2.json -w "HTTP %{http_code} | time=%{time_total}s\n" \
+            -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            "https://api.optionbaaz.ir/market-overview" || echo "FAILED"
+          head -c 200 /tmp/t2.json || true
+          echo ""
+
+      - name: Test 3 - curl_cffi WITHOUT impersonate
+        run: |
+          echo "=== 3. curl_cffi بدون impersonate ==="
+          python - <<'EOF'
+          from curl_cffi import requests as cffi
+          import time
+          url = "https://api.tablokhani.com/public/market-indices"
+          start = time.time()
+          try:
+              r = cffi.get(url, timeout=15, headers={
+                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                  "Accept": "application/json"
+              })
+              print(f"✅ Status: {r.status_code} | time={time.time()-start:.2f}s")
+              print(r.text[:200])
+          except Exception as e:
+              print(f"❌ {type(e).__name__}: {e} | time={time.time()-start:.2f}s")
+          EOF
+
+      - name: Test 4 - curl_cffi WITH impersonate=chrome
+        run: |
+          echo "=== 4. curl_cffi با impersonate=chrome ==="
+          python - <<'EOF'
+          from curl_cffi import requests as cffi
+          import time
+          url = "https://api.tablokhani.com/public/market-indices"
+          start = time.time()
+          try:
+              r = cffi.get(url, impersonate="chrome", timeout=15, headers={
+                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                  "Accept": "application/json"
+              })
+              print(f"✅ Status: {r.status_code} | time={time.time()-start:.2f}s")
+              print(r.text[:200])
+          except Exception as e:
+              print(f"❌ {type(e).__name__}: {e} | time={time.time()-start:.2f}s")
+          EOF
+
+      - name: Test 5 - curl_cffi WITH impersonate=chrome110
+        run: |
+          echo "=== 5. curl_cffi با impersonate=chrome110 ==="
+          python - <<'EOF'
+          from curl_cffi import requests as cffi
+          import time
+          url = "https://api.tablokhani.com/public/market-indices"
+          start = time.time()
+          try:
+              r = cffi.get(url, impersonate="chrome110", timeout=15, headers={
+                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                  "Accept": "application/json"
+              })
+              print(f"✅ Status: {r.status_code} | time={time.time()-start:.2f}s")
+              print(r.text[:200])
+          except Exception as e:
+              print(f"❌ {type(e).__name__}: {e} | time={time.time()-start:.2f}s")
+          EOF
