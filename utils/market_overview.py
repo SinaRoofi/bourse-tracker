@@ -17,7 +17,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
-from curl_cffi import requests
+from curl_cffi import requests as cffi_requests
+# import requests   ← این خط رو حذف کن یا نگه دار اگر جای دیگه لازم داری
 import requests
 
 from utils.industry_market_fetcher import RIAL_TO_MILLION_TOMAN, RIAL_TO_TRILLION_TOMAN
@@ -70,7 +71,7 @@ def _get_json(
 
     for attempt in range(1, retries + 2):
         try:
-            resp = requests.get(
+            resp = cffi_requests.get(
                 url,
                 impersonate="chrome",
                 timeout=timeout,
