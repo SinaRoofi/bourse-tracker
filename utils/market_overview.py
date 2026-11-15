@@ -71,7 +71,7 @@ def _get_json(
         try:
             resp = cffi_requests.get(
                 url,
-                # impersonate="chrome",  # موقتاً غیرفعال شد چون روی Actions تایم‌اوت می‌داد
+                # impersonate="chrome",  # غیرفعال - روی Actions گاهی تایم‌اوت می‌داد
                 timeout=timeout,
                 headers={
                     "User-Agent": (
