@@ -1,4 +1,20 @@
-- name: Test OptionBaaz API
-  run: |
-    curl -v -m 20 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-      "https://api.optionbaaz.ir/market-overview" || echo "TIMEOUT or FAILED"
+name: Test APIs
+
+on:
+  workflow_dispatch:   # این خط مهمه - دکمه‌ی Run workflow رو فعال می‌کنه
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test tablokhani
+        run: |
+          echo "=== Testing tablokhani ==="
+          curl -v -m 20 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            "https://api.tablokhani.com/public/market-indices" || echo "TIMEOUT or FAILED"
+
+      - name: Test OptionBaaz
+        run: |
+          echo "=== Testing OptionBaaz ==="
+          curl -v -m 20 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            "https://api.optionbaaz.ir/market-overview" || echo "TIMEOUT or FAILED"
