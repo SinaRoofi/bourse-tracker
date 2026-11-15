@@ -28,7 +28,7 @@ INDICES_URL = "https://api.tablokhani.com/public/market-indices"
 TOTALS_URL = "https://tradersarena.ir/data/market/chart/totals0"
 OPTIONS_URL = "https://api.optionbaaz.ir/market-overview"
 
-FETCH_TIMEOUT = 10  # ثانیه
+FETCH_TIMEOUT = 20  # ثانیه
 FETCH_RETRIES = 1   # یک‌بار retry
 
 # چک وضعیت بازار تو هر اجرای main.py: کوتاه و بدون retry، تا اجرا رو کند نکنه
