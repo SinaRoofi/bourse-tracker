@@ -16,6 +16,7 @@ from typing import Dict, List, Optional
 from utils.gist_alert_manager import WATCHLIST_COPY_SUFFIX
 from utils.tehran_time import tehran_today_str
 from utils.rich_summary import build_daily_summary_html, within_limits
+from utils.market_overview import SECTION_TITLES, fetch_market_overview, overview_sections
 from utils.industry_market_fetcher import (
     IndustryMarketFetcher,
     RIAL_TO_MILLION_TOMAN,
@@ -561,6 +562,7 @@ class DailySummaryGenerator:
         combined_totals: Optional[Dict] = None,
         buy_queue_industries: Optional[List[dict]] = None,
         top_n: int = 8,
+        market_overview: Optional[Dict] = None,
     ) -> str:
         """پیام خلاصه‌ی معاملات صنایع - تنها جایی که «کل بازار» (ارزش/
         ورود پول/سرانه خرید صنایع+صندوق‌ها با هم، یک‌بار محاسبه‌شده)
@@ -575,7 +577,43 @@ class DailySummaryGenerator:
             show_breadth=True,
             buy_queue_industries=buy_queue_industries,
             top_n=top_n,
+            market_overview=market_overview,
         )
+
+    # ------------------------------------------------------------------
+    # نمای کلی بازار (مسیر قدیمی HTML): شاخص‌ها + معاملات + پول و سرانه از API
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _overview_indices_text(market_overview: Optional[Dict]) -> str:
+        indices = (market_overview or {}).get("indices")
+        if not indices:
+            return ""
+        lines = ["📈 <b>شاخص‌ها</b>"]
+        for i in indices:
+            arrow = "▲" if i["percent"] >= 0 else "▼"
+            lines.append(f"  • {i['name']}: {i['value']:,.0f} ({arrow} {abs(i['percent']):.2f}٪)")
+        return "\n".join(lines) + "\n\n"
+
+    @staticmethod
+    def _overview_market_text(market_overview: Optional[Dict]) -> str:
+        """معاملات کل بازار + پول/سرانه/صف + بازار آپشن (همون بخش‌های مسیر ریچ)؛ خالی = داده‌ای نیومد."""
+        out = ""
+        for key, section in overview_sections(market_overview):
+            headers, units, rows = section["headers"], section["units"], section["rows"]
+            out += f"<b>{SECTION_TITLES[key]}</b>\n"
+            for row in rows:
+                if len(row) == 2:
+                    out += f"  • {row[0]}: {row[1]}\n"
+                else:
+                    cells = [
+                        f"{h} {v}{(' ' + u) if u and v != '—' else ''}"
+                        for h, u, v in zip(headers[1:], units[1:], row[1:])
+                    ]
+                    out += f"  • {row[0]}: " + " | ".join(cells) + "\n"
+            if section.get("note"):
+                out += f"  ↳ {section['note']}\n"
+            out += "\n"
+        return out
 
     def format_funds_market_summary_message(self, funds_analysis: Dict, top_n: int = 8) -> str:
         """پیام خلاصه‌ی معاملات صندوق‌ها - جدا از صنایع، چون رفتار
@@ -603,6 +641,7 @@ class DailySummaryGenerator:
         show_breadth: bool = True,
         buy_queue_industries: Optional[List[dict]] = None,
         top_n: int = 8,
+        market_overview: Optional[Dict] = None,
     ) -> str:
         """
         فرمت پیام خلاصه‌ی بازار بر اساس داده‌ی سطح صنعت/صندوق (نه سطح
@@ -633,8 +672,13 @@ class DailySummaryGenerator:
 
         message = f"{header_emoji} <b>{title}</b>\n\n"
 
-        # ---- کل بازار - فقط تو پیام صنایع (combined_totals داده شده) ----
-        if combined_totals:
+        # ---- شاخص‌ها + معاملات/پول کل بازار از API (فقط پیام صنایع) ----
+        message += self._overview_indices_text(market_overview)
+        overview_market = self._overview_market_text(market_overview)
+        message += overview_market
+
+        # ---- کل بازار (محاسبه‌ی خودمون) - فقط fallback وقتی API نیومد ----
+        if combined_totals and not overview_market:
             total_value_hemat = combined_totals.get("total_value", 0.0) / RIAL_TO_TRILLION_TOMAN
             total_value_avg_month = combined_totals.get("total_value_avg_month", 0.0)
             total_value_ratio_pct = (
@@ -824,6 +868,15 @@ class DailySummaryGenerator:
             finally:
                 fetcher.close()
 
+            # نمای کلی بازار (شاخص‌ها + معاملات + پول/سرانه) مستقیم از API؛ خرابی => None
+            try:
+                market_overview = await asyncio.to_thread(
+                    fetch_market_overview, datetime.now(TEHRAN_TZ).date()
+                )
+            except Exception as e:
+                logger.error(f"❌ خطا در دریافت نمای کلی بازار: {type(e).__name__}")
+                market_overview = None
+
             industries_analysis = split_analysis.get("industries") if split_analysis else None
             funds_analysis = split_analysis.get("funds") if split_analysis else None
             combined_totals = split_analysis.get("combined_totals") if split_analysis else None
@@ -850,6 +903,7 @@ class DailySummaryGenerator:
                 top_per_filter=top_per_filter,
                 frequent_symbols=frequent_symbols,
                 total_unique_symbols=total_unique_symbols,
+                market_overview=market_overview,
             )
             if rich_ok:
                 return True
@@ -865,6 +919,7 @@ class DailySummaryGenerator:
                 top_per_filter=top_per_filter,
                 frequent_symbols=frequent_symbols,
                 total_unique_symbols=total_unique_symbols,
+                market_overview=market_overview,
             )
 
         except Exception as e:
@@ -882,6 +937,7 @@ class DailySummaryGenerator:
         top_per_filter,
         frequent_symbols,
         total_unique_symbols,
+        market_overview=None,
     ) -> bool:
         """ساخت و ارسال پیام ریچ؛ هر مشکلی (ساخت، محدودیت، ارسال) => False و بدون exception."""
         try:
@@ -900,6 +956,7 @@ class DailySummaryGenerator:
                 date_str=date_str,
                 time_str=time_str,
                 channel_name=self.telegram.channel_name,
+                market_overview=market_overview,
             )
             if not within_limits(rich_html):
                 logger.warning("⚠️ پیام ریچ از محدودیت تلگرام بزرگ‌تره")
@@ -924,6 +981,7 @@ class DailySummaryGenerator:
         top_per_filter,
         frequent_symbols,
         total_unique_symbols,
+        market_overview=None,
     ) -> bool:
         """مسیر قدیمی: ۵ پیام HTML جدا (بازار، صندوق‌ها، صنایع، Top-5 فیلترها، پرتکرارها)."""
         success1 = True
@@ -931,7 +989,8 @@ class DailySummaryGenerator:
 
         if industries_analysis:
             message1 = self.format_industry_market_summary_message(
-                industries_analysis, combined_totals, buy_queue_industries
+                industries_analysis, combined_totals, buy_queue_industries,
+                market_overview=market_overview,
             )
             if message1:
                 logger.info("📤 ارسال پیام خلاصه معاملات بازار...")
@@ -939,7 +998,17 @@ class DailySummaryGenerator:
                 if not success1:
                     logger.error("❌ خطا در ارسال پیام خلاصه معاملات بازار")
         else:
-            logger.info("ℹ️ داده‌ای برای خلاصه معاملات بازار موجود نیست")
+            # داده‌ی صنایع نیومد ولی شاخص‌ها/معاملات از API هست => همون‌ها رو بفرست
+            overview_only = (
+                self._overview_indices_text(market_overview) + self._overview_market_text(market_overview)
+            ).strip()
+            if overview_only:
+                logger.info("📤 ارسال پیام شاخص‌ها و معاملات کل بازار...")
+                success1 = await self.telegram.send_message(
+                    "📊 <b>خلاصه معاملات بازار</b>\n\n" + overview_only, parse_mode='HTML'
+                )
+            else:
+                logger.info("ℹ️ داده‌ای برای خلاصه معاملات بازار موجود نیست")
 
         if funds_analysis:
             message2 = self.format_funds_market_summary_message(funds_analysis)
