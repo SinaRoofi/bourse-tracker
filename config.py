@@ -1,6 +1,9 @@
 """
 تنظیمات پروژه Bourse Tracker
 
+ترتیب فایل: تلگرام ← API ← Gist ← زمان‌بندی و لاگ ← آستانه‌های مشترک ←
+صنایع و صندوق‌ها ← فیلترها (به ترتیب شماره) ← خلاصه‌ی بازار ← اعتبارسنجی.
+توضیح هر فیلتر بالای خودش آمده؛ داخل دیکشنری‌ها کامنت نیست.
 """
 
 import os
@@ -48,6 +51,40 @@ WORKING_DAYS = [0, 1, 2, 3, 4]
 
 LOG_LEVEL = "INFO"
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# وضعیت «بازار بسته» در پاسخ API (فیلد state بورس و فرابورس در api.tablokhani.com؛ مقدارها open/closed).
+# اگه ساعت و تقویم می‌گن باز، ولی هر دو بازار closed باشن، اجرا بدون بررسی خارج می‌شه. نیومدن API یا
+# وضعیت ناشناخته هیچ‌وقت جلوی اجرا رو نمی‌گیره (فقط ساعت/تقویم)؛ مقدار خام تو لاگ ثبت می‌شه.
+MARKET_CLOSED_STATES = ("closed",)
+
+# ========================================
+# ترتیب ارسال هشدارها
+# ========================================
+# پیام‌ها یکی‌یکی (با فاصله) ارسال می‌شن؛ این لیست مشخص می‌کنه کدوم‌ها زودتر برسن. اول: هشدارهای
+# لحظه‌ای و تک‌رخدادی؛ آخر: فیلترهای پرحجم و کم‌فوریت (۱۰، ۱۳، ۱۵) که نباید بقیه رو عقب بندازن.
+# فیلتر خارج از لیست بعد از بقیه و با ترتیب شماره می‌ره. لیست خالی = ترتیب شماره‌ی فیلتر.
+FILTER_SEND_ORDER = (
+    "filter_17_buy_queue_supply",
+    "filter_18_sell_queue_collect",
+    "filter_16_price_cross_up",
+    "filter_16_price_cross_down",
+    "filter_3_watchlist",
+    "filter_19_heavy_sarane_buy",
+    "filter_14_buy_queue_simple",
+    "filter_1_strong_buying",
+    "filter_2_sarane_cross",
+    "filter_5_pol_hagigi_ratio",
+    "filter_8_swing_trade",
+    "filter_4_range_mosbat",
+    "filter_6_tick_time",
+    "filter_12_bullish_marubozu",
+    "filter_11_hoghooghi_haghighi_strong_buy",
+    "filter_9_first_hour",
+    "filter_7_suspicious_volume",
+    "filter_15_suspicious_volume_weekly",
+    "filter_13_sarane_diff",
+    "filter_10_heavy_buy_queue",
+)
 
 # ========================================
 # آستانه‌ی مشترک
