@@ -806,6 +806,15 @@ class TelegramAlert:
     # نقطه‌ی میانی معقوله؛ RetryAfter هندلر پایین safety net واقعیه.
     SEND_DELAY_SECONDS = 1.5
 
+    # فاصله‌ی پویا بر اساس تعداد پیام‌های همان اجرا (set_batch_size): هرچه پیام بیشتر،
+    # فاصله بیشتر تا به سقف ~۲۰ پیام/دقیقه‌ی تلگرام نزدیک نشیم.
+    # هر ردیف: (حداقل تعداد پیام، فاصله به ثانیه)؛ کمتر از آخرین ردیف = SEND_DELAY_SECONDS.
+    BATCH_DELAY_TIERS = (
+        (25, 3.0),
+        (18, 2.6),
+        (12, 2.1),
+    )
+
     # سقف کلی هم‌زمانی بین همه‌ی چت‌ها با هم (طبق حد ~30 پیام/ثانیه‌ی سراسری
     # تلگرام برای broadcast به چت‌های مختلف). با تعداد کم چت (۲-۳ تا) عملاً
     # هیچ‌وقت به این سقف نمی‌رسیم؛ فقط برای محافظت در صورت اضافه‌شدن چت‌های بیشتر.
@@ -823,6 +832,27 @@ class TelegramAlert:
         self._chat_locks: Dict[str, asyncio.Lock] = {}
         self._chat_last_sent: Dict[str, float] = {}
         self._global_semaphore = asyncio.Semaphore(self.GLOBAL_CONCURRENCY)
+
+        # فاصله‌ی فعلی بین ارسال‌ها؛ پیش‌فرض همون پایه، با set_batch_size عوض می‌شه
+        self._send_delay: float = self.SEND_DELAY_SECONDS
+
+    def set_batch_size(self, total_messages: int) -> float:
+        """
+        فاصله‌ی بین پیام‌ها رو بر اساس تعداد کل پیام‌های این اجرا تنظیم می‌کنه
+        (پله‌ها: BATCH_DELAY_TIERS) و مقدارش رو برمی‌گردونه. فقط فاصله‌ی پایه عوض
+        می‌شه؛ قفل per-chat و هندلر RetryAfter/TimedOut دست‌نخورده‌ان.
+        """
+        total = max(0, int(total_messages))
+        delay = self.SEND_DELAY_SECONDS
+        for min_messages, tier_delay in self.BATCH_DELAY_TIERS:
+            if total >= min_messages:
+                delay = tier_delay
+                break
+        self._send_delay = delay
+        logger.info(
+            f"⏱️ فاصله‌ی ارسال: {delay:.1f}s برای {total} پیام (حدود {total * delay:.0f}s زمان ارسال)"
+        )
+        return delay
 
     def _get_chat_lock(self, chat_id: str) -> asyncio.Lock:
         if chat_id not in self._chat_locks:
@@ -901,7 +931,7 @@ class TelegramAlert:
             last_sent = self._chat_last_sent.get(target_chat_id)
             if last_sent is not None:
                 elapsed = time.monotonic() - last_sent
-                remaining = self.SEND_DELAY_SECONDS - elapsed
+                remaining = self._send_delay - elapsed
                 if remaining > 0:
                     await asyncio.sleep(remaining)
 
@@ -957,7 +987,7 @@ class TelegramAlert:
         async with chat_lock:
             last_sent = self._chat_last_sent.get(target_chat_id)
             if last_sent is not None:
-                remaining = self.SEND_DELAY_SECONDS - (time.monotonic() - last_sent)
+                remaining = self._send_delay - (time.monotonic() - last_sent)
                 if remaining > 0:
                     await asyncio.sleep(remaining)
 
