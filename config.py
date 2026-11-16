@@ -269,7 +269,7 @@ PERSONAL_WATCHLIST = [
     "کویر",
     "کمنگنز",
     "فنورد",
-    "مسگون",
+    "دوایکس",
 ]
 PERSONAL_WATCHLIST_THRESHOLD = 2.5
 PERSONAL_WATCHLIST_SKIP_IF_BUY_QUEUE = True
