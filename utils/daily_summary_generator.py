@@ -890,7 +890,7 @@ class DailySummaryGenerator:
                 )
 
             top_industries = self.get_top_industries(data, industry_universe, top_n=5)
-            top_per_filter = self.get_top_symbols_per_filter(data, top_n=5)
+            top_per_filter = self.get_top_symbols_per_filter(data, top_n=10)
             frequent_symbols = self.get_frequent_symbols(data, min_count, top_n)
 
             # ---- مسیر اصلی: یک Rich Message ----
