@@ -407,7 +407,7 @@ HEAVY_SARANE_CONFIG = {
     "weekly_days": 5,
     "weekly_min_days": 3,
     "min_history_days": 5,
-    "min_ratio_to_avg": 2,
+    "min_ratio_to_avg": 2.5,
     "min_value_to_avg_monthly": 1,
     "min_godrat_kharid": 1,
     "min_sarane_kharid": MIN_SARANE_KHARID,
