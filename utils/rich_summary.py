@@ -227,27 +227,24 @@ def _market_blocks(
         )
 
     if buy_queue_industries:
-        items = []
-        for ind in buy_queue_industries[:top_n]:
+        rows = []
+        for i, ind in enumerate(buy_queue_industries[:top_n], 1):
             count = ind["symbol_count"]
             pct = ind.get("participation_pct")
             universe = ind.get("universe_count")
-            count_str = (
-                f"{count}/{universe} نماد ({pct:.0f}٪)" if pct is not None and universe else f"{count} نماد"
-            )
-            line = f"<b>{_e(ind['industry_name'])}</b> — {count_str}"
-            symbols = ind.get("symbols", [])
-            if symbols:
-                values = ind.get("symbol_values", {})
-                tags = []
-                for sym in symbols:
-                    tag = f"#{_e(_hashtag(sym))}"
-                    if sym in values:
-                        tag += f" ({_e(_format_queue_value(values[sym]))})"
-                    tags.append(tag)
-                line += "<br>" + " ".join(tags)
-            items.append(f"<li>{line}</li>")
-        out.append("<h4>🎯 صنایع پیشرو صف خرید</h4><ol>" + "".join(items) + "</ol>")
+            count_str = f"{count}/{universe} ({pct:.0f}٪)" if pct is not None and universe else f"{count}"
+            values = ind.get("symbol_values", {})
+            tags = []
+            for sym in ind.get("symbols", []):
+                tag = f"#{_e(_hashtag(sym))}"
+                if sym in values:
+                    tag += f" ({_e(_format_queue_value(values[sym]))})"
+                tags.append(tag)
+            rows.append([str(i), _e(ind["industry_name"]), count_str, " ".join(tags) or "—"])
+        out.append(
+            "<h4>🎯 صنایع پیشرو صف خرید</h4>"
+            + _table(["#", "صنعت", "نماد", "نمادهای صف (ارزش)"], rows)
+        )
 
     return "".join(out)
 
