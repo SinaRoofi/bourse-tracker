@@ -18,11 +18,16 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
-from curl_cffi import requests as cffi_requests
+try:
+    from curl_cffi import requests as http_client  # libcurl: روی Actions برای tablokhani (کاربر)
+except ImportError:  # نصب نبود => main.py نباید از کار بیفته؛ با requests ادامه می‌ده
+    import requests as http_client
 
 from utils.industry_market_fetcher import RIAL_TO_MILLION_TOMAN, RIAL_TO_TRILLION_TOMAN
 
 logger = logging.getLogger(__name__)
+
+HTTP_CLIENT_NAME = "curl_cffi" if http_client.__name__.startswith("curl_cffi") else "requests"
 
 INDICES_URL = "https://api.tablokhani.com/public/market-indices"
 TOTALS_URL = "https://tradersarena.ir/data/market/chart/totals0"
@@ -33,8 +38,6 @@ FETCH_RETRIES = 1   # یک‌بار retry
 
 # چک وضعیت بازار تو هر اجرای main.py: کوتاه تا اجرا رو کند نکنه
 STATE_TIMEOUT = 10
-
-HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 # پسوند مقدارها تو tablokhani (مثلاً '329,559.890B')
 _SUFFIX_MULTIPLIER = {"K": 1e3, "M": 1e6, "B": 1e9, "T": 1e12}
@@ -69,7 +72,7 @@ def _get_json(
 
     for attempt in range(1, retries + 2):
         try:
-            resp = cffi_requests.get(
+            resp = http_client.get(
                 url,
                 # impersonate="chrome",  # غیرفعال - روی Actions گاهی تایم‌اوت می‌داد
                 timeout=timeout,
@@ -120,7 +123,7 @@ def fetch_market_state() -> Optional[str]:
       • همه‌ی مقدارهای دیده‌شده closed -> 'closed'
       • مقدار ناشناخته               -> همون مقدار خام (صدازننده فقط لاگ می‌کنه)
       • نیومد/نامعتبر                -> None
-    فقط یک درخواست کوتاه (STATE_TIMEOUT) بدون retry.
+    فقط یک درخواست (STATE_TIMEOUT) بدون retry.
     """
     payload = _get_json(INDICES_URL, timeout=STATE_TIMEOUT, retries=0)
     if not payload or not payload.get("success"):
@@ -200,13 +203,10 @@ def parse_indices_payload(payload: dict) -> Optional[Dict[str, Any]]:
 # tradersarena: پول حقیقی و سرانه‌ی کل بازار (آخرین ردیف سری زمانی)
 # ----------------------------------------------------------------------
 _TOTALS_FIELDS = {
-    "transfer": "real_flow",                      # خالص ورود/خروج پول حقیقی (ریال)
-    "stockTransfer": "stock_flow",                # ... در سهام
-    "fixedIncomesTransfer": "fixed_income_flow",  # ... در صندوق‌های درآمد ثابت
-    "plus": "positive",                           # تعداد نمادهای مثبت
-    "minus": "negative",                          # تعداد نمادهای منفی
-    "bpc": "buy_per_capita",                      # سرانه خرید حقیقی کل (ریال)
-    "spc": "sell_per_capita",                     # سرانه فروش حقیقی کل (ریال)
+    "stockTransfer": "stock_flow",                # ورود پول سهام (ریال؛ منفی = خروج)
+    "fixedIncomesTransfer": "fixed_income_flow",  # ورود پول صندوق‌های درآمد ثابت
+    "bpcx": "buy_per_capita",                     # سرانه خرید معاملات خرد (ریال)
+    "spcx": "sell_per_capita",                    # سرانه فروش معاملات خرد (ریال)
 }
 
 
@@ -227,7 +227,7 @@ def parse_totals_payload(payload: dict, today: Optional[date] = None) -> Optiona
     stamp = _num(last.get("time"))
     if stamp is None:
         return None
-    if result["real_flow"] is None and result["buy_per_capita"] is None:
+    if result["stock_flow"] is None and result["buy_per_capita"] is None:
         return None
 
     row_date = datetime.utcfromtimestamp(stamp).date()
@@ -256,8 +256,9 @@ def _option_side(src: Any) -> Optional[Dict[str, Optional[float]]]:
 
 def parse_options_payload(payload: dict, today: Optional[date] = None) -> Optional[Dict[str, Any]]:
     """
-    خروجی: {"call": {...}|None, "put": {...}|None, "queue": {"buy_value","sell_value"}|None}
-    queue = ارزش صف خرید/فروش «کل بازار» (segments.total؛ برابر جمع همه‌ی کلاس‌ها).
+    خروجی: {"call": {...}|None, "put": {...}|None, "queue": {"buy_value","sell_value"}|None,
+            "breadth": {"total","pos","neg","zero","buy_queue_count","sell_queue_count"}|None}
+    breadth = وضعیت نمادهای سهام (کلاس stock). queue = ارزش صف خرید/فروش «کل بازار» (segments.total؛ برابر جمع همه‌ی کلاس‌ها).
     اگه today داده بشه و tradingDate با اون نخونه، داده کهنه حساب می‌شه.
     """
     if payload.get("status") != "success":
@@ -275,13 +276,26 @@ def parse_options_payload(payload: dict, today: Optional[date] = None) -> Option
     call = _option_side(classes.get("equity_option_call"))
     put = _option_side(classes.get("equity_option_put"))
 
+    stock = classes.get("stock") or {}
+    total = _num(stock.get("total"))
+    breadth = None
+    if total and total > 0:
+        breadth = {
+            "total": total,
+            "pos": _num(stock.get("pos")),
+            "neg": _num(stock.get("neg")),
+            "zero": _num(stock.get("zero")),
+            "buy_queue_count": _num(stock.get("buyQueueCount")),
+            "sell_queue_count": _num(stock.get("sellQueueCount")),
+        }
+
     seg = (latest.get("segments") or {}).get("total") or {}
     buy_q, sell_q = _num(seg.get("buyQueue")), _num(seg.get("sellQueue"))
     queue = {"buy_value": buy_q, "sell_value": sell_q} if buy_q is not None and sell_q is not None else None
 
-    if not (call or put or queue):
+    if not (call or put or queue or breadth):
         return None
-    return {"call": call, "put": put, "queue": queue}
+    return {"call": call, "put": put, "queue": queue, "breadth": breadth}
 
 
 # ----------------------------------------------------------------------
@@ -392,28 +406,59 @@ def trade_section(trade: Optional[dict]) -> Optional[dict]:
 
 
 def money_section(totals: Optional[dict], options: Optional[dict]) -> Optional[dict]:
-    """پول حقیقی + سرانه + (از optionbaaz) ارزش صف خرید/فروش کل بازار."""
+    """ورود پول + سرانه‌ی معاملات خرد + (از optionbaaz) ارزش صف‌های خرید و فروش."""
     rows = []
     t = totals or {}
-    for label, key in (("خالص پول حقیقی (کل)", "real_flow"), ("پول حقیقی سهام", "stock_flow"),
-                       ("پول حقیقی درآمد ثابت", "fixed_income_flow")):
+    for label, key in (("ورود پول سهام", "stock_flow"), ("ورود پول درآمد ثابت", "fixed_income_flow")):
         v = t.get(key)
         if v is not None:
-            emoji, word = ("🟢", "ورود") if v >= 0 else ("🔴", "خروج")
-            rows.append([label, f"{emoji} {word} {abs(v) / RIAL_TO_TRILLION_TOMAN:,.2f} همت"])
+            emoji = "🟢" if v >= 0 else "🔴"
+            rows.append([label, f"{emoji} {v / RIAL_TO_TRILLION_TOMAN:+,.2f} همت"])
     if t.get("buy_per_capita") is not None:
-        rows.append(["سرانه خرید حقیقی", f"{t['buy_per_capita'] / RIAL_TO_MILLION_TOMAN:,.0f} میلیون تومان"])
+        rows.append(["سرانه خرید", f"{t['buy_per_capita'] / RIAL_TO_MILLION_TOMAN:,.0f} میلیون تومان"])
     if t.get("sell_per_capita") is not None:
-        rows.append(["سرانه فروش حقیقی", f"{t['sell_per_capita'] / RIAL_TO_MILLION_TOMAN:,.0f} میلیون تومان"])
-    if t.get("positive") is not None and t.get("negative") is not None:
-        rows.append(["نماد مثبت / منفی", f"{t['positive']:,.0f} / {t['negative']:,.0f}"])
+        rows.append(["سرانه فروش", f"{t['sell_per_capita'] / RIAL_TO_MILLION_TOMAN:,.0f} میلیون تومان"])
     queue = (options or {}).get("queue")
     if queue:
-        rows.append(["ارزش صف خرید", f"{_hemat(queue['buy_value'])} همت"])
-        rows.append(["ارزش صف فروش", f"{_hemat(queue['sell_value'])} همت"])
+        rows.append(["ارزش صف‌های خرید", f"{_hemat(queue['buy_value'])} همت"])
+        rows.append(["ارزش صف‌های فروش", f"{_hemat(queue['sell_value'])} همت"])
     if not rows:
         return None
     return {"headers": ["شاخص", "مقدار"], "units": ["", ""], "rows": rows, "note": None}
+
+
+def breadth_section(options: Optional[dict]) -> Optional[dict]:
+    """
+    مثبت بودن بازار (نمادهای سهام): تعداد و درصد مثبت، منفی، بدون تغییر، و تعداد در صف خرید/فروش
+    (درصد از کل نمادها؛ نوار ده‌تایی برای نگاه سریع). صف‌ها زیرمجموعه‌ی مثبت/منفی‌ان.
+    """
+    b = (options or {}).get("breadth")
+    if not b or not b.get("total"):
+        return None
+    total = b["total"]
+
+    def row(emoji, label, n):
+        if n is None:
+            return None
+        pct = n / total * 100
+        filled = max(0, min(10, round(pct / 10)))
+        return [f"{emoji} {label}", f"{n:,.0f}", f"{pct:.0f}٪ {'█' * filled}{'░' * (10 - filled)}"]
+
+    rows = [r for r in (
+        row("🟢", "مثبت", b.get("pos")),
+        row("🔴", "منفی", b.get("neg")),
+        row("⚪", "بدون تغییر", b.get("zero")),
+        row("🟩", "در صف خرید", b.get("buy_queue_count")),
+        row("🟥", "در صف فروش", b.get("sell_queue_count")),
+    ) if r]
+    if not rows:
+        return None
+    return {
+        "headers": ["وضعیت", "تعداد", "درصد"],
+        "units": ["", "", ""],
+        "rows": rows,
+        "note": f"از {total:,.0f} نماد سهام؛ صف‌ها زیرمجموعه‌ی مثبت و منفی‌اند",
+    }
 
 
 def options_section(options: Optional[dict]) -> Optional[dict]:
@@ -465,6 +510,7 @@ def options_section(options: Optional[dict]) -> Optional[dict]:
 
 # عنوان هر بخش (ایموجی + متن)
 SECTION_TITLES = {
+    "breadth": "🧭 مثبت بودن بازار (سهام)",
     "trade": "💹 معاملات کل بازار",
     "money": "💰 پول، سرانه و صف کل بازار",
     "options": "🎯 بازار آپشن",
@@ -476,6 +522,7 @@ def overview_sections(overview: Optional[dict]) -> List[tuple]:
     ov = overview or {}
     out = []
     for key, section in (
+        ("breadth", breadth_section(ov.get("options"))),
         ("trade", trade_section(ov.get("trade"))),
         ("money", money_section(ov.get("totals"), ov.get("options"))),
         ("options", options_section(ov.get("options"))),
