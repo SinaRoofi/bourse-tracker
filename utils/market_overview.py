@@ -448,8 +448,8 @@ def breadth_section(options: Optional[dict]) -> Optional[dict]:
         row("🟢", "مثبت", b.get("pos")),
         row("🔴", "منفی", b.get("neg")),
         row("⚪", "بدون تغییر", b.get("zero")),
-        row("🟩", "در صف خرید", b.get("buy_queue_count")),
-        row("🟥", "در صف فروش", b.get("sell_queue_count")),
+        row("🟩", "صف خرید", b.get("buy_queue_count")),
+        row("🟥", "صف فروش", b.get("sell_queue_count")),
     ) if r]
     if not rows:
         return None
