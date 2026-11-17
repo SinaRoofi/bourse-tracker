@@ -26,7 +26,7 @@ from config import (
     validate_config,
 )
 from utils.holidays import is_trading_day
-from utils.market_overview import fetch_market_state
+from utils.market_overview import start_market_state_fetch
 from utils.data_fetcher import UnifiedDataFetcher
 from utils.data_processor import BourseDataProcessor
 from utils.alerts import TelegramAlert
@@ -133,7 +133,7 @@ FILTER_VALUE_COLUMN = {
 # توابع کمکی
 # ===========================
 def is_market_open() -> bool:
-    """بررسی اینکه آیا بازار باز است یا نه (به وقت تهران)"""
+    """فقط تقویم + ساعت (به وقت تهران)؛ بدون هیچ درخواست شبکه‌ای."""
     now = datetime.now(TEHRAN_TZ)
     logger.info(f"🕐 زمان تهران: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
 
@@ -146,22 +146,28 @@ def is_market_open() -> bool:
         logger.info(f"خارج از ساعات کاری بازار (ساعت تهران: {current_time})")
         return False
 
-    # وضعیت واقعی بازار از API: فقط می‌تونه اجرا رو «متوقف» کنه (تعطیلی ثبت‌نشده در تقویم، توقف بازار)،
-    # هیچ‌وقت بازشدن رو تأیید یا اجبار نمی‌کنه. نیومدن API یا وضعیت ناشناخته = فقط ساعت/تقویم.
-    api_state = fetch_market_state()
-    if api_state is None:
-        logger.info("ℹ️ وضعیت بازار از API نیومد - فقط ساعت و تقویم")
-    elif api_state in MARKET_CLOSED_STATES:
-        logger.info(f"⏸️  API می‌گه بازار بسته است (state='{api_state}')")
-        return False
-    elif api_state == "open":
-        logger.info("🏛️ وضعیت بازار از API: open")
-    else:
-        logger.warning(f"⚠️ وضعیت ناشناخته‌ی بازار از API: '{api_state}' (طبق ساعت باز است؛ ادامه)")
-
     jnow = jdatetime.datetime.fromgregorian(datetime=now.replace(tzinfo=None))
-    logger.info(f"✅ بازار باز است - {jnow.strftime('%Y-%m-%d')} {current_time}")
+    logger.info(f"✅ طبق ساعت و تقویم بازار باز است - {jnow.strftime('%Y-%m-%d')} {current_time}")
     return True
+
+
+def api_says_market_closed(api_state) -> bool:
+    """
+    وضعیت optionbaaz فقط می‌تونه اجرا رو «متوقف» کنه (تعطیلی ثبت‌نشده در تقویم، توقف بازار)،
+    هیچ‌وقت بازشدن رو تأیید یا اجبار نمی‌کنه. نیومدن API (تایم‌اوت ۳ ثانیه، خطا، فیلد نبود)
+    یا وضعیت ناشناخته = فقط ساعت/تقویم.
+    """
+    if api_state is None:
+        logger.info("ℹ️ وضعیت بازار از optionbaaz نیومد - فقط ساعت و تقویم")
+        return False
+    if api_state in MARKET_CLOSED_STATES:
+        logger.info(f"⏸️  optionbaaz می‌گه بازار بسته است (state='{api_state}')")
+        return True
+    if api_state == "open":
+        logger.info("🏛️ وضعیت بازار از optionbaaz: open")
+    else:
+        logger.warning(f"⚠️ وضعیت ناشناخته‌ی بازار از optionbaaz: '{api_state}' (طبق ساعت باز است؛ ادامه)")
+    return False
 
 
 def in_snapshot_final_window(window_minutes: int) -> bool:
@@ -457,12 +463,19 @@ async def main_async():
             logger.info("⏸️  بازار بسته است. خروج از برنامه.")
             return
 
+        # وضعیت بازار (optionbaaz، سقف ۳ ثانیه) موازی با fetch اصلی؛ فقط می‌تونه اجرا رو متوقف کنه
+        state_fetch = start_market_state_fetch()
+
         logger.info("\n📥 شروع دریافت داده از API...")
         fetcher = UnifiedDataFetcher(api1_base_url=API_BASE_URL)
         try:
             df_raw = fetcher.fetch_all_data()
         finally:
             fetcher.close()
+
+        if api_says_market_closed(state_fetch.result()):
+            logger.info("⏸️  بازار بسته است. خروج از برنامه.")
+            return
 
         alert = TelegramAlert()
 
@@ -554,13 +567,26 @@ async def main_async():
                     logger.warning("⚠️ اسنپ‌شات صف خونده نشد - ردیاب صف این دور رد شد")
                 else:
                     now_tehran = datetime.now(TEHRAN_TZ)
+                    rearm_symbols: list = []
+                    rearm_sell_symbols: list = []
                     buy_supply_df, sell_collect_df, new_queue_snapshot = evaluate_queues(
                         df,
                         queue_snapshot,
                         QUEUE_TRACKER_CONFIG,
                         now_str=now_tehran.strftime("%H:%M"),
                         today=alert_manager.today_jalali,
+                        rearm_out=rearm_symbols,
+                        rearm_sell_out=rearm_sell_symbols,
                     )
+                    # صفی که کامل تموم شد، دیداپ روزانه‌ی همون نماد رو برای هشدار ۱۷ (عرضه
+                    # این دور) و ۱۰/۱۴ (صف خرید تازه‌ی دور بعد) آزاد می‌کنه.
+                    if rearm_symbols:
+                        await alert_manager.rearm_alerts(
+                            rearm_symbols,
+                            [BUY_SUPPLY_FILTER, "filter_10_heavy_buy_queue", "filter_14_buy_queue_simple"],
+                        )
+                    if rearm_sell_symbols:
+                        await alert_manager.rearm_alerts(rearm_sell_symbols, [SELL_COLLECT_FILTER])
                     all_results = dict(all_results) if all_results else {}
                     all_results[BUY_SUPPLY_FILTER] = buy_supply_df
                     all_results[SELL_COLLECT_FILTER] = sell_collect_df
