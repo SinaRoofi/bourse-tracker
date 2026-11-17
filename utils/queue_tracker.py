@@ -9,7 +9,7 @@
 {
   "date": "1405-07-18",
   "updated": "10:31",
-  "buy":  {symbol: {"v": ارزش_فعلی, "ref": مرجع, "heavy": bool, "t": "HH:MM", "exited": bool?}},
+  "buy":  {symbol: {"v": ارزش_فعلی, "ref": مرجع, "heavy": bool, "t": "HH:MM", "n": شماره‌ی دور صف, "ra": ساعت آخرین آزادسازی دیداپ?, "exited": bool?}},
   "sell": {symbol: {...}},
 }
 همه‌ی ارزش‌ها به میلیارد تومان. v == 0 یعنی نماد از سقف/کف خارج شده.
@@ -40,6 +40,38 @@ def _num(value) -> Optional[float]:
     except (ValueError, TypeError):
         return None
     return None if math.isnan(f) else f
+
+
+def _minutes(hhmm: Optional[str]) -> Optional[int]:
+    """'HH:MM' -> دقیقه از نیمه‌شب؛ نامعتبر -> None"""
+    try:
+        h, m = str(hhmm).split(":")
+        return int(h) * 60 + int(m)
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def _should_rearm(prev: Optional[dict], entry: Optional[dict], cfg: dict, now_str: str) -> bool:
+    """
+    آزادسازی دیداپ فقط وقتی (ضد اسپم):
+      ۱) صفی که تموم شد «سنگین» بوده (صف سبکِ پرنوسان دیداپ آزاد نمی‌کنه)،
+      ۲) تعداد دورهای آزادشده تو روز ≤ rearm_max_cycles،
+      ۳) از آخرین آزادسازی همین نماد حداقل rearm_cooldown_minutes گذشته باشه.
+    """
+    max_cycles = cfg.get("rearm_max_cycles", 4)
+    if not max_cycles or not prev or not entry:
+        return False
+    if not (prev.get("v", 0) > 0 and entry.get("exited")):
+        return False
+    if not prev.get("heavy") or prev.get("ref", 0) < cfg.get("min_queue_value", 0):
+        return False
+    if prev.get("n", 1) > max_cycles:
+        return False
+    last, now = _minutes(prev.get("ra")), _minutes(now_str)
+    cooldown = cfg.get("rearm_cooldown_minutes", 4)
+    if last is not None and now is not None and 0 <= now - last < cooldown:
+        return False
+    return True
 
 
 def _step(
@@ -73,13 +105,15 @@ def _step(
             event = None
             if prev.get("heavy") and prev.get("ref", 0) >= min_value:
                 event = {"ref": prev["ref"], "ord": prev.get("ord")}
-            return {"v": 0.0, "ref": 0.0, "heavy": False, "t": now_str, "exited": True}, event
+            return {"v": 0.0, "ref": 0.0, "heavy": False, "t": now_str, "n": prev.get("n", 1), "exited": True}, event
         return prev, None  # هیچ‌وقت تو صف نبوده یا قبلاً خارج شده
 
     # --- الان تو صف هست ---
     if not was_in_queue:
         # صف تازه (یا ورود دوباره بعد از خروج): فقط شروع ردیابی، بدون هشدار
-        entry = {"v": round(cur, 3), "ref": round(cur, 3), "heavy": bool(heavy_now), "t": now_str}
+        # n = شماره‌ی دور صف تو این روز (ورود دوباره بعد از خروج => n+1)
+        episode = (prev.get("n", 1) + 1) if prev else 1
+        entry = {"v": round(cur, 3), "ref": round(cur, 3), "heavy": bool(heavy_now), "t": now_str, "n": episode}
         if order is not None:
             entry["ord"] = round(order, 1)
         return entry, None
@@ -88,7 +122,7 @@ def _step(
     # صف هشدار نمی‌ده - هشدار فقط وقتی میاد که صف کامل عرضه/جمع بشه.
     ref = max(prev.get("ref", cur), cur)
     heavy = bool(prev.get("heavy")) or bool(heavy_now)
-    entry = {"v": round(cur, 3), "ref": round(ref, 3), "heavy": heavy, "t": now_str}
+    entry = {"v": round(cur, 3), "ref": round(ref, 3), "heavy": heavy, "t": now_str, "n": prev.get("n", 1)}
     # ارزش هر اردر همون لحظه‌ای ثبت می‌شه که صف به بیشترین ارزش (مرجع) رسیده
     ord_value = order if (cur >= prev.get("ref", cur) and order is not None) else prev.get("ord")
     if ord_value is not None:
@@ -149,9 +183,15 @@ def evaluate_queues(
     config: dict,
     now_str: str,
     today: str,
+    rearm_out: Optional[List[str]] = None,
+    rearm_sell_out: Optional[List[str]] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, dict]:
     """
     df رو با اسنپ‌شات قبلی مقایسه می‌کنه.
+
+    rearm_out / rearm_sell_out: اگه لیست داده بشه، نمادهایی که صف خرید / صف فروش سنگینشون
+    «همین دور» تموم شد و شرایط ضد اسپم (_should_rearm) رو دارن بهش اضافه می‌شن؛ صدازننده
+    با اینا دیداپ روزانه‌ی هشدارهای مربوط رو آزاد می‌کنه تا دور بعدی صف دوباره هشدار بگیره.
 
     Returns: (df_عرضه_صف_خرید, df_جمع‌آوری_صف_فروش, اسنپ‌شات_جدید)
     """
@@ -205,20 +245,38 @@ def evaluate_queues(
             cur = _buy_current(rec)
             order = _num(rec.get("buy_order")) or 0.0
             heavy_now = cur is not None and cur >= min_buy_value and order >= min_buy_order
+            prev_entry = new_snapshot["buy"].get(symbol)
             entry, event = _step(
-                new_snapshot["buy"].get(symbol), cur, heavy_now, buy_cfg, now_str,
+                prev_entry, cur, heavy_now, buy_cfg, now_str,
                 order=_num(rec.get("buy_order")),
             )
+            ended = bool(prev_entry) and prev_entry.get("v", 0) > 0 and bool(entry) and bool(entry.get("exited"))
             if event and (min_buy_power is not None or min_sarane is not None):
                 # فقط وقتی هشدار بده که با وجود عرضه، قدرت خرید و سرانه‌ی خرید
                 # هنوز بالان (هر شرطی که تو کانفیگ None نباشه).
                 power = _num(rec.get("godrat_kharid"))
                 sarane = _num(rec.get("sarane_kharid"))
-                power_ok = min_buy_power is None or (power is not None and power > min_buy_power)
+                power_ok = min_buy_power is None or (power is not None and power >= min_buy_power)
                 sarane_ok = min_sarane is None or (sarane is not None and sarane > min_sarane)
                 if not (power_ok and sarane_ok):
+                    logger.info(
+                        f"🔕 عرضه صف خرید {symbol} (دور {prev_entry.get('n', 1)}) به‌خاطر شرط قدرت/سرانه رد شد: "
+                        f"قدرت خرید={power} (حداقل {min_buy_power}) | سرانه خرید={sarane} (حداقل {min_sarane})"
+                    )
                     event = None
+            if ended:
+                if not event:
+                    logger.info(
+                        f"ℹ️ صف خرید {symbol} (دور {prev_entry.get('n', 1)}) تموم شد ولی هشدار ۱۷ نیومد: "
+                        f"سنگین={bool(prev_entry.get('heavy'))} | بیشترین ارزش={prev_entry.get('ref')} "
+                        f"(حداقل {min_buy_value}) | اردر={prev_entry.get('ord')} (حداقل {min_buy_order})"
+                    )
+                if rearm_out is not None and _should_rearm(prev_entry, entry, buy_cfg, now_str):
+                    rearm_out.append(symbol)
+                    entry["ra"] = now_str
             if entry is not None:
+                if "ra" not in entry and prev_entry and prev_entry.get("ra"):
+                    entry["ra"] = prev_entry["ra"]
                 new_snapshot["buy"][symbol] = entry
             if event:
                 buy_events.append((symbol, event))
@@ -229,11 +287,17 @@ def evaluate_queues(
             # ارزش هر اردر صف فروش = ارزش کل صف (میلیارد) / تعداد سفارش، به میلیون تومان
             ask_count = _num(rec.get("ask_count"))
             sell_order = (cur * 1000 / ask_count) if (cur and ask_count and ask_count > 0) else None
+            prev_sell = new_snapshot["sell"].get(symbol)
             entry, event = _step(
-                new_snapshot["sell"].get(symbol), cur, heavy_now, sell_cfg, now_str,
+                prev_sell, cur, heavy_now, sell_cfg, now_str,
                 order=sell_order,
             )
+            if rearm_sell_out is not None and _should_rearm(prev_sell, entry, sell_cfg, now_str):
+                rearm_sell_out.append(symbol)
+                entry["ra"] = now_str
             if entry is not None:
+                if "ra" not in entry and prev_sell and prev_sell.get("ra"):
+                    entry["ra"] = prev_sell["ra"]
                 new_snapshot["sell"][symbol] = entry
             if event:
                 sell_events.append((symbol, event))
