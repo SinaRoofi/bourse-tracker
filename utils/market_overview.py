@@ -24,6 +24,7 @@ try:
 except ImportError:  # نصب نبود => main.py نباید از کار بیفته؛ با requests ادامه می‌ده
     import requests as http_client
 
+from config import MARKET_RETAIL_TURNOVER_CLASSES
 from utils.industry_market_fetcher import RIAL_TO_MILLION_TOMAN, RIAL_TO_TRILLION_TOMAN
 
 logger = logging.getLogger(__name__)
@@ -301,7 +302,8 @@ def _option_side(src: Any) -> Optional[Dict[str, Optional[float]]]:
 def parse_options_payload(payload: dict, today: Optional[date] = None) -> Optional[Dict[str, Any]]:
     """
     خروجی: {"call": {...}|None, "put": {...}|None, "queue": {"buy_value","sell_value"}|None,
-            "breadth": {"total","pos","neg","zero","buy_queue_count","sell_queue_count"}|None}
+            "breadth": {"total","pos","neg","zero","buy_queue_count","sell_queue_count"}|None,
+            "retail_turnover": ارزش معاملات خرد به ریال|None}
     breadth = وضعیت نمادهای سهام (کلاس stock). queue = ارزش صف خرید/فروش «کل بازار» (segments.total؛ برابر جمع همه‌ی کلاس‌ها).
     اگه today داده بشه و tradingDate با اون نخونه، داده کهنه حساب می‌شه.
     """
@@ -337,9 +339,16 @@ def parse_options_payload(payload: dict, today: Optional[date] = None) -> Option
     buy_q, sell_q = _num(seg.get("buyQueue")), _num(seg.get("sellQueue"))
     queue = {"buy_value": buy_q, "sell_value": sell_q} if buy_q is not None and sell_q is not None else None
 
-    if not (call or put or queue or breadth):
+    # ارزش معاملات خرد (ریال) = جمع turnover کلاس‌های MARKET_RETAIL_TURNOVER_CLASSES؛
+    # اگه حتی یکی نبود/نامعتبر بود None (جمع ناقص، عدد غلط می‌ده)
+    parts = [_num((classes.get(name) or {}).get("turnover")) for name in MARKET_RETAIL_TURNOVER_CLASSES]
+    retail_turnover = sum(parts) if parts and all(v is not None for v in parts) else None
+    if parts and retail_turnover is None:
+        logger.warning("⚠️ turnover بعضی کلاس‌های ارزش معاملات خرد تو optionbaaz نیومد - این ردیف نمایش داده نمی‌شه")
+
+    if not (call or put or queue or breadth or retail_turnover is not None):
         return None
-    return {"call": call, "put": put, "queue": queue, "breadth": breadth}
+    return {"call": call, "put": put, "queue": queue, "breadth": breadth, "retail_turnover": retail_turnover}
 
 
 # ----------------------------------------------------------------------
@@ -409,49 +418,20 @@ def _signed_pct(percent: float) -> str:
     return f"{arrow} {abs(percent):.2f}٪"
 
 
-def trade_section(trade: Optional[dict]) -> Optional[dict]:
-    """معاملات کل بازار: ردیف بورس، فرابورس و «کل بازار» (جمع هر دو؛ فقط اگه هر دو اومده باشن)."""
-    if not trade:
-        return None
-    bourse, fara = trade.get("bourse"), trade.get("fara")
+def money_section(totals: Optional[dict], options: Optional[dict], trade: Optional[dict] = None) -> Optional[dict]:
+    """
+    ارزش بازار (بورس + فرابورس) + ارزش معاملات خرد (optionbaaz) + ورود پول + سرانه‌ی معاملات خرد
+    + ارزش صف‌های خرید و فروش. ردیفی که داده‌اش نیومده نمایش داده نمی‌شه.
+    """
     rows = []
-
-    def count(x):
-        return f"{x:,.0f}" if x is not None else "—"
-
-    def row(name, src):
-        mv = src.get("market_value_rial")
-        return [name, _hemat(src["value_rial"]), count(src.get("count")), _hemat0(mv) if mv is not None else "—"]
-
-    if bourse:
-        rows.append(row("بورس", bourse))
-    if fara:
-        rows.append(row("فرابورس", fara))
+    bourse, fara = (trade or {}).get("bourse"), (trade or {}).get("fara")
     if bourse and fara:
-        def both(key):
-            a, b = bourse.get(key), fara.get(key)
-            return a + b if a is not None and b is not None else None
-        total_mv = both("market_value_rial")
-        total_count = both("count")
-        rows.append([
-            "کل بازار",
-            _hemat(bourse["value_rial"] + fara["value_rial"]),
-            count(total_count),
-            _hemat0(total_mv) if total_mv is not None else "—",
-        ])
-    if not rows:
-        return None
-    return {
-        "headers": ["بازار", "ارزش معاملات", "تعداد معاملات", "ارزش بازار"],
-        "units": ["", "همت", "", "همت"],
-        "rows": rows,
-        "note": None,
-    }
-
-
-def money_section(totals: Optional[dict], options: Optional[dict]) -> Optional[dict]:
-    """ورود پول + سرانه‌ی معاملات خرد + (از optionbaaz) ارزش صف‌های خرید و فروش."""
-    rows = []
+        a, b = bourse.get("market_value_rial"), fara.get("market_value_rial")
+        if a is not None and b is not None:
+            rows.append(["ارزش بازار", f"{_hemat0(a + b)} همت"])
+    retail = (options or {}).get("retail_turnover")
+    if retail is not None:
+        rows.append(["ارزش معاملات خرد", f"{_hemat(retail)} همت"])
     t = totals or {}
     for label, key in (("ورود پول سهام", "stock_flow"), ("ورود پول درآمد ثابت", "fixed_income_flow")):
         v = t.get(key)
@@ -555,7 +535,6 @@ def options_section(options: Optional[dict]) -> Optional[dict]:
 # عنوان هر بخش (ایموجی + متن)
 SECTION_TITLES = {
     "breadth": "🧭 مثبت بودن بازار (سهام)",
-    "trade": "💹 معاملات کل بازار",
     "money": "💰 پول، سرانه و صف کل بازار",
     "options": "🎯 بازار آپشن",
 }
@@ -567,8 +546,7 @@ def overview_sections(overview: Optional[dict]) -> List[tuple]:
     out = []
     for key, section in (
         ("breadth", breadth_section(ov.get("options"))),
-        ("trade", trade_section(ov.get("trade"))),
-        ("money", money_section(ov.get("totals"), ov.get("options"))),
+        ("money", money_section(ov.get("totals"), ov.get("options"), ov.get("trade"))),
         ("options", options_section(ov.get("options"))),
     ):
         if section:
