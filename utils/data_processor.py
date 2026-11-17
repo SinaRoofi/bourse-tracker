@@ -489,13 +489,24 @@ class BourseDataProcessor:
 
         logger.info("اعمال فیلتر 8: نوسان‌گیری")
 
+        # آستانه‌های قیمتی از دامنه‌ی نوسان هر نماد (config["price_limit_percent"] بر اساس fund_type؛
+        # سهام و نوع‌های ناشناخته = default) حساب می‌شن.
+        limits = config["price_limit_percent"]
+        default_limit = float(limits["default"])
+        if "fund_type" in df.columns:
+            limit = df["fund_type"].map(limits).astype("float64").fillna(default_limit)
+        else:
+            limit = pd.Series(default_limit, index=df.index, dtype="float64")
+        min_allowed = -limit * config["touch_floor_ratio"]
+        max_last = -limit * config["still_down_ratio"]
+
         filtered = df[
-            (df["low_price_change_percent"] <= config["min_allowed_price"])
-            & (df["last_price_change_percent"] >= config["min_allowed_price"])
+            (df["low_price_change_percent"] <= min_allowed)
+            & (df["last_price_change_percent"] >= min_allowed)
             & (df["godrat_kharid"] >= config["min_godrat_kharid"])
             & (df["sarane_kharid"] >= config["min_sarane_kharid"])
             & (df["value_to_avg_monthly_value"] >= config["min_value_to_avg_monthly"])
-            & (df["last_price_change_percent"] < config["max_last_change_percent"])
+            & (df["last_price_change_percent"] < max_last)
         ].copy()
 
         if filtered.empty:
