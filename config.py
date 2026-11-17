@@ -52,8 +52,8 @@ WORKING_DAYS = [0, 1, 2, 3, 4]
 LOG_LEVEL = "INFO"
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
-# وضعیت «بازار بسته» در پاسخ API (فیلد state بورس و فرابورس در api.tablokhani.com؛ مقدارها open/closed).
-# اگه ساعت و تقویم می‌گن باز، ولی هر دو بازار closed باشن، اجرا بدون بررسی خارج می‌شه. نیومدن API یا
+# وضعیت «بازار بسته» در پاسخ API (فقط از api.optionbaaz.ir/market-overview؛ آدرس و زیرگروه‌ها در MARKET_STATE_URL / STATE_CHILD_KEYS تو utils/market_overview.py).
+# اگه ساعت و تقویم می‌گن باز، ولی API closed بگه، اجرا (بعد از fetch موازی، قبل از فیلترها) خارج می‌شه. نیومدن API یا
 # وضعیت ناشناخته هیچ‌وقت جلوی اجرا رو نمی‌گیره (فقط ساعت/تقویم)؛ مقدار خام تو لاگ ثبت می‌شه.
 MARKET_CLOSED_STATES = ("closed",)
 
@@ -300,10 +300,23 @@ SUSPICIOUS_VOLUME_CONFIG = {
     "min_value_to_avg_ratio": 2.0,
 }
 
-# فیلتر ۸ - نوسان‌گیری.
+# فیلتر ۸ - نوسان‌گیری. آستانه‌های قیمتی از «دامنه‌ی نوسان» هر نماد حساب می‌شن:
+#   price_limit_percent: دامنه‌ی نوسان مجاز (± درصد) بر اساس نوع صندوق (کلید = fund_type)؛
+#       سهام و هر نوعی که اینجا نیست = "default". وقتی دامنه عوض شد فقط همین‌جا عدد رو عوض کن.
+#       (سهامی کلاسیک و سهام ۳٪، اهرمی ۶٪، انرژی و املاک ۱۰٪)
+#   touch_floor_ratio: کف روز باید به این نسبتِ دامنه رسیده باشه (۰.۹۳۳ × ۳ = ۲.۸- برای سهام)
+#       و آخرین قیمت بالاتر از اون برگشته باشه.
+#   still_down_ratio: آخرین قیمت هنوز پایین‌تر از این نسبتِ دامنه (منفی) باشه (۱/۳ × ۳ = ۱- برای سهام).
 SWING_TRADE_CONFIG = {
-    "min_allowed_price": -2.8,
-    "max_last_change_percent": -1.0,
+    "price_limit_percent": {
+        "default": 3.0,
+        "classic_stock": 3.0,
+        "leveraged": 6.0,
+        "energy": 10.0,
+        "real_state": 10.0,
+    },
+    "touch_floor_ratio": 2.8 / 3,
+    "still_down_ratio": 1 / 3,
     "min_godrat_kharid": 2.0,
     "min_sarane_kharid": MIN_SARANE_KHARID,
     "min_value_to_avg_monthly": 1.0,
@@ -369,7 +382,7 @@ PRICE_CROSS_WATCHLIST = {}
 #   ۱۷ (buy_supply): صف خرید سنگینِ دیده‌شده که کامل عرضه شد؛ فقط اگر قدرت خرید و سرانه خرید هنوز بالا باشند (None = بدون شرط).
 #   ۱۸ (sell_collect): صف فروش سنگین روی کف که کامل جمع شد؛ اگر قیمت کف از API نیامد، صف وقتی قفل است که
 #       بهترین قیمت فروش = آخرین قیمت و درصد تغییر ≤ fallback_max_change_percent.
-# هر نماد در روز برای هر فیلتر حداکثر یک هشدار می‌گیرد. کم‌شدن تدریجی صف هشدار نمی‌دهد.
+# هر نماد در روز برای هر فیلتر یک هشدار می‌گیرد، مگر اینکه صف خریدش کامل تموم شود (rearm_max_cycles). کم‌شدن تدریجی صف هشدار نمی‌دهد.
 # snapshot_refresh_minutes: حداقل فاصله‌ی نوشتن اسنپ‌شات در Gist (جلوگیری از 403)؛
 # snapshot_final_window_minutes: در این چند دقیقه‌ی آخر بازار هر اجرا ذخیره می‌شود (0 = غیرفعال).
 QUEUE_TRACKER_CONFIG = {
@@ -380,13 +393,20 @@ QUEUE_TRACKER_CONFIG = {
         "enabled": True,
         "min_queue_value": 5,
         "min_buy_order": 100,
-        "min_godrat_kharid": 1,
+        "min_godrat_kharid": 1,  # حداقل قدرت خرید (≥)؛ None = بدون شرط
         "min_sarane_kharid": MIN_SARANE_KHARID,
+        # آزادسازی دیداپ (ضد اسپم): وقتی صف «سنگین» یک نماد کامل تموم شد، دیداپ روزانه‌ی هشدارهای
+        # همون نماد آزاد می‌شه تا دور بعدی صف هم هشدار بگیره. حداکثر دور در روز و حداقل فاصله‌ی
+        # دو آزادسازی (دقیقه). rearm_max_cycles = 0 یعنی غیرفعال (همون رفتار «یک‌بار در روز»).
+        "rearm_max_cycles": 4,
+        "rearm_cooldown_minutes": 4,
     },
     "sell_collect": {
         "enabled": True,
         "min_queue_value": 5,
         "fallback_max_change_percent": -3.0,
+        "rearm_max_cycles": 4,
+        "rearm_cooldown_minutes": 4,
     },
 }
 
