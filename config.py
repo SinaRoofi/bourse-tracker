@@ -270,6 +270,7 @@ PERSONAL_WATCHLIST = [
     "کمنگنز",
     "فنورد",
     "دوایکس",
+    "نور",
 ]
 PERSONAL_WATCHLIST_THRESHOLD = 2.5
 PERSONAL_WATCHLIST_SKIP_IF_BUY_QUEUE = True
