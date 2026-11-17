@@ -9,12 +9,13 @@
 بخش مربوطه نمایش داده نمی‌شه. جدول‌ها یک‌بار اینجا به‌صورت «بخش» (سرتیتر + ردیف) ساخته می‌شن و هم
 مسیر ریچ (جدول) هم مسیر قدیمی (متن HTML) از همون استفاده می‌کنن.
 
-fetch_market_state(): فقط برای چک باز/بسته‌بودن بازار تو main.py (هیچ ربطی به متن خلاصه نداره).
+start_market_state_fetch(): فقط برای چک باز/بسته‌بودن بازار تو main.py (هیچ ربطی به متن خلاصه نداره).
+فقط از optionbaaz، موازی با fetch اصلی، با سقف سخت STATE_TIMEOUT ثانیه؛ بدون هیچ fallback.
 """
 
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
@@ -36,8 +37,16 @@ OPTIONS_URL = "https://api.optionbaaz.ir/market-overview"
 FETCH_TIMEOUT = 25  # ثانیه (برای داده‌های اصلی بعد بازار)
 FETCH_RETRIES = 1   # یک‌بار retry
 
-# چک وضعیت بازار تو هر اجرای main.py: کوتاه تا اجرا رو کند نکنه
-STATE_TIMEOUT = 10
+# چک وضعیت بازار تو هر اجرای main.py: سقف سخت از لحظه‌ی شروع (هم درخواست HTTP هم انتظار نتیجه)
+STATE_TIMEOUT = 3.0
+
+# endpoint وضعیت بازار optionbaaz (ساختار پاسخ: data.groups[].children[] با isOpen/session).
+# ⚠️ آدرس تأییدنشده: ساختار پاسخ رو از نمونه‌ای که فرستادی نوشتم ولی آدرسش رو ندیدم؛ اگه فرق داره فقط همین خط.
+# آدرس اشتباه/خطا => None => فقط ساعت/تقویم (ایمن).
+MARKET_STATE_URL = "https://api.optionbaaz.ir/market/status/overview"
+
+# فقط زیرگروه‌هایی که ربات روشون کار می‌کنه (سهام + صندوق بورس و فرابورس)؛ درآمد ثابت و بورس کالا نه.
+STATE_CHILD_KEYS = ("TSE_STOCK", "IFB_STOCK", "TSE_ETF", "IFB_ETF")
 
 # پسوند مقدارها تو tablokhani (مثلاً '329,559.890B')
 _SUFFIX_MULTIPLIER = {"K": 1e3, "M": 1e6, "B": 1e9, "T": 1e12}
@@ -116,32 +125,67 @@ def _get_json(
 # ----------------------------------------------------------------------
 # وضعیت باز/بسته‌ی بازار (برای main.py)
 # ----------------------------------------------------------------------
-def fetch_market_state() -> Optional[str]:
+def parse_market_state(payload: Optional[dict]) -> Optional[str]:
     """
-    وضعیت بازار از tablokhani (فیلد state بورس و فرابورس؛ مقدارها 'open' یا 'closed'):
-      • هر کدوم open باشن            -> 'open'
-      • همه‌ی مقدارهای دیده‌شده closed -> 'closed'
-      • مقدار ناشناخته               -> همون مقدار خام (صدازننده فقط لاگ می‌کنه)
-      • نیومد/نامعتبر                -> None
-    فقط یک درخواست (STATE_TIMEOUT) بدون retry.
+    وضعیت بازار از data.groups[].children[] (کلیدهای STATE_CHILD_KEYS، فیلد isOpen):
+      • هرکدوم باز => 'open'
+      • هر چهار تا دیده شدن و همه بسته => 'closed'
+      • پاسخ نامعتبر / هر زیرگروه نبود / isOpen بولین نبود => None (نیمه‌کاره حدس نمی‌زنیم)
     """
-    payload = _get_json(INDICES_URL, timeout=STATE_TIMEOUT, retries=0)
-    if not payload or not payload.get("success"):
+    if not isinstance(payload, dict) or payload.get("status") != "success":
         return None
     data = payload.get("data")
-    if not isinstance(data, dict):
+    groups = data.get("groups") if isinstance(data, dict) else None
+    if not isinstance(groups, list):
         return None
-    states = []
-    for key in ("bourse", "fara_bourse"):
-        value = (data.get(key) or {}).get("state")
-        if value:
-            states.append(str(value).strip().lower())
-    if not states:
-        return None
-    if "open" in states:
+
+    found: Dict[str, bool] = {}
+    for group in groups:
+        for child in (group.get("children") or []) if isinstance(group, dict) else []:
+            if isinstance(child, dict) and child.get("key") in STATE_CHILD_KEYS and isinstance(child.get("isOpen"), bool):
+                found[child["key"]] = child["isOpen"]
+
+    if any(found.values()):
         return "open"
-    unique = sorted(set(states))
-    return unique[0] if len(unique) == 1 else "|".join(unique)
+    if len(found) == len(STATE_CHILD_KEYS):
+        return "closed"
+    logger.info(f"ℹ️ زیرگروه‌های وضعیت بازار ناقص بود (دیده‌شده: {sorted(found)}) - فقط ساعت/تقویم")
+    return None
+
+
+def _fetch_market_state_blocking() -> Optional[str]:
+    payload = _get_json(MARKET_STATE_URL, timeout=STATE_TIMEOUT, retries=0)
+    return parse_market_state(payload)
+
+
+class MarketStateFetch:
+    """
+    fetch وضعیت بازار تو پس‌زمینه. start_market_state_fetch() بلافاصله برمی‌گرده؛
+    result() حداکثر تا STATE_TIMEOUT ثانیه *از لحظه‌ی شروع* صبر می‌کنه (نه از لحظه‌ی صدا زدن)،
+    پس اگه fetch اصلی بیشتر از ۳ ثانیه طول کشیده، result() فوری جواب می‌ده. هر خطا/تایم‌اوت => None.
+    """
+
+    def __init__(self) -> None:
+        self._t0 = time.monotonic()
+        self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="market-state")
+        self._future = self._pool.submit(_fetch_market_state_blocking)
+
+    def result(self) -> Optional[str]:
+        remaining = max(0.0, STATE_TIMEOUT - (time.monotonic() - self._t0))
+        try:
+            return self._future.result(timeout=remaining)
+        except FuturesTimeout:
+            logger.warning(f"⏱️ وضعیت بازار از optionbaaz تو {STATE_TIMEOUT:g}s نیومد")
+            return None
+        except Exception as e:
+            logger.warning(f"⚠️ وضعیت بازار: {type(e).__name__}")
+            return None
+        finally:
+            self._pool.shutdown(wait=False)  # thread معلق جلوی خروج برنامه رو نگیره
+
+
+def start_market_state_fetch() -> MarketStateFetch:
+    return MarketStateFetch()
 
 
 # ----------------------------------------------------------------------
