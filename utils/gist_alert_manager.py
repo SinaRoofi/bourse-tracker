@@ -476,6 +476,36 @@ class GistAlertManager:
         data[self.today_jalali].extend(new_items)
         return await self._save_to_gist(data)
 
+    async def rearm_alerts(self, symbols: list, alert_types: list) -> int:
+        """
+        دیداپ امروزِ (symbol, alert_type)ها رو (به‌همراه کپی واچ‌لیست هرکدوم) پاک می‌کنه تا
+        دور بعدیِ همون وضعیت (مثلاً صف خرید بعد از عرضه‌ی کامل) دوباره هشدار بگیره.
+        تعداد ردیف‌های پاک‌شده رو برمی‌گردونه؛ اگه خوندن/نوشتن Gist شکست بخوره 0 (هشدارها همون
+        رفتار قبلی «یک‌بار در روز» رو دارن، نه اسپم).
+        """
+        if not symbols or not alert_types:
+            return 0
+        targets = set()
+        for t in alert_types:
+            targets.add(t)
+            targets.add(f"{t}{WATCHLIST_COPY_SUFFIX}")
+        sym_set = set(symbols)
+
+        data = await self._load_gist_content(use_cache=False)
+        if self._load_failed:
+            logger.warning("⚠️ آزادسازی دیداپ انجام نشد: خوندن Gist شکست خورد")
+            return 0
+        today_alerts = data.get(self.today_jalali, [])
+        kept = [a for a in today_alerts if not (a["symbol"] in sym_set and a["alert_type"] in targets)]
+        removed = len(today_alerts) - len(kept)
+        if not removed:
+            return 0
+        data[self.today_jalali] = kept
+        if not await self._save_to_gist(data):
+            return 0
+        logger.info(f"🔓 دیداپ {removed} هشدار برای دور بعدی صف آزاد شد: {sorted(sym_set)}")
+        return removed
+
     # ------------------------------------------------------------------
     # Queue Snapshot (فایل جدا: queue_snapshot.json)
     # ------------------------------------------------------------------
