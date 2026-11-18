@@ -453,7 +453,7 @@ def money_section(totals: Optional[dict], options: Optional[dict], trade: Option
 
 def breadth_section(options: Optional[dict]) -> Optional[dict]:
     """
-    مثبت بودن بازار (نمادهای سهام): تعداد و درصد مثبت، منفی، بدون تغییر، و تعداد در صف خرید/فروش
+    آمار نمادهای مثبت و منفی (کلاس سهام): تعداد و درصد مثبت، منفی، بدون تغییر، و تعداد در صف خرید/فروش
     (درصد از کل نمادها؛ نوار ده‌تایی برای نگاه سریع). صف‌ها زیرمجموعه‌ی مثبت/منفی‌ان.
     """
     b = (options or {}).get("breadth")
@@ -534,7 +534,7 @@ def options_section(options: Optional[dict]) -> Optional[dict]:
 
 # عنوان هر بخش (ایموجی + متن)
 SECTION_TITLES = {
-    "breadth": "🧭 مثبت بودن بازار (سهام)",
+    "breadth": "🧭 آمار نمادهای مثبت و منفی (سهام)",
     "money": "💰 پول، سرانه و صف کل بازار",
     "options": "🎯 بازار آپشن",
 }
