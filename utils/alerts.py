@@ -12,7 +12,13 @@ from telegram import Bot
 from telegram.error import RetryAfter, TimedOut
 import logging
 
-from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from config import (
+    DELETE_PIN_NOTICE,
+    PIN_DAILY_SUMMARY,
+    PIN_NOTICE_WAIT_SECONDS,
+    TELEGRAM_BOT_TOKEN,
+    TELEGRAM_CHAT_ID,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -833,6 +839,10 @@ class TelegramAlert:
         self._chat_last_sent: Dict[str, float] = {}
         self._global_semaphore = asyncio.Semaphore(self.GLOBAL_CONCURRENCY)
 
+        # آیدی آخرین پیام موفق هر چت و آیدی اولین بخش آخرین send_message (برای پین خلاصه)
+        self._last_message_ids: Dict[str, int] = {}
+        self.last_send_first_message_id: Optional[int] = None
+
         # فاصله‌ی فعلی بین ارسال‌ها؛ پیش‌فرض همون پایه، با set_batch_size عوض می‌شه
         self._send_delay: float = self.SEND_DELAY_SECONDS
 
@@ -914,8 +924,11 @@ class TelegramAlert:
         if len(parts) > 1:
             logger.warning(f"⚠️ پیام بلند بود ({self._plain_len(message)} کاراکتر) - در {len(parts)} بخش ارسال می‌شه")
         ok = True
-        for part in parts:
+        self.last_send_first_message_id = None
+        for index, part in enumerate(parts):
             ok = await self._send_single(part, parse_mode=parse_mode, chat_id=chat_id) and ok
+            if index == 0:
+                self.last_send_first_message_id = self._last_message_ids.get(str(chat_id or self.chat_id))
         return ok
 
     async def _send_single(
@@ -937,10 +950,11 @@ class TelegramAlert:
 
             async def _attempt() -> bool:
                 async with self._global_semaphore:
-                    await self.bot.send_message(
+                    sent = await self.bot.send_message(
                         chat_id=target_chat_id, text=message, parse_mode=parse_mode
                     )
                 self._chat_last_sent[target_chat_id] = time.monotonic()
+                self._last_message_ids[str(target_chat_id)] = getattr(sent, "message_id", None)
                 return True
 
             try:
@@ -962,6 +976,103 @@ class TelegramAlert:
             except Exception as retry_error:
                 logger.error(f"❌ خطا در تلاش مجدد: {retry_error}")
                 return False
+
+    # ------------------------------------------------------------
+    # پین‌کردن پیام + حذف پیام سرویسی «پین شد»
+    # ------------------------------------------------------------
+    async def _bot_api(self, method: str, payload: dict, timeout: float = 15) -> Optional[dict]:
+        """درخواست خام به Bot API؛ فقط نوع خطا لاگ می‌شه (URL توکن داره). خطا/ok=False => None."""
+        url = f"https://api.telegram.org/bot{self.bot_token}/{method}"
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
+                async with session.post(url, json=payload) as resp:
+                    data = await resp.json(content_type=None)
+        except Exception as e:
+            logger.warning("⚠️ %s: خطای شبکه (%s)", method, type(e).__name__)
+            return None
+        if isinstance(data, dict) and data.get("ok"):
+            return data
+        description = data.get("description") if isinstance(data, dict) else None
+        logger.warning("⚠️ %s رد شد: %s", method, description or "پاسخ نامعتبر")
+        return None
+
+    @staticmethod
+    def _same_chat(msg_chat: dict, target) -> bool:
+        """target می‌تونه آیدی عددی یا @username باشه."""
+        target = str(target)
+        if target.startswith("@"):
+            return str(msg_chat.get("username", "")).lower() == target[1:].lower()
+        return str(msg_chat.get("id")) == target
+
+    async def delete_message(self, message_id: int, chat_id: str = None) -> bool:
+        data = await self._bot_api("deleteMessage", {"chat_id": chat_id or self.chat_id, "message_id": message_id})
+        return data is not None
+
+    async def _find_pin_notice_id(self, pinned_id: int, chat_id: str, wait_seconds: float) -> Optional[int]:
+        """
+        آیدی پیام سرویسی «پین شد» رو از getUpdates (channel_post با فیلد pinned_message) پیدا می‌کنه.
+        هیچ‌وقت حدس نمی‌زنه (مثلاً pinned_id+1)، چون ممکنه پیام یک هشدار واقعی باشه.
+        updateهای مصرف‌شده تا همین‌جا confirm می‌شن. وب‌هوک فعال/۴۰۹ => None.
+        """
+        deadline = time.monotonic() + wait_seconds
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            data = await self._bot_api(
+                "getUpdates",
+                {"timeout": min(2, int(remaining)), "allowed_updates": ["channel_post", "message"]},
+                timeout=min(2, int(remaining)) + 10,
+            )
+            if data is None:
+                return None
+            for update in data.get("result") or []:
+                msg = update.get("channel_post") or update.get("message") or {}
+                pinned = msg.get("pinned_message") or {}
+                if pinned.get("message_id") == pinned_id and self._same_chat(msg.get("chat") or {}, chat_id):
+                    # confirm: همه‌ی updateهای تا این‌جا پاک می‌شن
+                    await self._bot_api("getUpdates", {"offset": update["update_id"] + 1, "limit": 1, "timeout": 0})
+                    return msg.get("message_id")
+            if not data.get("result"):
+                await asyncio.sleep(0.5)
+
+    async def pin_message(self, message_id: int, chat_id: str = None, delete_notice: bool = True) -> bool:
+        """
+        پیام رو پین می‌کنه (بی‌صدا) و اگه delete_notice باشه پیام سرویسی «پین شد» رو پاک می‌کنه.
+        True یعنی پین موفق بود (حذف پیام سرویسی شکست بخوره، پین سر جاشه). هیچ exception‌ای نمی‌ده.
+        """
+        target = chat_id or self.chat_id
+        try:
+            if not message_id:
+                logger.warning("⚠️ آیدی پیام برای پین نیست - پین انجام نشد")
+                return False
+            ok = await self._bot_api(
+                "pinChatMessage",
+                {"chat_id": target, "message_id": message_id, "disable_notification": True},
+            )
+            if ok is None:
+                return False
+            logger.info("📌 پیام %s پین شد", message_id)
+            if delete_notice:
+                notice_id = await self._find_pin_notice_id(message_id, target, PIN_NOTICE_WAIT_SECONDS)
+                if notice_id and await self.delete_message(notice_id, target):
+                    logger.info("🧹 پیام سرویسی پین (%s) حذف شد", notice_id)
+                else:
+                    logger.warning("⚠️ پیام سرویسی «پین شد» پیدا/حذف نشد (پین سر جاشه)")
+            return True
+        except Exception as e:
+            logger.warning("⚠️ پین ناموفق (%s)", type(e).__name__)
+            return False
+
+    async def pin_last_sent(self, first_part: bool = False, chat_id: str = None) -> bool:
+        """آخرین پیام موفق (یا اولین بخش آخرین send_message) رو پین می‌کنه؛ فقط اگه PIN_DAILY_SUMMARY روشن باشه."""
+        if not PIN_DAILY_SUMMARY:
+            return False
+        message_id = (
+            self.last_send_first_message_id if first_part
+            else self._last_message_ids.get(str(chat_id or self.chat_id))
+        )
+        return await self.pin_message(message_id, chat_id=chat_id, delete_notice=DELETE_PIN_NOTICE)
 
     # ------------------------------------------------------------
     # Rich Message (Bot API 10.1+)
@@ -1011,6 +1122,10 @@ class TelegramAlert:
 
                 if isinstance(data, dict) and data.get("ok"):
                     self._chat_last_sent[target_chat_id] = time.monotonic()
+                    result = data.get("result")
+                    self._last_message_ids[str(target_chat_id)] = (
+                        result.get("message_id") if isinstance(result, dict) else None
+                    )
                     return True
 
                 description = data.get("description") if isinstance(data, dict) else None
