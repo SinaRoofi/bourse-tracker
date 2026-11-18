@@ -965,6 +965,7 @@ class DailySummaryGenerator:
             ok = await self.telegram.send_rich_message(rich_html)
             if ok:
                 logger.info("✅ خلاصه‌ی روزانه (Rich Message) ارسال شد")
+                await self.telegram.pin_last_sent()  # شکست پین، موفقیت ارسال رو تغییر نمی‌ده
             return ok
         except Exception as e:
             logger.error(f"❌ خطا در مسیر Rich Message: {e}", exc_info=True)
@@ -997,6 +998,8 @@ class DailySummaryGenerator:
                 success1 = await self.telegram.send_message(message1, parse_mode='HTML')
                 if not success1:
                     logger.error("❌ خطا در ارسال پیام خلاصه معاملات بازار")
+                else:
+                    await self.telegram.pin_last_sent(first_part=True)  # پیام خلاصه‌ی بازار
         else:
             # داده‌ی صنایع نیومد ولی شاخص‌ها/معاملات از API هست => همون‌ها رو بفرست
             overview_only = (
