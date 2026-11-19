@@ -302,7 +302,7 @@ def _option_side(src: Any) -> Optional[Dict[str, Optional[float]]]:
 def parse_options_payload(payload: dict, today: Optional[date] = None) -> Optional[Dict[str, Any]]:
     """
     خروجی: {"call": {...}|None, "put": {...}|None, "queue": {"buy_value","sell_value"}|None,
-            "breadth": {"total","pos","neg","zero","buy_queue_count","sell_queue_count"}|None,
+            "breadth": {"total","pos","neg","zero","above_final","below_final","above_first","below_first","buy_queue_count","sell_queue_count"}|None,
             "retail_turnover": ارزش معاملات خرد به ریال|None}
     breadth = وضعیت نمادهای سهام (کلاس stock). queue = ارزش صف خرید/فروش «کل بازار» (segments.total؛ برابر جمع همه‌ی کلاس‌ها).
     اگه today داده بشه و tradingDate با اون نخونه، داده کهنه حساب می‌شه.
@@ -333,6 +333,12 @@ def parse_options_payload(payload: dict, today: Optional[date] = None) -> Option
             "zero": _num(stock.get("zero")),
             "buy_queue_count": _num(stock.get("buyQueueCount")),
             "sell_queue_count": _num(stock.get("sellQueueCount")),
+            # candles.aboveEnd / belowEnd: آخرین قیمت بالاتر / پایین‌تر از قیمت پایانی
+            "above_final": _num((stock.get("candles") or {}).get("aboveEnd")),
+            "below_final": _num((stock.get("candles") or {}).get("belowEnd")),
+            # candles.aboveOpen / belowOpen: آخرین قیمت بالاتر / پایین‌تر از اولین قیمت
+            "above_first": _num((stock.get("candles") or {}).get("aboveOpen")),
+            "below_first": _num((stock.get("candles") or {}).get("belowOpen")),
         }
 
     seg = (latest.get("segments") or {}).get("total") or {}
@@ -472,6 +478,10 @@ def breadth_section(options: Optional[dict]) -> Optional[dict]:
         row("🟢", "مثبت", b.get("pos")),
         row("🔴", "منفی", b.get("neg")),
         row("⚪", "بدون تغییر", b.get("zero")),
+        row("⬆️", "آخرین بالای پایانی", b.get("above_final")),
+        row("⬇️", "آخرین پایین پایانی", b.get("below_final")),
+        row("🔼", "آخرین بالای اولین", b.get("above_first")),
+        row("🔽", "آخرین پایین اولین", b.get("below_first")),
         row("🟩", "صف خرید", b.get("buy_queue_count")),
         row("🟥", "صف فروش", b.get("sell_queue_count")),
     ) if r]
@@ -481,7 +491,7 @@ def breadth_section(options: Optional[dict]) -> Optional[dict]:
         "headers": ["وضعیت", "تعداد", "درصد"],
         "units": ["", "", ""],
         "rows": rows,
-        "note": f"از {total:,.0f} نماد سهام؛ صف‌ها زیرمجموعه‌ی مثبت و منفی‌اند",
+        "note": f"از {total:,.0f} نماد سهام؛ آخرین بالا/پایین پایانی و اولین = آخرین قیمت نسبت به قیمت پایانی و اولین قیمت؛ صف‌ها زیرمجموعه‌ی مثبت و منفی‌اند",
     }
 
 
